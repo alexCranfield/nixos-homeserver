@@ -65,11 +65,11 @@ Reused from the NAS project: pixi-style task runner idea becomes `just`/`nix run
 
 ## Phased tickets
 
-Each ticket becomes one GitHub Issue: title, goal, task checklist, acceptance criteria, depends-on. Milestone = phase. Labels: `phase:N`, `area:{nix,ci,install,network,containers,games,llm,dev,backup,security,docs}`, `stretch`.
+Ticket bodies with tasks and acceptance criteria are in `scripts/tickets.py`; `scripts/file_issues.py` files them as issues. Each ticket becomes one GitHub Issue: title, goal, task checklist, acceptance criteria, depends-on. Milestone = phase. Labels: `phase:N`, `area:{nix,ci,install,network,containers,games,llm,dev,backup,security,docs}`, `stretch`.
 
 ### Phase 0: Workstation and repo foundations (no hardware needed)
 - **0.1** Install Nix on WSL (Determinate installer, flakes enabled) and `direnv`. AC: `nix flake --version` works, `nix run nixpkgs#hello` works.
-- **0.2** Create public repo `alexCranfield/nixos-homeserver` with README, GPL-3.0 (matches NAS repo), `.gitignore`, `.editorconfig`. Commit `docs/PLAN.md`. AC: repo exists, plan visible.
+- **0.2** Repo hygiene: `.gitignore`, `.editorconfig`, issue and PR templates, branch protection prep. (Repo, README, GPL-3.0 and this plan already exist.) AC: templates offered when opening an issue.
 - **0.3** Flake skeleton: `flake.nix` with nixpkgs 26.05 input, `nixosConfigurations.nuc` stub, `formatter`, `checks`. AC: `nix flake check` passes locally.
 - **0.4** CI workflow `ci.yml`: on PR/push run `nix flake check`, `nix build .#nixosConfigurations.nuc.config.system.build.toplevel`, `nix fmt -- --check`. Use `DeterminateSystems/nix-installer-action` + `magic-nix-cache-action`. AC: green check on a PR.
 - **0.5** Secrets bootstrap: generate `age` keys (workstation + placeholder host key), `.sops.yaml`, `sops-nix` input, one test secret decrypted in a NixOS VM build. AC: `sops -d secrets/test.yaml` works; a public-repo secret scan shows only ciphertext.
