@@ -57,11 +57,7 @@ A known problem living only in someone's head is not.
 
 **Commits.** Imperative subject under 72 characters, naming the ticket where it
 helps ("Record verified workstation setup for ticket 0.1"). Body explains why
-when it is not obvious. End with:
-
-```
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-```
+when it is not obvious.
 
 **Secrets.** Never in plaintext, never in a compose file, never in a commit.
 Everything goes through sops with age (ADR 0004). This repo is public; assume
