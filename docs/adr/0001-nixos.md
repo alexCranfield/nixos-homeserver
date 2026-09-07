@@ -3,7 +3,7 @@
 Date: 2026-09-07. Status: accepted.
 
 ## Context
-The previous NAS project managed Debian/OMV with Ansible. It worked, but a rebuild meant reinstalling the OS by hand and replaying playbooks whose result depended on what apt had at the time. This server should be reinstallable from the repo alone, with updates that can be rolled back atomically.
+The previous NAS (network-attached storage) project managed Debian and OMV (OpenMediaVault) with Ansible. It worked, but a rebuild meant reinstalling the OS by hand and replaying playbooks whose result depended on what apt had at the time. This server should be reinstallable from the repo alone, with updates that can be rolled back atomically.
 
 ## Decision
 Run NixOS 26.05 (stable) with the whole system declared in a flake: disks (disko), users, SSH, firewall, Docker, services, timers. Track the stable channel and bump the input at each release (26.11 next). Use `linuxPackages_latest` because the Panther Lake Xe3 iGPU and NIC drivers need a current kernel.

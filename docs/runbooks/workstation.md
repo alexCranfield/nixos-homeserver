@@ -60,7 +60,7 @@ Nix 2.35 renamed `nix profile install` to `nix profile add`. The old name still
 works but warns.
 
 `nix-direnv` is what makes `use flake` fast: it caches the evaluated shell and
-adds a GC root, so entering a directory does not re-evaluate the flake every
+adds a GC (garbage collection) root, so entering a directory does not re-evaluate the flake every
 time. A cold load of a two-package shell took about 90 seconds (mostly fetching
 stdenv); the cached load after that took 0.07 seconds. Both come from Nix rather
 than apt so they track the same nixpkgs.

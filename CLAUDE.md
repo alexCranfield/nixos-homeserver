@@ -4,8 +4,8 @@
 
 Declarative NixOS configuration for a home server (ASRock NUC BOX-358H). The
 whole system is a flake; the server pulls `main` and rebuilds itself. Read
-`docs/PLAN.md` for the phased build and `docs/adr/` for why each major choice
-was made.
+`docs/PLAN.md` for the phased build and the ADRs (Architecture Decision
+Records) in `docs/adr/` for why each major choice was made.
 
 Work is tracked as GitHub Issues, one per plan ticket, grouped by phase
 milestone. Issue numbers map to ticket ids in order: 0.1 is #1, 8.4 is #52.
@@ -58,6 +58,14 @@ A known problem living only in someone's head is not.
 **Commits.** Imperative subject under 72 characters, naming the ticket where it
 helps ("Record verified workstation setup for ticket 0.1"). Body explains why
 when it is not obvious.
+
+**Acronyms.** Expand an acronym the first time it appears in a document, with
+the expansion in brackets straight after it: ADR (Architecture Decision Record),
+RCON (remote console), ESP (EFI System Partition). Once per document, not once
+per section, and later uses stay short. This covers every document here:
+runbooks, ADRs, the plan, the README, issue bodies and commit messages. Skip it
+only for acronyms any reader will already know (CPU, RAM, USB, SSH) and for
+code, paths and command output, which are quoted verbatim.
 
 **Secrets.** Never in plaintext, never in a compose file, never in a commit.
 Everything goes through sops with age (ADR 0004). This repo is public; assume
