@@ -20,6 +20,7 @@ from `main`, backs up to the NAS (network-attached storage) with restic, and is 
 - [docs/PLAN.md](docs/PLAN.md): the phased build plan. Each ticket is a GitHub Issue under a phase milestone.
 - [docs/adr/](docs/adr/): architecture decision records.
 - [docs/runbooks/](docs/runbooks/): operational procedures, added as phases complete.
+- [docs/learning.md](docs/learning.md): reading list, sequenced against the phases.
 
 ## Status
 
