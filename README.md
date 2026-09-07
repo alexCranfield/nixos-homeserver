@@ -29,3 +29,12 @@ Phase 0 (workstation and repo foundations) in progress. See the
 ## License
 
 GPL-3.0. See `LICENSE`.
+
+## Filing the tickets
+
+`scripts/tickets.py` holds every ticket from the plan. To create the milestones, labels and
+issues (idempotent, safe to re-run):
+
+```
+GITHUB_TOKEN=<token with Issues: write> python3 scripts/file_issues.py
+```
