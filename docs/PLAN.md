@@ -2,9 +2,9 @@
 
 ## Context
 
-Alex is standing up a new home server on an ASRock Industrial NUC BOX-358H (Intel Core Ultra X7 358H "Panther Lake", 4P+8E+4LPE cores, Arc B390 Xe3 iGPU + NPU, 96 GB DDR5, 1 TB NVMe, dual Intel 2.5GbE, second M.2 slot free). Workloads: dockerised game servers (Minecraft, Palworld, Satisfactory, others), local LLMs, and a dev environment for Shopify admin scripting.
+Alex is standing up a new home server on an ASRock Industrial NUC BOX-358H (Intel Core Ultra X7 358H "Panther Lake", 4P+8E+4LPE cores, Arc B390 Xe3 iGPU and NPU (Neural Processing Unit), 96 GB DDR5, 1 TB NVMe, dual Intel 2.5GbE, second M.2 slot free). Workloads: dockerised game servers (Minecraft, Palworld, Satisfactory, others), local LLMs, and a dev environment for Shopify admin scripting.
 
-The previous NAS project (`alexCranfield/ansible-nas`, Raspberry Pi + OMV) used Ansible, pixi, Ansible Vault, unattended-upgrades, fail2ban, SSH via `~/.ssh/config` host `nas` (user `<nas-user>`, `<nas-host>`). This project is the "step further": the whole OS is declared in a Nix flake, installs and updates are automated, and the repo doubles as public CV evidence of a GitOps workflow.
+The previous NAS (network-attached storage) project, `alexCranfield/ansible-nas`, ran OMV (OpenMediaVault) on a Raspberry Pi. It used Ansible, pixi, Ansible Vault, unattended-upgrades, fail2ban, SSH via `~/.ssh/config` host `nas` (user `<nas-user>`, `<nas-host>`). This project is the "step further": the whole OS is declared in a Nix flake, installs and updates are automated, and the repo doubles as public CV evidence of a GitOps workflow.
 
 Every ticket below is filed as a GitHub Issue in this repo, grouped by phase milestone. This file is the narrative version; the issues are the source of truth for status.
 
@@ -20,7 +20,7 @@ Every ticket below is filed as a GitHub Issue in this repo, grouped by phase mil
 | Secrets | `sops-nix` with an `age` key per host (replaces Ansible Vault) | Safe to commit encrypted secrets to a public repo |
 | Remote access | Tailscale for SSH/admin/LLM UIs; router port forwards only for game ports | Nothing admin-facing on the WAN, no fail2ban needed |
 | LLM | Ollama + Open WebUI on CPU (96 GB RAM fits 70B-class quants); Intel iGPU acceleration as a later trial ticket | Intel Level Zero on Panther Lake still has open init-crash bugs |
-| Backups | `restic` nightly to <nas-host> over SFTP; NixOS `services.restic` | Reuses existing NAS |
+| Backups | `restic` nightly to <nas-host> over SFTP (SSH File Transfer Protocol); NixOS `services.restic` | Reuses existing NAS |
 | Tickets | GitHub Issues + milestones per phase in this repo | Trackable, closable, visible |
 
 ## Target architecture
@@ -68,18 +68,18 @@ Reused from the NAS project: pixi-style task runner idea becomes `just`/`nix run
 Ticket bodies with tasks and acceptance criteria are in `scripts/tickets.py`; `scripts/file_issues.py` files them as issues. Each ticket becomes one GitHub Issue: title, goal, task checklist, acceptance criteria, depends-on. Milestone = phase. Labels: `phase:N`, `area:{nix,ci,install,network,containers,games,llm,dev,backup,security,docs}`, `stretch`.
 
 ### Phase 0: Workstation and repo foundations (no hardware needed)
-- **0.1** Install Nix on WSL (Determinate installer, flakes enabled) and `direnv`. AC: `nix flake --version` works, `nix run nixpkgs#hello` works.
+- **0.1** Install Nix on WSL (Determinate installer, flakes enabled) and `direnv`. AC (acceptance criteria): `nix flake --version` works, `nix run nixpkgs#hello` works.
 - **0.2** Repo hygiene: `.gitignore`, `.editorconfig`, issue and PR templates, branch protection prep. (Repo, README, GPL-3.0 and this plan already exist.) AC: templates offered when opening an issue.
 - **0.3** Flake skeleton: `flake.nix` with nixpkgs 26.05 input, `nixosConfigurations.nuc` stub, `formatter`, `checks`. AC: `nix flake check` passes locally.
 - **0.4** CI workflow `ci.yml`: on PR/push run `nix flake check`, `nix build .#nixosConfigurations.nuc.config.system.build.toplevel`, `nix fmt -- --check`. Use `DeterminateSystems/nix-installer-action` + `magic-nix-cache-action`. AC: green check on a PR.
 - **0.5** Secrets bootstrap: generate `age` keys (workstation + placeholder host key), `.sops.yaml`, `sops-nix` input, one test secret decrypted in a NixOS VM build. AC: `sops -d secrets/test.yaml` works; a public-repo secret scan shows only ciphertext.
-- **0.6** Docs scaffolding: `docs/adr/0001-nixos.md`, `0002-compose-not-k8s.md`, `0003-pull-deploy-comin.md`, `0004-secrets-sops.md`, `0005-tailscale.md`. AC: each ADR states context, decision, consequences.
+- **0.6** Docs scaffolding: `docs/adr/0001-nixos.md`, `0002-compose-not-k8s.md`, `0003-pull-deploy-comin.md`, `0004-secrets-sops.md`, `0005-tailscale.md`. AC: each ADR (Architecture Decision Record) states context, decision, consequences.
 - **0.7** `just`/`nix run` task targets: `fmt`, `check`, `build`, `deploy` (manual `nixos-rebuild --target-host` for emergencies), `vm` (build a QEMU VM of the config). AC: `just vm` boots the config locally.
 
 ### Phase 1: Bare-metal install and base OS
 - **1.1** Hardware prep: seat RAM/NVMe, BIOS: restore power on AC loss, boot order USB, disable Secure Boot (lanzaboote is a stretch), enable VT-x/VT-d. Record BIOS version. AC: checklist in `docs/runbooks/hardware.md`.
-- **1.2** `disko.nix`: GPT, 1 GB ESP, btrfs root with subvolumes `@root @nix @home @srv @docker @snapshots`, 16 GB swapfile (or zram). Leave second M.2 slot documented for future data disk. AC: `nix build .#nixosConfigurations.nuc.config.system.build.diskoScript` succeeds.
-- **1.3** Base module: hostname `nuc`, user `ops` (wheel, ssh key only, no password sudo prompt kept), `sshd` keys-only + no root login, `nix.settings` (flakes, trusted users, auto-optimise), weekly GC, `linuxPackages_latest`, `hardware.cpu.intel.updateMicrocode`, timezone/locale. AC: VM boots, SSH login as `ops` works.
+- **1.2** `disko.nix`: GPT (GUID Partition Table), 1 GB ESP (EFI System Partition), btrfs root with subvolumes `@root @nix @home @srv @docker @snapshots`, 16 GB swapfile (or zram). Leave second M.2 slot documented for future data disk. AC: `nix build .#nixosConfigurations.nuc.config.system.build.diskoScript` succeeds.
+- **1.3** Base module: hostname `nuc`, user `ops` (wheel, ssh key only, no password sudo prompt kept), `sshd` keys-only + no root login, `nix.settings` (flakes, trusted users, auto-optimise), weekly GC (garbage collection), `linuxPackages_latest`, `hardware.cpu.intel.updateMicrocode`, timezone/locale. AC: VM boots, SSH login as `ops` works.
 - **1.4** Network: DHCP reservation on router for `eno1` (record MAC), hostname `nuc.home.arpa`, second NIC unused/disabled. Firewall default deny, allow SSH only from Tailscale interface after 1.5. AC: `ping nuc.home.arpa` from LAN.
 - **1.5** Tailscale module: `services.tailscale` with auth key via sops, MagicDNS, SSH over tailnet. AC: `ssh ops@nuc` from WSL works over Tailscale with LAN cable unplugged from the workstation.
 - **1.6** Install: boot NixOS 26.05 live USB, run `nixos-anywhere --flake .#nuc --target-host root@<live-ip>` from WSL. Generate and commit `hardware-configuration.nix`. Run `nixos-generate-config --show-hardware-config` to verify. AC: reboots into NixOS, `nixos-version` shows 26.05, `lspci` shows Xe3 iGPU and both NICs, `dmesg` clean of NIC/GPU errors.
@@ -89,7 +89,7 @@ Ticket bodies with tasks and acceptance criteria are in `scripts/tickets.py`; `s
 ### Phase 2: GitOps, updates, rollback
 - **2.1** `comin` module: poll `main` of the public repo every 60 s, deploy on new commit. Optionally require signed commits (comin supports GPG-verified commits). AC: push a change to `motd`, see it on host within 2 min without SSH.
 - **2.2** `update-flake-lock.yml`: weekly Action opens a PR bumping `flake.lock`; CI builds it. Enable auto-merge on green for nixpkgs-only bumps (decide after first month). AC: first automated PR merged and deployed via comin.
-- **2.3** Safe update policy: `system.autoUpgrade` disabled (comin owns it), `boot.loader.systemd-boot.configurationLimit = 10`, kernel-change reboots scheduled in a maintenance window (e.g. 04:00 Tue) via a timer; game servers get a pre-reboot RCON warning hook (Phase 4 wires this). AC: documented in `docs/runbooks/updates.md`.
+- **2.3** Safe update policy: `system.autoUpgrade` disabled (comin owns it), `boot.loader.systemd-boot.configurationLimit = 10`, kernel-change reboots scheduled in a maintenance window (e.g. 04:00 Tue) via a timer; game servers get a pre-reboot RCON (remote console) warning hook (Phase 4 wires this). AC: documented in `docs/runbooks/updates.md`.
 - **2.4** Rollback drill: deploy a deliberately broken service, confirm comin/systemd fails safely, roll back via bootloader generation and via `git revert`. AC: both paths documented and tested.
 - **2.5** Notifications: comin/systemd failure → ntfy or Discord webhook (secret in sops). AC: a forced failure produces a notification.
 - **2.6** README badges + architecture diagram (Mermaid) for the CV angle. AC: README explains the pipeline in one screen.
@@ -124,10 +124,10 @@ Ticket bodies with tasks and acceptance criteria are in `scripts/tickets.py`; `s
 - **6.4** VS Code Remote-SSH over Tailscale + `nix-ld` for binaries that expect FHS. AC: open a project on nuc from workstation VS Code.
 - **6.5** Optional: scheduled scripts as systemd timers declared in Nix (e.g. nightly Shopify report). AC: one timer runs a hello script.
 
-### Phase 7: Hardening, DR, and write-up
+### Phase 7: Hardening, DR (disaster recovery), and write-up
 - **7.1** DR drill: full reinstall from flake + restic restore onto the same NVMe (or the second slot), time it. AC: under 1 hour, runbook updated.
 - **7.2** Security review: `ssh` config audit, firewall rules dump, Tailscale ACLs, container users non-root where images allow, Docker socket not exposed. AC: findings closed or accepted in ADR.
-- **7.3** SMART + btrfs scrub timers, temperature monitoring (fanned unit, 120 W adapter) in Grafana. AC: scrub monthly, SMART alert tested.
+- **7.3** SMART (Self-Monitoring, Analysis and Reporting Technology) + btrfs scrub timers, temperature monitoring (fanned unit, 120 W adapter) in Grafana. AC: scrub monthly, SMART alert tested.
 - **7.4** Secure Boot with `lanzaboote` (stretch). AC: `bootctl status` shows Secure Boot enabled.
 - **7.5** CV write-up: `docs/writeup.md` explaining the pipeline, decisions, and metrics (deploy latency, DR time). AC: reviewed.
 

@@ -13,7 +13,7 @@ merge to main ──▶ comin on the server polls, runs nixos-rebuild switch
 ```
 
 The server is installed from this repo with `nixos-anywhere` and `disko`, updates itself
-from `main`, backs up to the NAS with restic, and is reachable for admin only over Tailscale.
+from `main`, backs up to the NAS (network-attached storage) with restic, and is reachable for admin only over Tailscale.
 
 ## Documents
 
