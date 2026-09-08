@@ -76,6 +76,13 @@ self-testing. Add a line to `docs/q-and-a/README.md` when a new topic file
 appears. Do not log questions about project state or about what to do next;
 those belong in issues. The acronym rule above applies to these files too.
 
+When Alex answers a question put to him, log that in
+`docs/q-and-a/self-assessment.md`: the question, a one-line verdict, then his
+answer verbatim and the feedback each in its own `<details>` block, so the file
+re-reads later as a set of questions to re-attempt. Say plainly what was wrong or
+missing. A log that records only successes is worthless for tracking
+development.
+
 **Secrets.** Never in plaintext, never in a compose file, never in a commit.
 Everything goes through sops with age (ADR 0004). This repo is public; assume
 anything committed is public forever.
