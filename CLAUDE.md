@@ -67,6 +67,15 @@ runbooks, ADRs, the plan, the README, issue bodies and commit messages. Skip it
 only for acronyms any reader will already know (CPU, RAM, USB, SSH) and for
 code, paths and command output, which are quoted verbatim.
 
+**Question and answer log.** When Alex asks a conceptual or technical question
+whose answer has lasting value, record it in `docs/q-and-a/` under the topic file
+that fits, creating one if none does. Follow the shape already there: an `###`
+heading distilling the question, the date, his question quoted verbatim as a
+blockquote, and the answer inside a `<details>` block so it can be collapsed for
+self-testing. Add a line to `docs/q-and-a/README.md` when a new topic file
+appears. Do not log questions about project state or about what to do next;
+those belong in issues. The acronym rule above applies to these files too.
+
 **Secrets.** Never in plaintext, never in a compose file, never in a commit.
 Everything goes through sops with age (ADR 0004). This repo is public; assume
 anything committed is public forever.

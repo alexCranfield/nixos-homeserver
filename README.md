@@ -21,6 +21,7 @@ from `main`, backs up to the NAS (network-attached storage) with restic, and is 
 - [docs/adr/](docs/adr/): architecture decision records.
 - [docs/runbooks/](docs/runbooks/): operational procedures, added as phases complete.
 - [docs/learning.md](docs/learning.md): reading list, sequenced against the phases.
+- [docs/q-and-a/](docs/q-and-a/): questions asked during the build, with answers, kept for revision.
 
 ## Status
 
