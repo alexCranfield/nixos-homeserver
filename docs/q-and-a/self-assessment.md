@@ -202,3 +202,74 @@ machine. The same object is what `nixos-rebuild` builds, what CI (continuous
 integration) builds, and what comin builds before switching.
 
 </details>
+
+---
+
+### What is `system.stateVersion` for, and why is casually bumping it a mistake?
+
+*2026-09-08, before starting issue #3. Asked alongside "how would I test this?",
+which is the better question.*
+
+**Verdict:** Pass, and the strongest answer so far. Mechanism and example class
+both correct. One framing correction, and the rule is stricter than stated.
+
+<details>
+<summary>Answer given at the time</summary>
+
+> How would I invoke/test system.stateVersion to answer this? I think checking a
+> configiration.nix it looked like the value of the system.stateVersion
+> determines which NixOS release should be compatible with. This avoids the
+> breakages of certain softwares, such as database servers or libs. We should
+> only change it if the release notes say we should
+
+</details>
+
+<details>
+<summary>Feedback</summary>
+
+**Right:** the mechanism. It exists so software that cannot migrate its own data
+is not silently handed a newer version. And "database servers" is the canonical
+case, not a lucky guess — `services/databases/postgresql.nix` branches four ways
+on this value.
+
+**Framing correction.** It does not determine which release you are compatible
+with. It records the release at which this machine's *persistent state* was first
+created. The option's own documentation is emphatic that changing it does not
+upgrade the system, and that a low value does not mean the system is out of date,
+out of support, or vulnerable. Upgrading NixOS means changing the nixpkgs input;
+`stateVersion` never moves. The two are independent, which is what confuses
+everyone.
+
+**The rule is stricter.** Not "when the release notes say", but *never*, for any
+reason, even when upgrading NixOS releases, unless every resulting change has
+been inspected manually and the data migrated by hand.
+
+**Why bumping breaks things**, shown by evaluating two systems identical but for
+this one string:
+
+```
+{ installed_at_22_05 = "14.24"; installed_at_26_05 = "17.11"; }
+```
+
+Same nixpkgs. Bump a live machine from 22.05 to 26.05 and PostgreSQL 17 starts
+against a data directory written by version 14. Nothing migrates it; the service
+fails.
+
+**Three ways to interrogate any option**, which was the more valuable half of the
+question:
+
+1. *Ask the option about itself.* The merged schema carries `description`,
+   `type`, `default`, and `declarations`, the last giving the exact source file
+   (here `nixos/modules/misc/version.nix`). The options tab of
+   `search.nixos.org` is the browser version of this query.
+2. *Grep nixpkgs for consumers.* Fifty-four modules reference `stateVersion`;
+   the idiom is `versionOlder config.system.stateVersion "24.05"`. Shows the
+   blast radius.
+3. *Evaluate two systems differing only in the value.* Proof rather than
+   inference, and the method that settles arguments.
+
+**For this project:** `hosts/nuc` gets `system.stateVersion = "26.05"` at install
+in ticket 1.6, and it still reads 26.05 years later, including after the move to
+NixOS 26.11.
+
+</details>
