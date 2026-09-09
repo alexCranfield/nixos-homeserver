@@ -135,3 +135,70 @@ understanding, but it flows from the system to the module rather than from an
 importer to an import.
 
 </details>
+
+---
+
+### What does `nixpkgs.lib.nixosSystem` actually give you back?
+
+*2026-09-08, before starting issue #3.*
+
+**Verdict:** Half right. Named two of the three surviving attributes, but
+repeated the assumption that modules stay separate after evaluation.
+
+<details>
+<summary>Answer given at the time</summary>
+
+> returns the attrs of declared modules? i.e., and config, options, and imports
+> set for each module?
+
+</details>
+
+<details>
+<summary>Feedback</summary>
+
+**Right:** `config` and `options` do both survive at the top level.
+
+**Wrong: "for each module."** There is exactly one `config` and one `options`,
+not a set per module. Merging is the point of the module system, and afterwards
+the individual modules have no separate existence. Ten modules and one module
+produce the same shape of result. This is the same misconception as the previous
+question, so it is worth deliberately re-testing.
+
+**Wrong: `imports`.** It does not survive at all. `imports` is an instruction to
+the evaluator meaning "find these modules too". It is consumed during evaluation
+and discarded, never readable afterwards.
+
+**What actually comes back**, evaluated against nixpkgs 26.05:
+
+```
+[ "_module" "_type" "class" "config" "extendModules" "extraArgs"
+  "graph" "lib" "options" "pkgs" "type" ]
+```
+
+The three worth knowing:
+
+- `config` — the single merged configuration tree.
+- `options` — the single merged schema, metadata intact. This is where error
+  messages get their content; querying `options.networking.hostName.type.description`
+  returns the validation pattern.
+- `pkgs` — the instantiated package set for the target platform.
+
+Also useful: `extendModules`, which produces a variant of the system with extra
+modules layered on. That is the mechanism behind `build-vm`, and therefore behind
+the `just vm` target planned in ticket 0.7.
+
+**The payoff.** What you actually want out of all this is a derivation:
+`config.system.build.toplevel`, an entire operating system as one buildable
+object. This makes ticket 0.3's acceptance criterion readable rather than
+incantation:
+
+```
+nix build .#nixosConfigurations.nuc.config.system.build.toplevel
+```
+
+`nixosConfigurations.nuc` is the return value of `lib.nixosSystem`, `.config` is
+the merged tree, `.system.build.toplevel` is the derivation for the whole
+machine. The same object is what `nixos-rebuild` builds, what CI (continuous
+integration) builds, and what comin builds before switching.
+
+</details>
