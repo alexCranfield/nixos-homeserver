@@ -15,6 +15,24 @@ merge to main ──▶ comin on the server polls, runs nixos-rebuild switch
 The server is installed from this repo with `nixos-anywhere` and `disko`, updates itself
 from `main`, backs up to the NAS (network-attached storage) with restic, and is reachable for admin only over Tailscale.
 
+## Layout
+
+```
+flake.nix                          inputs, nixosConfigurations.nuc, formatter, checks
+flake.lock                         pinned revisions; commit every change
+hosts/nuc/default.nix              the host: imports hardware + base
+hosts/nuc/hardware-configuration.nix   PLACEHOLDER until the machine exists
+modules/base/default.nix           config applied to every host
+```
+
+Build the whole system without a machine:
+
+```bash
+nix flake check                                                    # evaluates and builds
+nix build .#nixosConfigurations.nuc.config.system.build.toplevel   # the OS as one derivation
+nix fmt                                                            # format the tree
+```
+
 ## Documents
 
 - [docs/PLAN.md](docs/PLAN.md): the phased build plan. Each ticket is a GitHub Issue under a phase milestone.
