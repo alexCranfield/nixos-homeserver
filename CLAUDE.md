@@ -53,6 +53,28 @@ GitHub.
 The point is transparency. A known problem with an issue number is manageable.
 A known problem living only in someone's head is not.
 
+## How changes reach main
+
+`main` is protected: no direct pushes, no force pushes, no deletion. Every change
+arrives as a pull request, squash-merged.
+
+1. **Branch per ticket.** `ticket/<n>-<slug>` for issue work (`ticket/5-sops-bootstrap`),
+   `fix/<slug>` or `chore/<slug>` for anything else.
+2. **Open the pull request early**, before the work is finished if it helps. The
+   description carries the issue's acceptance criteria as a checklist, so the
+   review surface is "did this meet its criteria", not "does this look fine".
+3. **Verify before requesting review.** Run the acceptance criteria and paste the
+   real output into the pull request. Evidence in the description, not claims.
+4. **Alex merges.** Never self-merge. The point of the gate is that a second
+   pair of eyes sees the change before it lands, which direct pushes to `main`
+   did not give us. If a review comment is right, say so and fix it; if it is
+   wrong, say why rather than complying.
+5. **Close the issue from the merge**, with the verification comment the
+   definition of done requires.
+
+The branch deletes itself on merge. Required status checks join this gate once
+ticket 0.4 has CI running.
+
 ## Conventions
 
 **Commits.** Imperative subject under 72 characters, naming the ticket where it
