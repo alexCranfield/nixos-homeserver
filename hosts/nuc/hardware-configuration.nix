@@ -11,6 +11,12 @@
 {
   imports = [ (modulesPath + "/installer/scan/not-detected.nix") ];
 
+  # Announced on every build and in CI so the placeholder cannot reach a real
+  # machine unnoticed. Deleting this warning is part of ticket 1.6 (#13).
+  warnings = [
+    "hosts/nuc/hardware-configuration.nix is still the placeholder; replace it in tickets 1.2 (#9) and 1.6 (#13)"
+  ];
+
   boot.initrd.availableKernelModules = [
     "xhci_pci"
     "thunderbolt"
