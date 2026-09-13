@@ -273,3 +273,72 @@ in ticket 1.6, and it still reads 26.05 years later, including after the move to
 NixOS 26.11.
 
 </details>
+
+---
+
+### Two modules both set `networking.hostName` to different values. What happens, and where does the type constraint live?
+
+*2026-09-13, before starting issue #5. Re-test of the module merge, five days
+after two earlier answers stumbled on it.*
+
+**Verdict:** Strongest answer so far, and it went beyond the question. Ran the
+experiment, read the error correctly, checked an independent source, drew the
+right conclusion, then found a real defect in the repository.
+
+<details>
+<summary>Answer given at the time</summary>
+
+> I added a networking.hostName to the hosts/nuc/default.nix and got this error:
+> `The option 'networking.hostName' has conflicting definition values ... Use
+> lib.mkForce value or lib.mkDefault value to change the priority on any of
+> these definitions.` initally I wondered if different services could act
+> through different hostnames, but after checking the NixOS wiki I suspect that
+> a nixos config must target a single host, i.e. you cannot specify multiple
+> hosts within a single config. If we wanted to serve multiple hosts, we'd want
+> to create a new configuaration.nix/default.nix and define the hostname under
+> hosts/*/default.nix. One question I have from that, why define the hostname
+> under modules/base/default.nix? I'd assume we'd want to keep it under
+> hosts/nuc/default.nix such that we could serve multiple (potentially remote)
+> hosts.
+
+</details>
+
+<details>
+<summary>Feedback</summary>
+
+**Correct throughout.** Two definitions of one option is a *conflict*, not
+last-one-wins. The module system refuses to guess and stops. One
+`nixosConfigurations.<name>` describes exactly one machine; several machines
+means several entries, each with its own `hosts/<name>/default.nix`.
+
+**The error message names the escape hatch**, which is the priority system:
+`mkForce` raises a definition above the others, `mkDefault` lowers it so anything
+else wins. Plain assignment sits between them, which is why two plain
+assignments deadlock.
+
+**The critique was right and the code was wrong.** `networking.hostName` was in
+`modules/base`, a module whose own comment says it applies to every host. A
+second machine would have inherited `nuc` and hit exactly the error produced
+here. `system.stateVersion` was misplaced for the same reason: it records when
+*that* machine's state was created, so a host installed in 2027 would need a
+later value. Both moved to `hosts/nuc/` in the fix.
+
+The cause was not subtle. Ticket 0.3 said to put the hostname in the base module,
+and that instruction was followed without questioning it. The plan's ticket 1.3
+line carried the same error and has been corrected.
+
+**Where the distinction actually falls.** An option with a sensible fallback can
+live in a shared module as `lib.mkDefault`, letting a host override it without
+conflict. Identity has no sensible fallback, so it belongs to the host.
+
+**On the discarded first instinct**, that different services might use different
+hostnames: not silly, just a different layer. The *system* hostname is singular,
+but services routinely present other names — nginx virtual hosts, per-container
+hostnames, `networking.hosts` aliases, and a Tailscale MagicDNS name distinct
+from the LAN name. One kernel hostname, many service-level names.
+
+**Proof of the flat merge**, from the fix: moving both options between modules
+produced a byte-identical closure, `w8h1m7k4g8aw4r80vghkc0r5zg8npwh5`. Module
+boundaries organise source for humans; they leave no trace in the result.
+
+</details>
