@@ -1,18 +1,20 @@
-# Base configuration applied to every host.
+# Configuration applied to every host.
+#
+# Nothing host-specific belongs here. Identity, hardware and
+# `system.stateVersion` live in `hosts/<name>/`, so a second machine cannot
+# inherit the first one's values.
+#
+# This module previously set `networking.hostName`, which was wrong: two modules
+# defining one option is an evaluation error rather than last-one-wins, so any
+# second host would have failed to build. An option with a sensible fallback can
+# live here as `lib.mkDefault`, which a host may then override. Identity has no
+# sensible fallback, so it does not.
 #
 # Deliberately minimal. Ticket 1.3 (#10) adds the ops user, sshd, nix settings,
-# garbage collection, the latest kernel, microcode and locale. Only what the
-# skeleton needs to build lives here for now.
+# garbage collection, the latest kernel, microcode and locale.
 { ... }:
 {
-  networking.hostName = "nuc";
-
-  # Enough of a bootloader for the closure to build. Ticket 1.3 (#10) adds
-  # configurationLimit and the rest of the boot policy.
+  # Boot policy. The same on any machine this repo would build.
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
-
-  # Records the release this machine's persistent state was created at. Never
-  # changed, not even when the nixpkgs input moves to a newer release.
-  system.stateVersion = "26.05";
 }
