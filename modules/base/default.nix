@@ -12,9 +12,12 @@
 #
 # Deliberately minimal. Ticket 1.3 (#10) adds the ops user, sshd, nix settings,
 # garbage collection, the latest kernel, microcode and locale.
-{ ... }:
+{ lib, ... }:
 {
-  # Boot policy. The same on any machine this repo would build.
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
+  # Boot policy. mkDefault because systemd-boot assumes UEFI, which is true of
+  # the nuc but need not be of a future host; a non-UEFI machine can then set
+  # its own value without an evaluation conflict. This is the fallback case the
+  # header describes.
+  boot.loader.systemd-boot.enable = lib.mkDefault true;
+  boot.loader.efi.canTouchEfiVariables = lib.mkDefault true;
 }
