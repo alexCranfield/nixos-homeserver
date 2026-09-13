@@ -14,6 +14,7 @@ Every ticket below is filed as a GitHub Issue in this repo, grouped by phase mil
 |---|---|---|
 | OS | NixOS 26.05 "Yarara" (stable, EOL 2026-12-31; bump to 26.11 when released) | Fully declarative, one-command reinstall |
 | Kernel | `linuxPackages_latest`, not default LTS | Panther Lake Xe3 iGPU and NIC support need a current kernel |
+| Nix itself | Workstation keeps Determinate Nix; server takes the NixOS default. Match inputs, not versions (ADR 0007) | Locked inputs give identical derivations either side; no third-party flake on an unattended machine |
 | Install | `nixos-anywhere` + `disko` from the NixOS live USB | Reproducible partitioning, no manual installer clicks |
 | Containers | Docker + Compose stacks wrapped in systemd units from NixOS; K3s as final stretch phase | Game server docs assume compose; K8s later once base is stable |
 | Deploy | Public repo. GitHub-hosted Actions validate/build on PR. Server pulls `main` with **comin** and rebuilds itself (~60 s after push) | CV evidence, no self-hosted runner exposure on a public repo |
@@ -73,7 +74,7 @@ Ticket bodies with tasks and acceptance criteria are in `scripts/tickets.py`; `s
 - **0.3** Flake skeleton: `flake.nix` with nixpkgs 26.05 input, `nixosConfigurations.nuc` stub, `formatter`, `checks`. AC: `nix flake check` passes locally.
 - **0.4** CI workflow `ci.yml`: on PR/push run `nix flake check`, `nix build .#nixosConfigurations.nuc.config.system.build.toplevel`, `nix fmt -- --check`. Use `DeterminateSystems/nix-installer-action` + `magic-nix-cache-action`. AC: green check on a PR.
 - **0.5** Secrets bootstrap: generate `age` keys (workstation + placeholder host key), `.sops.yaml`, `sops-nix` input, one test secret decrypted in a NixOS VM build. AC: `sops -d secrets/test.yaml` works; a public-repo secret scan shows only ciphertext.
-- **0.6** Docs scaffolding: `docs/adr/0001-nixos.md`, `0002-compose-not-k8s.md`, `0003-pull-deploy-comin.md`, `0004-secrets-sops.md`, `0005-tailscale.md`. AC: each ADR (Architecture Decision Record) states context, decision, consequences.
+- **0.6** ADRs (Architecture Decision Records): review 0001-0005 and 0007, which already exist, then write `0006-docker-vs-podman.md` and an index. AC: each ADR states context, decision, consequences; index lists all of them.
 - **0.7** `just`/`nix run` task targets: `fmt`, `check`, `build`, `deploy` (manual `nixos-rebuild --target-host` for emergencies), `vm` (build a QEMU VM of the config). AC: `just vm` boots the config locally.
 
 ### Phase 1: Bare-metal install and base OS
