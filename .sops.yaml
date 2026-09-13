@@ -1,0 +1,31 @@
+# Which age keys can decrypt which files.
+#
+# Rules are evaluated in order and the FIRST match wins, so the narrow test rule
+# must stay above the general one.
+#
+# Adding a recipient does not re-encrypt existing files. After changing this,
+# run `sops updatekeys secrets/<file>` for every affected file.
+keys:
+  # Alex's workstation. Backed up to nas:/tank/data/nasops/secrets-backup/.
+  # Losing this key without the backup loses every secret in this repo.
+  - &workstation age1uppr6k46nwa0d24tcmgjuacquuyy0n4klv6gnyd8fuxu7gc5tg9suljj67
+  # Throwaway key used only to prove decryption inside a local test VM. Not
+  # backed up: if lost, generate a new one and re-run `sops updatekeys` on the
+  # test file. Deliberately scoped to that one file so it can never decrypt a
+  # real secret.
+  - &vm-test age12fy2yazfa0z7e43crk0umnrkv467k9rzgpdtwu9ajcl35sut29vsrgcpyd
+
+creation_rules:
+  # The bootstrap test secret. Contains nothing sensitive.
+  - path_regex: ^secrets/test\.yaml$
+    key_groups:
+      - age:
+          - *workstation
+          - *vm-test
+
+  # Everything else. The nuc host key joins this list in ticket 1.7 (#14), once
+  # the machine exists and its SSH host key can be converted with ssh-to-age.
+  - path_regex: ^secrets/[^/]+\.yaml$
+    key_groups:
+      - age:
+          - *workstation
