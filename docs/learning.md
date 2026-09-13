@@ -51,6 +51,31 @@ express this specific thing".
 - [NixOS Discourse](https://discourse.nixos.org) — genuinely helpful forum, and
   the place to ask when the wiki is silent.
 
+## Phase 0: secrets, before ticket 0.5
+
+About 40 minutes, and worth doing before the ticket rather than during it. This
+is the one part of the repo where a mistake is permanent: a key lost is every
+secret lost, and a secret committed in plaintext to a public repo is public
+forever.
+
+- [age](https://github.com/FiloSottile/age) — read the design rationale first.
+  It explains why age exists and what it deliberately removed from GPG: no web
+  of trust, no key servers, no configuration, one algorithm. Understanding the
+  omissions is what makes the tool make sense.
+- [sops](https://github.com/getsops/sops) — the file format is the interesting
+  part. sops encrypts *values* while leaving *keys* readable, so an encrypted
+  file still diffs sensibly in git. That property is why this works in a public
+  repo at all.
+- [sops-nix](https://github.com/Mic92/sops-nix) — how decryption happens at
+  system activation into `/run/secrets`, with per-secret ownership and modes.
+  Note what this implies: secrets never enter the Nix store, because the store
+  is world-readable.
+
+Questions worth being able to answer before we start: why can an encrypted sops
+file be reviewed in a pull request? Why must a secret never be passed to a
+derivation as a build input? What exactly would you lose if the workstation age
+key were deleted tomorrow?
+
 ## Phase 1: install and base OS
 
 - [disko](https://github.com/nix-community/disko) — declarative partitioning. Read
@@ -114,8 +139,9 @@ express this specific thing".
 
 ## Phase 7: hardening and disaster recovery
 
-- [sops](https://github.com/getsops/sops) and [age](https://github.com/FiloSottile/age) —
-  read age's design rationale; it explains why it replaced GPG for this use.
+- sops and age are covered in the Phase 0 section above, since ticket 0.5 needs
+  them long before this phase. Revisit them here for key rotation and for what
+  recovery looks like when a host key is lost.
 - [How Tailscale works](https://tailscale.com/blog/how-tailscale-works) — the
   clearest explanation of NAT traversal and WireGuard key exchange you will find.
   Worth reading even though the setup is three lines of config.
