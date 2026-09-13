@@ -19,14 +19,21 @@
   # Secrets are decrypted at activation into /run/secrets, never into the Nix
   # store, which is world readable. See ADR 0004.
   #
-  # The default key source is the host's own SSH host key, converted to age.
-  # The nuc's key becomes a recipient in ticket 1.7 (#14), once the machine
-  # exists. No secret is declared here on purpose: a host that cannot decrypt a
-  # declared secret fails activation, which would have booby-trapped the first
-  # install in ticket 1.6 (#13). Real secrets arrive with the services that need
-  # them, by which point the host key is a recipient.
-  sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
-  sops.defaultSopsFile = ../../secrets/test.yaml;
+  # Nothing else is configured here on purpose.
+  #
+  #  - No secret is declared. A host that declares a secret it cannot decrypt
+  #    fails activation, which would have booby-trapped the first install in
+  #    ticket 1.6 (#13), before the host key becomes a recipient in 1.7 (#14).
+  #  - `sops.age.sshKeyPaths` is left alone. sops-nix already derives the age
+  #    key from the ed25519 entry in `services.openssh.hostKeys`, so hardcoding
+  #    /etc/ssh/... would silently break a /persist layout, which the btrfs
+  #    subvolumes in ticket 1.2 (#9) make likely.
+  #  - `sops.defaultSopsFile` is left unset. Pointing it at the bootstrap test
+  #    file would make this module depend on a throwaway artifact, and an
+  #    unset default gives a clearer error than a wrong one.
+  #
+  # Real secrets are declared beside the service that needs them, each naming
+  # its own `sopsFile`.
 
   # Boot policy. mkDefault because systemd-boot assumes UEFI, which is true of
   # the nuc but need not be of a future host; a non-UEFI machine can then set

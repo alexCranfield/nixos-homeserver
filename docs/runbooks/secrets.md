@@ -3,8 +3,8 @@
 Secrets are encrypted with [sops](https://github.com/getsops/sops) using
 [age](https://github.com/FiloSottile/age) keys, and decrypted by
 [sops-nix](https://github.com/Mic92/sops-nix) at system activation into
-`/run/secrets`. They never enter the Nix store, which is world readable. See
-ADR 0004.
+`/run/secrets`, a tmpfs. They never enter the Nix store, which is world
+readable. See ADR 0004.
 
 Ciphertext is safe to commit: sops encrypts *values* and leaves *keys* readable,
 so an encrypted file still diffs sensibly in a pull request.
@@ -13,17 +13,28 @@ so an encrypted file still diffs sensibly in a pull request.
 
 | Key | Location | Backed up | Can decrypt |
 |---|---|---|---|
-| Workstation | `~/.config/sops/age/keys.txt` | `nas:/tank/data/nasops/secrets-backup/` | everything |
-| VM test | `~/.config/sops/age/vm-test.txt` | no, throwaway | `secrets/test.yaml` only |
+| Workstation | sops default path | off-machine, see password manager | everything |
+| VM test | beside it, `vm-test.txt` | no, throwaway | `secrets/test.yaml` only |
 | `nuc` host | derived from its SSH host key | n/a, regenerated on reinstall | added in ticket 1.7 (#14) |
 
-The backup lives under `nasops`, deliberately **not** under `/tank/data/alex`,
-which Resilio Sync replicates to a phone and from there to Google Photos.
+Recovery details, including where the workstation key is backed up, live in the
+password manager rather than in this public repository. They are deliberately
+not encrypted in-repo: you need them precisely when the key is gone, so a
+sops-encrypted note would be unreadable at exactly the wrong moment.
 
-**If the workstation key is lost and the backup is gone**, every secret in this
-repository is unrecoverable. There is no reset. Restore from the NAS, or if that
-is also gone, generate a new key, re-create every secret by hand, and
-`sops updatekeys` them.
+The backup is restore-tested, not merely asserted. Verified 2026-09-13 by
+copying it into an isolated `HOME` and decrypting `secrets/test.yaml` with that
+copy alone, with a no-key control confirming the isolation held. Re-run that
+test whenever the key changes.
+
+**If the workstation key and its backup are both lost**, every secret here is
+unrecoverable. There is no reset. Generate a new key, re-create every secret by
+hand, and `sops updatekeys` them.
+
+**Rotation means issuing a new value, not re-encrypting the old one.** This
+repository is public, so every ciphertext ever pushed can be archived by anyone.
+Re-encrypting a compromised token leaves the old ciphertext in the wild against
+the day the key leaks.
 
 ## Adding a secret
 
@@ -31,11 +42,9 @@ is also gone, generate a new key, re-create every secret by hand, and
 nix shell nixpkgs#sops --command sops secrets/<name>.yaml
 ```
 
-That opens an editor on the decrypted content and re-encrypts on save. Recipients
-come from `.sops.yaml`, whose rules are evaluated in order with the first match
-winning, so the narrow `secrets/test.yaml` rule must stay above the general one.
+That opens an editor on the decrypted content and re-encrypts on save.
 
-Then declare it in the module that needs it:
+Then declare it in the module that needs the secret, naming its file explicitly:
 
 ```nix
 sops.secrets.<name> = {
@@ -44,46 +53,77 @@ sops.secrets.<name> = {
 };
 ```
 
-The path to read at runtime is `config.sops.secrets.<name>.path`, not a
-hardcoded `/run/secrets/<name>`.
+Read it at runtime through `config.sops.secrets.<name>.path`, never a hardcoded
+`/run/secrets/<name>`.
 
-**A host that declares a secret it cannot decrypt fails activation.** That is why
-`modules/base` wires sops-nix but declares no secrets: a secret there would have
-broken the first install in ticket 1.6 (#13), before the host key became a
-recipient in 1.7 (#14). Declare secrets alongside the service that needs them.
+**A host that declares a secret it cannot decrypt fails activation.** That is
+why `modules/base` imports sops-nix but declares nothing: a secret there would
+have broken the first install in ticket 1.6 (#13), before the host key became a
+recipient in 1.7 (#14).
 
-## After changing `.sops.yaml`
+`secrets/test.yaml` is a bootstrap artifact whose plaintext is published in this
+runbook. Never put anything real in it.
 
-Adding a recipient does not re-encrypt anything already on disk:
+## Recipients and rule order
+
+`.sops.yaml` decides which keys can open which files. **Rules are first-match,
+and they do not merge.** `secrets/test.yaml` is matched by the narrow rule and
+never reaches the general one, so a key added only to the general rule cannot
+open it. Ticket 1.7 (#14) must add the `nuc` host key to *both* rules, or its
+own acceptance criterion — reading `/run/secrets/test` on the nuc — will fail.
+
+The general pattern is `^secrets/[^/]+\.yaml$`, which deliberately excludes
+`.yml`, subdirectories, and the `stacks/<name>/.env.sops` shape that ticket 3.2
+(#25) plans. That is fail-closed: sops refuses with `no matching creation rules
+found` rather than silently choosing a weaker recipient set. Extend the rules
+when those paths arrive.
+
+After changing recipients, existing files are **not** re-encrypted:
 
 ```bash
 nix shell nixpkgs#sops --command sops updatekeys secrets/<file>.yaml
 ```
 
-## Proving decryption actually works
+### Checking that a key cannot decrypt something
 
-A VM generates fresh SSH host keys each boot, so it can never be a recipient of
-anything encrypted earlier. `modules/dev/vm-secrets.nix` gives it the throwaway
-key through a shared directory instead, and prints the decrypted value to the
-serial console before powering off.
+`SOPS_AGE_KEY_FILE` *adds* a key; it does not replace the default location. So
+this gives a false pass, because sops also finds the workstation key:
 
 ```bash
-mkdir -p /tmp/nixos-vm-age
-cp ~/.config/sops/age/vm-test.txt /tmp/nixos-vm-age/
-chmod 644 /tmp/nixos-vm-age/vm-test.txt
+SOPS_AGE_KEY_FILE=~/.config/sops/age/vm-test.txt sops -d secrets/other.yaml   # wrong
+```
+
+Isolate `HOME` and `XDG_CONFIG_HOME` to test scoping honestly.
+
+## Proving decryption actually works
+
+A VM regenerates its SSH host keys each boot, so it can never be a recipient of
+anything encrypted earlier. `modules/dev/vm-secrets.nix` hands it the throwaway
+key through a shared directory instead, prints the result, and powers off.
+
+```bash
+KEYDIR="$XDG_RUNTIME_DIR/nixos-vm-age"          # mode 0700, per user, not /tmp
+mkdir -p "$KEYDIR"
+cp ~/.config/sops/age/vm-test.txt "$KEYDIR"/     # keep mode 0600; the 9p share
+                                                 # maps the guest reader to root
 
 VM=$(nix build --no-link --print-out-paths \
   '.#nixosConfigurations.nuc-vmtest.config.system.build.vm')
-cd "$(mktemp -d)" && "$(ls $VM/bin/run-*-vm)" -nographic
+cd "$(mktemp -d)"
+"$(ls $VM/bin/run-*-vm)" -nographic | tee vm.log
+
+rm -rf "$KEYDIR"                                 # do not leave the key lying about
 ```
 
-Expected on the console:
+**Verify by grep, not by eye.** The console interleaves boot messages, so the
+value will not sit neatly between markers:
 
-```
-SOPS-PROOF-BEGIN
-sops-nix bootstrap check, not a real secret
-SOPS-PROOF-END
+```bash
+grep -q 'SOPS-PROOF-OK: sops-nix bootstrap check' vm.log && echo PASS || echo FAIL
 ```
 
-The VM writes a `nuc.qcow2` disk image into the working directory, so run it
-somewhere disposable rather than in the repository.
+A failed decrypt prints `SOPS-PROOF-FAILED` and the VM still powers off with
+exit status 0, so anything automating this — such as `just vm-secrets` in ticket
+0.7 (#16) — must grep for the `OK` marker rather than trust the exit code.
+
+The VM writes `nuc.qcow2` into the working directory, hence the `mktemp -d`.
