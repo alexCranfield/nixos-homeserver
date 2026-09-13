@@ -23,6 +23,7 @@ flake.lock                         pinned revisions; commit every change
 hosts/nuc/default.nix              the host: imports hardware + base
 hosts/nuc/hardware-configuration.nix   PLACEHOLDER until the machine exists
 modules/base/default.nix           config applied to every host
+scripts/tickets.py                 ticket definitions; file_issues.py files them
 ```
 
 Build the whole system without a machine:
