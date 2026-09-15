@@ -53,6 +53,17 @@
         modules = [ ./hosts/nuc ];
       };
 
+      # The nuc configuration plus a throwaway key, so a local VM can actually
+      # decrypt the test secret. Build and run it with `just vm-secrets` once
+      # ticket 0.7 lands; until then see docs/runbooks/secrets.md.
+      nixosConfigurations.nuc-vmtest = nixpkgs.lib.nixosSystem {
+        specialArgs = { inherit inputs; };
+        modules = [
+          ./hosts/nuc
+          ./modules/dev/vm-secrets.nix
+        ];
+      };
+
       # `nix fmt`. RFC 166 style, so the code matches what is read everywhere
       # else. nixfmt-tree rather than bare nixfmt: `nix fmt` invokes the
       # formatter with no arguments, which bare nixfmt reads as empty stdin and
