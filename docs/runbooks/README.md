@@ -5,6 +5,7 @@ Operational procedures, written as tickets are completed.
 ## Written
 
 - [workstation.md](workstation.md) — Nix and direnv on the WSL workstation (ticket 0.1)
+- [secrets.md](secrets.md) — sops, age, key locations, adding a secret (ticket 0.5)
 
 ## Planned
 

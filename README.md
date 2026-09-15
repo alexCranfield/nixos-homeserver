@@ -23,6 +23,9 @@ flake.lock                         pinned revisions; commit every change
 hosts/nuc/default.nix              the host: imports hardware + base
 hosts/nuc/hardware-configuration.nix   PLACEHOLDER until the machine exists
 modules/base/default.nix           config applied to every host
+modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM
+.sops.yaml                         which age keys can decrypt which files
+secrets/                           sops-encrypted secrets; ciphertext only
 scripts/tickets.py                 ticket definitions; file_issues.py files them
 ```
 
