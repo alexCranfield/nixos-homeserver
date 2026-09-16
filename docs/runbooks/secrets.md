@@ -105,6 +105,10 @@ Isolate `HOME` and `XDG_CONFIG_HOME` to test scoping honestly.
 
 ## Proving decryption actually works
 
+The short version is `just vm-secrets`, which stages the key, boots the VM,
+greps for the marker, cleans up, and exits non-zero on failure. The manual
+procedure below is what it does, for when you need to watch it or change a step.
+
 A VM (virtual machine) regenerates its SSH host keys each boot, so it can never be a recipient of
 anything encrypted earlier. `modules/dev/vm-secrets.nix` hands it the throwaway
 key through a shared directory instead, prints the result, and powers off.

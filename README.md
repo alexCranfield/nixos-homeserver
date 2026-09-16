@@ -37,6 +37,36 @@ nix build .#nixosConfigurations.nuc.config.system.build.toplevel   # the OS as o
 nix fmt                                                            # format the tree
 ```
 
+## Tasks
+
+`direnv` loads the flake's devShell on `cd`, putting `just`, `sops`, `age`,
+`ssh-to-age`, `nixos-anywhere` and `nixos-rebuild` on `PATH` at versions pinned
+by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
+
+| Target | Does |
+|---|---|
+| `just` | list the targets |
+| `just fmt` | format every file in place |
+| `just check` | everything CI runs: `nix flake check`, build the closure, check formatting |
+| `just build` | build the nuc closure, print its store path |
+| `just vm` | boot the nuc config in a local VM; quit with ctrl-a then x |
+| `just vm-secrets` | prove sops-nix decrypts in a VM; exits non-zero on failure |
+| `just deploy` | emergency manual deploy; normally comin pulls `main` itself |
+| `just secrets-edit <file>` | edit an encrypted secret, re-encrypting on save |
+| `just secrets-show <file>` | print a secret without opening an editor |
+| `just secrets-rekey <file>` | re-encrypt after changing recipients in `.sops.yaml` |
+
+`just check` is the single source of truth for what CI runs, so the workflow in
+ticket 0.4 calls it rather than restating the commands. `just vm-secrets` exits
+non-zero when decryption fails, because the VM powers off with status 0 either
+way and only the console distinguishes them.
+
+Two habits worth keeping. Use `secrets-show` rather than `secrets-edit` when you
+only want to look: saving from an editor rewrites the file with a fresh MAC and
+timestamp, producing a diff that claims a secret changed when it did not. And
+`secrets-rekey` is required after editing `.sops.yaml`; adding a recipient there
+does not re-encrypt anything on its own.
+
 ## Documents
 
 - [docs/PLAN.md](docs/PLAN.md): the phased build plan. Each ticket is a GitHub Issue under a phase milestone.
