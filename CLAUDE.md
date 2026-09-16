@@ -65,10 +65,12 @@ arrives as a pull request, squash-merged.
    review surface is "did this meet its criteria", not "does this look fine".
 3. **Verify before requesting review.** Run the acceptance criteria and paste the
    real output into the pull request. Evidence in the description, not claims.
-4. **Alex merges.** Never self-merge. The point of the gate is that a second
-   pair of eyes sees the change before it lands, which direct pushes to `main`
-   did not give us. If a review comment is right, say so and fix it; if it is
-   wrong, say why rather than complying.
+4. **Alex reviews and approves; then either of you may merge.** Nothing lands
+   without his review — that is the whole point of the gate, and direct pushes
+   to `main` did not give us it. Merging afterwards is mechanical, so once he
+   has approved, say so and merge. Do not merge anything he has not approved,
+   and never approve on his behalf. If a review comment is right, say so and
+   fix it; if it is wrong, say why rather than complying.
 5. **Close the issue from the merge**, with the verification comment the
    definition of done requires.
 
