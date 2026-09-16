@@ -22,8 +22,10 @@
   # Nothing else is configured here on purpose.
   #
   #  - No secret is declared. A host that declares a secret it cannot decrypt
-  #    fails activation, which would have booby-trapped the first install in
+  #    fails the rebuild, which would have booby-trapped the first install in
   #    ticket 1.6 (#13), before the host key becomes a recipient in 1.7 (#14).
+  #    Note the asymmetry: at *boot* a missing secret is silent, and the unit
+  #    that needs it starts without it. Services must check, not assume.
   #  - `sops.age.sshKeyPaths` is left alone. sops-nix already derives the age
   #    key from the ed25519 entry in `services.openssh.hostKeys`, so hardcoding
   #    /etc/ssh/... would silently break a /persist layout, which the btrfs

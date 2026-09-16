@@ -30,6 +30,10 @@ creation_rules:
   # It must be added to BOTH rules, not just this one. Rules are first-match,
   # so secrets/test.yaml never reaches here, and #14's acceptance criterion is
   # reading /run/secrets/test on the nuc.
+  #
+  # Recipients alone are not enough. #14 must also declare `sops.secrets.test`
+  # on the host, in hosts/nuc/. Nothing declares it today, by design, so adding
+  # the key without declaring the secret leaves /run/secrets/test absent.
   - path_regex: ^secrets/[^/]+\.yaml$
     key_groups:
       - age:

@@ -1,15 +1,16 @@
 # Test-only module. Proves sops-nix actually decrypts, without a real machine.
 #
-# A VM built by `system.build.vm` regenerates its SSH host keys on every boot,
-# so it can never be a recipient of anything encrypted beforehand. This hands it
-# a throwaway age key through a shared directory instead, so no private key
-# enters the repository or the Nix store. `.sops.yaml` scopes that key to
-# secrets/test.yaml alone, so it cannot decrypt a real secret even if it leaks.
+# A VM (virtual machine) built by `system.build.vm` regenerates its SSH host
+# keys on every boot, so it can never be a recipient of anything encrypted
+# beforehand. This hands it a throwaway age key through a shared directory
+# instead, so no private key enters the repository or the Nix store.
+# `.sops.yaml` scopes that key to secrets/test.yaml alone, so it cannot decrypt
+# a real secret even if it leaks.
 #
-# Everything that could affect a running machine lives under
-# `virtualisation.vmVariant`, so importing this module into a real host cannot
-# add the power-off service to its closure.
-{ config, lib, ... }:
+# Everything lives under `virtualisation.vmVariant`, so importing this module
+# into a real host changes nothing about that host: its `system.build.toplevel`
+# declares no secret and carries no power-off unit.
+{ lib, ... }:
 {
   options.vmSecrets.keyDir = lib.mkOption {
     type = lib.types.str;
@@ -17,21 +18,22 @@
     description = ''
       Directory on the host holding the throwaway age key, shared into the VM.
       Defaults to the per-user runtime directory, which is mode 0700 and cannot
-      be pre-created by another local user, unlike a path under /tmp.
+      be pre-created by another local user, unlike a path under /tmp. The
+      runbook must name the same path.
     '';
   };
 
-  config = {
-    # The VM has no usable host key, so read the age key from a file instead.
-    sops.age.sshKeyPaths = [ ];
-    sops.age.keyFile = "/run/vm-age/vm-test.txt";
-    sops.age.generateKey = false;
+  # A function, so `config` below is the VM's own merged configuration rather
+  # than the outer host's. The outer host never evaluates any of this.
+  config.virtualisation.vmVariant =
+    { config, ... }:
+    {
+      # The VM has no usable host key, so read the age key from a file.
+      sops.age.sshKeyPaths = [ ];
+      sops.age.keyFile = "/run/vm-age/vm-test.txt";
+      sops.secrets.test.sopsFile = ../../secrets/test.yaml;
 
-    sops.secrets.test.sopsFile = ../../secrets/test.yaml;
-
-    virtualisation.vmVariant = {
-      # `sharedDirectories` is declared by the QEMU module, which exists only in
-      # the VM build. `vmVariant` is the supported way in.
+      # `sharedDirectories` is declared by the QEMU module, present only here.
       virtualisation.sharedDirectories.vmAgeKey = {
         source = config.vmSecrets.keyDir;
         target = "/run/vm-age";
@@ -41,9 +43,10 @@
       systemd.services.sops-proof = {
         description = "Report whether the test secret decrypted, then power off";
         wantedBy = [ "multi-user.target" ];
-        # No `after` on sops-install-secrets.service: that unit only exists when
+        # No `after` on sops-install-secrets.service: that unit exists only when
         # systemd.sysusers or services.userborn is enabled. Here sops-nix uses
         # the activation-script path, which completes before any unit starts.
+        # If a later ticket enables either, add the ordering back.
         serviceConfig = {
           Type = "oneshot";
           # Otherwise the result goes to the journal and never reaches the
@@ -61,5 +64,4 @@
         '';
       };
     };
-  };
 }

@@ -56,10 +56,15 @@ sops.secrets.<name> = {
 Read it at runtime through `config.sops.secrets.<name>.path`, never a hardcoded
 `/run/secrets/<name>`.
 
-**A host that declares a secret it cannot decrypt fails activation.** That is
+**A host that declares a secret it cannot decrypt fails the rebuild.** That is
 why `modules/base` imports sops-nix but declares nothing: a secret there would
 have broken the first install in ticket 1.6 (#13), before the host key became a
 recipient in 1.7 (#14).
+
+The failure is asymmetric and worth knowing before you rely on it. A rebuild
+stops. A *boot* does not: the activation script runs, the secret is simply
+absent, and the unit that needs it starts anyway. Services must check for their
+secret rather than assume it arrived.
 
 `secrets/test.yaml` is a bootstrap artifact whose plaintext is published in this
 runbook. Never put anything real in it.
@@ -70,7 +75,10 @@ runbook. Never put anything real in it.
 and they do not merge.** `secrets/test.yaml` is matched by the narrow rule and
 never reaches the general one, so a key added only to the general rule cannot
 open it. Ticket 1.7 (#14) must add the `nuc` host key to *both* rules, or its
-own acceptance criterion — reading `/run/secrets/test` on the nuc — will fail.
+own acceptance criterion, reading `/run/secrets/test` on the nuc, will fail.
+Recipients alone are not sufficient either: #14 must also declare
+`sops.secrets.test` on the host in `hosts/nuc/`, since nothing declares it
+today.
 
 The general pattern is `^secrets/[^/]+\.yaml$`, which deliberately excludes
 `.yml`, subdirectories, and the `stacks/<name>/.env.sops` shape that ticket 3.2
@@ -97,12 +105,12 @@ Isolate `HOME` and `XDG_CONFIG_HOME` to test scoping honestly.
 
 ## Proving decryption actually works
 
-A VM regenerates its SSH host keys each boot, so it can never be a recipient of
+A VM (virtual machine) regenerates its SSH host keys each boot, so it can never be a recipient of
 anything encrypted earlier. `modules/dev/vm-secrets.nix` hands it the throwaway
 key through a shared directory instead, prints the result, and powers off.
 
 ```bash
-KEYDIR="$XDG_RUNTIME_DIR/nixos-vm-age"          # mode 0700, per user, not /tmp
+KEYDIR=/run/user/$(id -u)/nixos-vm-age          # must match vmSecrets.keyDir
 mkdir -p "$KEYDIR"
 cp ~/.config/sops/age/vm-test.txt "$KEYDIR"/     # keep mode 0600; the 9p share
                                                  # maps the guest reader to root
@@ -110,7 +118,7 @@ cp ~/.config/sops/age/vm-test.txt "$KEYDIR"/     # keep mode 0600; the 9p share
 VM=$(nix build --no-link --print-out-paths \
   '.#nixosConfigurations.nuc-vmtest.config.system.build.vm')
 cd "$(mktemp -d)"
-"$(ls $VM/bin/run-*-vm)" -nographic | tee vm.log
+timeout 300 "$(ls $VM/bin/run-*-vm)" -nographic | tee vm.log
 
 rm -rf "$KEYDIR"                                 # do not leave the key lying about
 ```
@@ -123,7 +131,7 @@ grep -q 'SOPS-PROOF-OK: sops-nix bootstrap check' vm.log && echo PASS || echo FA
 ```
 
 A failed decrypt prints `SOPS-PROOF-FAILED` and the VM still powers off with
-exit status 0, so anything automating this — such as `just vm-secrets` in ticket
-0.7 (#16) — must grep for the `OK` marker rather than trust the exit code.
+exit status 0, so anything automating this, such as `just vm-secrets` in ticket
+0.7 (#16), must grep for the `OK` marker rather than trust the exit code.
 
 The VM writes `nuc.qcow2` into the working directory, hence the `mktemp -d`.
