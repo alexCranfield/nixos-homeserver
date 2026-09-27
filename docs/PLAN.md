@@ -76,8 +76,10 @@ Ticket bodies with tasks and acceptance criteria are in `scripts/tickets.py`; `s
 - **0.5** Secrets bootstrap: generate `age` keys (workstation + placeholder host key), `.sops.yaml`, `sops-nix` input, one test secret decrypted in a NixOS VM build. AC: `sops -d secrets/test.yaml` works; a public-repo secret scan shows only ciphertext.
 - **0.6** ADRs (Architecture Decision Records): review 0001-0005 and 0007, which already exist, then write `0006-docker-vs-podman.md` and an index. AC: each ADR states context, decision, consequences; index lists all of them.
 - **0.7** `just`/`nix run` task targets: `fmt`, `check`, `build`, `deploy` (manual `nixos-rebuild --target-host` for emergencies), `vm` (build a QEMU VM of the config). AC: `just vm` boots the config locally.
+- **0.8** (#56, added 2026-09-15) Passphrase-protect the workstation age key. Depends on 0.7, since the dev shell decides how `sops` is invoked. Must land before 1.5 adds the first real secret. AC: decryption needs the passphrase, and the restore test passes with the protected copy.
 
 ### Phase 1: Bare-metal install and base OS
+- **1.0** (#57, added 2026-09-15) Decide disk encryption and record it as ADR 0009. **Blocks 1.2**, since retrofitting LUKS means reinstalling. The host's age key is its SSH host key, so on an unencrypted disk physical possession yields every server secret. Encryption conflicts with unattended reboot; a TPM-sealed key is the only option giving both, and is only meaningful with Secure Boot (7.4). Declining is a valid outcome if written down. AC: ADR 0009 states a decision, and 1.2's layout reflects it.
 - **1.1** Hardware prep: seat RAM/NVMe, BIOS: restore power on AC loss, boot order USB, disable Secure Boot (lanzaboote is a stretch), enable VT-x/VT-d. Record BIOS version. AC: checklist in `docs/runbooks/hardware.md`.
 - **1.2** `disko.nix`: GPT (GUID Partition Table), 1 GB ESP (EFI System Partition), btrfs root with subvolumes `@root @nix @home @srv @docker @snapshots`, 16 GB swapfile (or zram). Leave second M.2 slot documented for future data disk. AC: `nix build .#nixosConfigurations.nuc.config.system.build.diskoScript` succeeds.
 - **1.3** Base module (shared policy only; hostname and stateVersion live in `hosts/nuc/`): user `ops` (wheel, ssh key only, no password sudo prompt kept), `sshd` keys-only + no root login, `nix.settings` (flakes, trusted users, auto-optimise), weekly GC (garbage collection), `linuxPackages_latest`, `hardware.cpu.intel.updateMicrocode`, timezone/locale. AC: VM boots, SSH login as `ops` works.
@@ -137,6 +139,20 @@ Ticket bodies with tasks and acceptance criteria are in `scripts/tickets.py`; `s
 - **8.2** `services.k3s` single node alongside Docker (or replace Docker with containerd), Flux or Argo pointed at the same repo.
 - **8.3** Migrate one low-risk stack (observability) to Helm; compare ops overhead.
 - **8.4** Decide: migrate games/LLM or stop. AC: decision recorded.
+
+## Open decisions
+
+Decisions deliberately not yet made, each with a ticket and a deadline.
+
+| Decision | Ticket | Must precede |
+|---|---|---|
+| Docker or Podman (ADR 0006) | 0.6 (#6) | 3.1, the first container |
+| Workstation key passphrase, and how the dev shell handles the prompt | 0.8 (#56) | 1.5, the first real secret |
+| Disk encryption on the nuc (ADR 0009) | 1.0 (#57) | 1.2, partitioning |
+| K3s or stay on Compose (ADR 0008) | 8.1 (#49) | anything in Phase 8 |
+
+ADR numbers are reserved by these tickets, which is why the sequence has gaps:
+0006, 0008, 0009 and 0010 (security posture, 7.2) are claimed but unwritten.
 
 ## Assumptions to flag
 

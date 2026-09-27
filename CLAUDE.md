@@ -9,7 +9,11 @@ Records) in `docs/adr/` for why each major choice was made.
 
 Work is tracked as GitHub Issues, one per plan ticket, grouped by phase
 milestone. Issue numbers map to ticket ids in order: 0.1 is #1, 8.4 is #52.
-The issues are the source of truth for status, not `docs/PLAN.md`.
+Numbers from #53 on are shared between pull requests and later issues; the
+tickets added after the original import are 0.8 (#56) and 1.0 (#57), neither of
+which is in `scripts/tickets.py`, so re-running the filing script cannot
+duplicate them. The issues are the source of truth for status, not
+`docs/PLAN.md`.
 
 ## Definition of done for an issue
 
@@ -121,6 +125,20 @@ like it is missing:
 ```
 
 See `docs/runbooks/workstation.md` for the rest of the WSL caveats.
+
+**Pushing to main outside a pull request.** Only with Alex's explicit
+instruction for that specific push, as with the history rewrites. The mechanism
+is to disable ruleset `main`, push, and re-enable it, then confirm it reads
+`active`. Look the ruleset up each time rather than caching its id in `/tmp`,
+which is cleared and once left protection off for a failed push. On 2026-09-15
+this gate was bypassed without authorisation to land an ADR renumbering
+(`3d46145`); that should have been a pull request.
+
+**Verification that can fail.** A check that cannot fail proves nothing. Every
+acceptance criterion gets a negative control where one is possible: break the
+input and confirm the check reports failure. Never redirect the stderr of a
+command whose result you are about to test, and treat an empty variable as an
+error, not as success. Each of these produced a false pass at least once here.
 
 **Before touching the server.** Build it locally first. `nix flake check` and a
 VM build catch most mistakes before comin deploys them to a machine running
