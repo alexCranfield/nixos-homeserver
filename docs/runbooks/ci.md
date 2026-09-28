@@ -34,18 +34,24 @@ If it passes locally but fails in CI, the difference is almost always one of:
 - **An uncommitted change.** Locally, a flake sees every file git tracks,
   including edits not yet committed (Nix warns that the tree is dirty). CI sees
   only what was pushed. `git status` first.
-- **Running outside the dev shell.** Without direnv, `just check` uses the
-  workstation's Determinate Nix instead of the server's version. Use
-  `nix develop -c just check` to match CI exactly.
+- **Running outside the dev shell.** With a globally installed `just`, or a
+  stale direnv cache, `nix` is the workstation's Determinate Nix rather than the
+  server's version. `nix develop -c just check` matches CI exactly.
 - **Formatting.** `just fmt`, commit, push.
 
 ## Decisions and why
 
-**The checks run with the server's Nix.** The dev shell includes
-`nixosConfigurations.nuc.config.nix.package`, so `nix` inside `nix develop` is
+**The checks run with the server's Nix.** The dev shell includes `pkgs.nix`,
+which is what NixOS defaults `nix.package` to, so `nix` inside `nix develop` is
 the exact version comin will evaluate with on the server (2.34.8 as of
-2026-09-27). The CI log's "Nix versions" step prints both. See the amendment to
-ADR (Architecture Decision Record) 0007.
+2026-09-27). The flake check `devshell-nix-matches-server` fails if a host ever
+overrides `nix.package`, so the two cannot drift silently. The CI log's "Enter
+dev shell" step prints both versions. See the amendment to ADR (Architecture
+Decision Record) 0007.
+
+That step is also the first to evaluate `flake.nix`, so a syntax error in
+`flake.nix` itself fails there. Errors in `hosts/` or `modules/` fail inside
+`just check`, with the `nix flake check` log.
 
 **Upstream Nix via `cachix/install-nix-action`, not Determinate's installer.**
 The installed Nix only starts the dev shell and builds. The ticket named
@@ -77,8 +83,13 @@ can open a PR, and the job never needs to write. The workflow uses
 `pull_request`, never `pull_request_target`, which would run fork code with the
 repository's secrets.
 
-**Newer pushes cancel older runs** of the same branch (`concurrency`), so a
-quick fix-up does not queue behind a doomed run.
+**Newer pushes cancel older runs** of the same pull request (`concurrency`), so
+a quick fix-up does not queue behind a doomed run. Runs on `main` are never
+cancelled, so every commit there keeps a result.
+
+**No token left behind.** `actions/checkout` runs with
+`persist-credentials: false`, so the job token is not written into `.git/config`
+where the pull request's code could read it.
 
 ## Not covered
 

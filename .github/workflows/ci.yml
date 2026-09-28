@@ -1,5 +1,6 @@
-# Validates every pull request and every push to main on GitHub-hosted runners,
-# so main is always something comin can deploy (ADR 0003). The steps are
+# CI (continuous integration). Validates every pull request and every push to
+# main on GitHub-hosted runners, so main is always something comin can deploy
+# (ADR, Architecture Decision Record, 0003 in docs/adr/). The steps are
 # `just check`, the same target run locally, so CI and the workstation cannot
 # drift apart.
 name: CI
@@ -16,9 +17,10 @@ permissions:
   contents: read
 
 # A new push to the same pull request makes the older run pointless.
+# Only on pull requests: every commit on main keeps its result.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -28,6 +30,9 @@ jobs:
       # Actions are pinned by commit, not tag: a tag can be moved to different
       # code after review, a commit hash cannot. The comment records the tag.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Do not leave the token in .git/config while pull request code runs.
+          persist-credentials: false
 
       # Upstream Nix, the same distribution the server runs, rather than
       # Determinate Nix. ADR 0007: CI checks what the server will evaluate.
@@ -35,7 +40,9 @@ jobs:
 
       # The installer's Nix only enters the dev shell. The checks run with the
       # dev shell's Nix, which is the server's version; print both as evidence.
-      - name: Nix versions
+      # Entering the shell evaluates flake.nix, so a syntax error there fails
+      # here, before `just check`.
+      - name: Enter dev shell (evaluates flake.nix)
         run: |
           echo "installer: $(nix --version)"
           echo "dev shell: $(nix develop --command nix --version)"

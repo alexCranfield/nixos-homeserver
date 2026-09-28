@@ -49,7 +49,7 @@ by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
 |---|---|
 | `just` | list the targets |
 | `just fmt` | format every file in place |
-| `just check` | everything CI runs: `nix flake check`, build the closure, check formatting |
+| `just check` | everything CI (continuous integration) runs: `nix flake check`, build the closure, check formatting |
 | `just build` | build the nuc closure, print its store path |
 | `just vm` | boot the nuc config in a local VM; quit with ctrl-a then x |
 | `just vm-secrets` | prove sops-nix decrypts in a VM; exits non-zero on failure |

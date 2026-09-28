@@ -56,12 +56,13 @@ No. Match inputs, not versions.
 
 ## Amendment, 2026-09-27 (ticket 0.4, #4)
 
-The flake's dev shell now carries the server's own Nix, taken from
-`nixosConfigurations.nuc.config.nix.package` (2.34.8 today). It was already there
-by accident, as a dependency of `nixos-rebuild`; ticket 0.4 made it explicit.
-`just check` runs inside the dev shell locally and in CI, so both evaluate the
-flake with exactly the Nix comin will use, closing the blind spot described
-above. The installed Nix, Determinate on the workstation and upstream in CI, only
+The flake's dev shell now carries the server's own Nix: `pkgs.nix`, which NixOS
+uses as the default `nix.package` (2.34.8 today). It was already there by
+accident, as a dependency of `nixos-rebuild`; ticket 0.4 made it explicit, and a
+flake check (`devshell-nix-matches-server`) fails if the host ever stops using
+the same package. `just check` runs inside the dev shell locally and in CI, so
+both evaluate the flake with exactly the Nix comin will use, closing the
+*evaluation* blind spot described above. The installed Nix, Determinate on the workstation and upstream in CI, only
 starts the dev shell and runs the daemon that builds.
 
 - The Decision stands: the workstation keeps Determinate Nix, the server keeps
