@@ -98,3 +98,78 @@ notification fires. A deploy does not land; the machine does not break.
 Recorded as ADR (Architecture Decision Record) 0007.
 
 </details>
+
+### How does a flake relate to `configuration.nix`?
+
+*2026-09-13*
+
+> I'm lost, I'm not seeing how this ties back to a configuartion.nix
+
+<details>
+<summary>Answer</summary>
+
+`configuration.nix` was never special. It is an ordinary module. The only thing
+distinctive about it was that `nixos-rebuild` looked for it at
+`/etc/nixos/configuration.nix` by convention, because something had to guess
+where to start.
+
+A flake removes the guess by naming the entry point explicitly:
+
+```nix
+nixosConfigurations.nuc = nixpkgs.lib.nixosSystem {
+  modules = [ ./hosts/nuc ];
+};
+```
+
+`./hosts/nuc` resolves to `hosts/nuc/default.nix`, because Nix treats
+`default.nix` in a directory the way a web server treats `index.html`.
+
+| Classic NixOS | This repo |
+|---|---|
+| `/etc/nixos/configuration.nix` | `hosts/nuc/default.nix` |
+| `/etc/nixos/hardware-configuration.nix` | `hosts/nuc/hardware-configuration.nix` |
+| found by convention | listed in `flake.nix` |
+
+Once the entry point is named explicitly the filename carries no meaning, so it
+is named after the host instead. That is what lets one repo hold several hosts.
+
+When documentation says "add this to your `configuration.nix`", it means
+`hosts/nuc/default.nix` for anything specific to that machine, or
+`modules/base/default.nix` for anything every host should get. Nothing else
+changes, and that translation is all you need to read non-flake documentation.
+
+</details>
+
+### Why can `nixos-rebuild switch` not be used to test a configuration here?
+
+*2026-09-13*
+
+> I'm trying to test this but nixos-rebuild switch is not callable
+
+<details>
+<summary>Answer</summary>
+
+Two reasons, and the second matters more.
+
+It is not installed: `nixos-rebuild` is a package in nixpkgs, not part of Nix.
+
+And it would not help. The workstation runs Ubuntu under WSL (Windows Subsystem
+for Linux), and `/etc/NIXOS` is absent. `switch` *activates* a configuration on
+a running NixOS machine, and there is none here to activate.
+
+The deeper point is that `switch` is the wrong tool even on the server. A
+question about how modules combine is a question about *evaluation*. Conflicts
+between modules surface while Nix works out what the configuration is, long
+before anything is built, and longer still before anything is activated.
+Reaching for `switch` to answer it is like running a program to find out whether
+it compiles. The right instruments are `nix eval` on an option, or `nix build`
+on `config.system.build.toplevel`.
+
+`nixos-rebuild build-vm` does work on Ubuntu, because it produces an image rather
+than touching the running system. That is what `just vm` wraps.
+
+Note the command itself has changed since older tutorials were written: nixpkgs
+26.05 ships the rewrite, `nixos-rebuild-ng`, which replaced `--use-remote-sudo`
+with `--elevate sudo`.
+
+</details>
