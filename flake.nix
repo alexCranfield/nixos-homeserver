@@ -64,6 +64,21 @@
         ];
       };
 
+      # Toolchain for working on this repo. direnv loads it on `cd` via .envrc,
+      # so `just` and `sops` are on PATH without `nix shell` each time. Pinned
+      # by flake.lock like everything else, per ADR 0007.
+      devShells.${system}.default = pkgs.mkShell {
+        packages = with pkgs; [
+          just # task runner; see ./justfile
+          sops # edit and decrypt secrets/
+          age # generate and inspect age keys
+          ssh-to-age # host SSH key -> age recipient, needed by ticket 1.7 (#14)
+          nixfmt-tree # the formatter, also reachable as `nix fmt`
+          nixos-anywhere # bare-metal install, ticket 1.6 (#13)
+          nixos-rebuild # manual deploy escape hatch, `just deploy`
+        ];
+      };
+
       # `nix fmt`. RFC 166 style, so the code matches what is read everywhere
       # else. nixfmt-tree rather than bare nixfmt: `nix fmt` invokes the
       # formatter with no arguments, which bare nixfmt reads as empty stdin and

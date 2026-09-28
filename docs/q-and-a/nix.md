@@ -173,3 +173,91 @@ Note the command itself has changed since older tutorials were written: nixpkgs
 with `--elevate sudo`.
 
 </details>
+
+### Is `just vm` a real virtual machine, and is Nix or Docker running it?
+
+*2026-09-27*
+
+> In PR 59, is the .vm a virtual machine? Is nix backing that? Or are we using docker?
+
+<details>
+<summary>Answer</summary>
+
+It is a real virtual machine, run by QEMU (Quick Emulator), with KVM (Kernel-based
+Virtual Machine) acceleration when `/dev/kvm` exists, which it does under WSL2.
+Docker is not involved and is not installed on the workstation.
+
+Nix builds the VM; QEMU runs it. `config.system.build.vm` is one more output of
+the same NixOS configuration, next to `toplevel`. It is a store path containing a
+single shell script, `bin/run-nuc-vm`, whose last line `exec`s
+`qemu-system-x86_64` with the kernel and system closure built from the flake.
+Read it yourself:
+
+```sh
+r=$(nix build --no-link --print-out-paths '.#nixosConfigurations.nuc.config.system.build.vm')
+less "$r"/bin/run-nuc-vm
+```
+
+`.vm/` is only the working directory the script runs in. The script creates a
+disk image, `nuc.qcow2`, in whatever directory it starts from, so `just vm`
+changes into `.vm/` first and `.gitignore` keeps it out of the tree. That disk
+holds only mutable state such as `/var` and home directories. The operating
+system itself is not on it: the guest mounts the host's `/nix/store` read-only
+over 9p (`-virtfs ... mount_tag=nix-store`). Deleting `.vm/` gives a fresh
+machine next boot, but nothing needs rebuilding.
+
+How this differs from a container: a container shares the host's kernel and
+isolates processes. This VM boots its own NixOS kernel, runs systemd as PID 1 and
+activates the configuration exactly as the NUC will, which is why it can test
+boot-time behaviour such as sops-nix decrypting at activation (`just vm-secrets`).
+It does not emulate the NUC's hardware: 1 CPU, 1 GiB RAM, virtio devices, no Arc
+GPU, and the placeholder `hardware-configuration.nix` is overridden by the VM
+module. Anything hardware-specific waits for the real machine.
+
+</details>
+
+### Is a VM more faithful than a container for mimicking a system?
+
+*2026-09-27*
+
+> Is QEMU more faithful/powerful than docker for mimicking a given system? I
+> didn't know that a docker container still shares the host's kernel
+
+<details>
+<summary>Answer</summary>
+
+More faithful for the *operating system*, yes. "More powerful" is the wrong frame:
+the two isolate different things, and each costs what it buys.
+
+A container is an ordinary process on the host kernel. The kernel gives it
+namespaces, a private view of processes, mounts, network and hostname, and
+cgroups (control groups), limits on CPU and memory. Nothing boots. `uname -r`
+inside any container prints the host's kernel version, and an Alpine image on
+an Ubuntu host is Alpine's userland on Ubuntu's kernel. Docker Desktop on
+Windows or macOS works only because it quietly runs a Linux VM (virtual
+machine) to supply that kernel.
+
+A VM gets virtual hardware and boots its own kernel on it. On this workstation:
+
+| | Kernel |
+|---|---|
+| WSL2 host, `uname -r` | `5.15.167.4-microsoft-standard-WSL2` |
+| `nuc` config, `boot.kernelPackages.kernel.version` | `6.18.49` |
+
+`just vm` runs the second kernel, not the first. (WSL2 is itself a Hyper-V VM,
+hence the Microsoft kernel, and QEMU with KVM runs a VM inside it.)
+
+So a VM can test what a container cannot: the kernel and its modules, `sysctl`
+settings, systemd as PID 1, boot ordering, activation scripts, firewall rules,
+users created at boot. That is the layer this repo declares, which is why NixOS
+tests itself in QEMU (the `nixosTests` framework) and why `just vm-secrets`
+exists.
+
+The costs: a VM reserves memory, takes seconds to boot rather than milliseconds,
+and still fakes the hardware. Neither tool reproduces the Arc GPU, the NPU or the
+2.5GbE NICs. Containers win for packaging applications, and that is how the NUC
+will use both: NixOS owns the kernel and OS, and Docker runs game servers and
+Ollama on top of that one shared kernel, which also means a container escape is
+a kernel-level problem (ticket 7.2).
+
+</details>
