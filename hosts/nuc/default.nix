@@ -9,7 +9,7 @@
     ../../modules/base
   ];
 
-  networking.hostName = "nuc";
+  networking.hostName = "nuc"
   nixpkgs.hostPlatform = "x86_64-linux";
 
   # Records the release at which this machine's persistent state was created.
