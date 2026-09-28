@@ -49,9 +49,27 @@ No. Match inputs, not versions.
   workstation may fail on the older server. When that happens comin's build
   fails, the previous generation keeps running, and the notification from ticket
   2.5 fires. A deploy does not land; the machine does not break.
-- CI (continuous integration) runs on GitHub-hosted runners using the Determinate
-  installer, so it shares the workstation's blind spot rather than the server's.
-  Accepted, because comin failing safely is a cheaper guard than pinning a third
-  Nix installation to the server's version.
+- CI (continuous integration) was expected to use the Determinate installer and
+  share the workstation's blind spot. Superseded by the amendment below.
 - The gap self-corrects. Bumping the flake to the next NixOS release moves the
   server's Nix forward at the same time.
+
+## Amendment, 2026-09-27 (ticket 0.4, #4)
+
+The flake's dev shell now carries the server's own Nix, taken from
+`nixosConfigurations.nuc.config.nix.package` (2.34.8 today). It was already there
+by accident, as a dependency of `nixos-rebuild`; ticket 0.4 made it explicit.
+`just check` runs inside the dev shell locally and in CI, so both evaluate the
+flake with exactly the Nix comin will use, closing the blind spot described
+above. The installed Nix, Determinate on the workstation and upstream in CI, only
+starts the dev shell and runs the daemon that builds.
+
+- The Decision stands: the workstation keeps Determinate Nix, the server keeps
+  the NixOS default. Only the Nix used *inside the repo* changes.
+- Inside the repo directory (direnv loads the dev shell), `nix` is the server's
+  version. It warns `unknown setting 'eval-cores'` and `'lazy-trees'`, because
+  the workstation's `nix.conf` is written for Determinate Nix. Harmless; those
+  Determinate features are unavailable in the repo, which is the point.
+- CI installs upstream Nix with `cachix/install-nix-action`, because Determinate's
+  installer action now treats upstream Nix as unsupported. See
+  `docs/runbooks/ci.md`.

@@ -69,6 +69,10 @@
       # by flake.lock like everything else, per ADR 0007.
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [
+          # The server's own Nix, taken from its configuration so the two cannot
+          # drift. Everything run in this shell, including `just check` in CI,
+          # evaluates the flake with the Nix that comin will use (ADR 0007).
+          self.nixosConfigurations.nuc.config.nix.package
           just # task runner; see ./justfile
           sops # edit and decrypt secrets/
           age # generate and inspect age keys

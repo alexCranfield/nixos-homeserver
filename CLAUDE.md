@@ -78,8 +78,8 @@ arrives as a pull request, squash-merged.
 5. **Close the issue from the merge**, with the verification comment the
    definition of done requires.
 
-The branch deletes itself on merge. Required status checks join this gate once
-ticket 0.4 has CI running.
+The branch deletes itself on merge. The CI check `check` must also be green
+before merging; `main`'s ruleset enforces it (see `docs/runbooks/ci.md`).
 
 ## Conventions
 
