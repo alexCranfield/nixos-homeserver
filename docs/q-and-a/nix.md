@@ -98,3 +98,45 @@ notification fires. A deploy does not land; the machine does not break.
 Recorded as ADR (Architecture Decision Record) 0007.
 
 </details>
+
+### Is `just vm` a real virtual machine, and is Nix or Docker running it?
+
+*2026-09-27*
+
+> In PR 59, is the .vm a virtual machine? Is nix backing that? Or are we using docker?
+
+<details>
+<summary>Answer</summary>
+
+It is a real virtual machine, run by QEMU (Quick Emulator), with KVM (Kernel-based
+Virtual Machine) acceleration when `/dev/kvm` exists, which it does under WSL2.
+Docker is not involved and is not installed on the workstation.
+
+Nix builds the VM; QEMU runs it. `config.system.build.vm` is one more output of
+the same NixOS configuration, next to `toplevel`. It is a store path containing a
+single shell script, `bin/run-nuc-vm`, whose last line `exec`s
+`qemu-system-x86_64` with the kernel and system closure built from the flake.
+Read it yourself:
+
+```sh
+r=$(nix build --no-link --print-out-paths '.#nixosConfigurations.nuc.config.system.build.vm')
+less "$r"/bin/run-nuc-vm
+```
+
+`.vm/` is only the working directory the script runs in. The script creates a
+disk image, `nuc.qcow2`, in whatever directory it starts from, so `just vm`
+changes into `.vm/` first and `.gitignore` keeps it out of the tree. That disk
+holds only mutable state such as `/var` and home directories. The operating
+system itself is not on it: the guest mounts the host's `/nix/store` read-only
+over 9p (`-virtfs ... mount_tag=nix-store`). Deleting `.vm/` gives a fresh
+machine next boot, but nothing needs rebuilding.
+
+How this differs from a container: a container shares the host's kernel and
+isolates processes. This VM boots its own NixOS kernel, runs systemd as PID 1 and
+activates the configuration exactly as the NUC will, which is why it can test
+boot-time behaviour such as sops-nix decrypting at activation (`just vm-secrets`).
+It does not emulate the NUC's hardware: 1 CPU, 1 GiB RAM, virtio devices, no Arc
+GPU, and the placeholder `hardware-configuration.nix` is overridden by the VM
+module. Anything hardware-specific waits for the real machine.
+
+</details>
