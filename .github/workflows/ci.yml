@@ -16,10 +16,12 @@ on:
 permissions:
   contents: read
 
-# A new push to the same pull request makes the older run pointless.
-# Only on pull requests: every commit on main keeps its result.
+# A new push to the same pull request makes the older run pointless, so pull
+# requests share one group per branch and cancel. Each commit on main gets a
+# group of its own: GitHub keeps only one pending run per group, so a shared
+# group would drop results during back-to-back merges.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

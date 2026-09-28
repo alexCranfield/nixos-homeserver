@@ -84,8 +84,10 @@ can open a PR, and the job never needs to write. The workflow uses
 repository's secrets.
 
 **Newer pushes cancel older runs** of the same pull request (`concurrency`), so
-a quick fix-up does not queue behind a doomed run. Runs on `main` are never
-cancelled, so every commit there keeps a result.
+a quick fix-up does not queue behind a doomed run. Each commit on `main` runs in
+its own concurrency group and is never cancelled, so every commit there keeps a
+result. (A shared group would not be enough: GitHub keeps one pending run per
+group and silently cancels the older one.)
 
 **No token left behind.** `actions/checkout` runs with
 `persist-credentials: false`, so the job token is not written into `.git/config`

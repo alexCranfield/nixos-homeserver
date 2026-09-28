@@ -62,8 +62,9 @@ accident, as a dependency of `nixos-rebuild`; ticket 0.4 made it explicit, and a
 flake check (`devshell-nix-matches-server`) fails if the host ever stops using
 the same package. `just check` runs inside the dev shell locally and in CI, so
 both evaluate the flake with exactly the Nix comin will use, closing the
-*evaluation* blind spot described above. The installed Nix, Determinate on the workstation and upstream in CI, only
-starts the dev shell and runs the daemon that builds.
+*evaluation* blind spot described above. The installed Nix, Determinate on the
+workstation and upstream in CI, only starts the dev shell and runs the daemon
+that builds.
 
 - The Decision stands: the workstation keeps Determinate Nix, the server keeps
   the NixOS default. Only the Nix used *inside the repo* changes.
