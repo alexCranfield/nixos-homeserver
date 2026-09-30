@@ -26,7 +26,7 @@ Before submitting (CLAUDE.md, "Filing follow-up issues"):
 <!-- Checks that can be run and can fail. Each gets a negative control where one
 is possible: break the input and confirm the check reports failure. -->
 
-- 
+- <!-- criterion -->
 
 ## Depends on
 

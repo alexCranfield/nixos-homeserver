@@ -1,7 +1,8 @@
 # Editor settings for anyone who opens this repo (https://editorconfig.org).
-# nixfmt, run by `nix fmt` and enforced in CI (continuous integration), owns
-# the layout of .nix files; these settings only keep editors from fighting it.
-# For everything else they are the whole convention.
+# nixfmt, run by `nix fmt`, owns the layout of .nix files; these settings keep
+# editors from fighting it and are the whole convention for everything else.
+# `just check`, and so CI (continuous integration), runs editorconfig-checker
+# against them, with indent width left to editors (see the justfile).
 root = true
 
 [*]

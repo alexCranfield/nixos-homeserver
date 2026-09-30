@@ -15,11 +15,15 @@ default:
 fmt:
     nix fmt
 
-# Everything CI runs. #4's workflow should call this rather than restate it.
+# Everything CI runs; .github/workflows/ci.yml calls this rather than restating it.
 check:
     nix flake check
     nix build --no-link '.#nixosConfigurations.nuc.config.system.build.toplevel'
     nix fmt -- --ci
+    # Indent width is left to editors: Markdown lists, the GPL (GNU General
+    # Public License) text and aligned Python continuation lines are correct
+    # but not multiples of it.
+    editorconfig-checker -disable-indent-size
 
 # Build the nuc system closure and print its store path.
 build:

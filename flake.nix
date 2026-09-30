@@ -81,6 +81,7 @@
           age # generate and inspect age keys
           ssh-to-age # host SSH key -> age recipient, needed by ticket 1.7 (#14)
           nixfmt-tree # the formatter, also reachable as `nix fmt`
+          editorconfig-checker # enforces .editorconfig in `just check`
           nixos-anywhere # bare-metal install, ticket 1.6 (#13)
           nixos-rebuild # manual deploy escape hatch, `just deploy`
         ];

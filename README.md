@@ -29,7 +29,7 @@ modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
 scripts/tickets.py                 ticket definitions; file_issues.py files them
-.github/workflows/ci.yml           CI: runs just check on every pull request and push to main
+.github/workflows/ci.yml           CI (continuous integration): runs just check on every pull request and push to main
 .github/                           issue and pull request templates, CODEOWNERS
 .editorconfig                      whitespace and indentation for editors
 ```
@@ -52,7 +52,7 @@ by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
 |---|---|
 | `just` | list the targets |
 | `just fmt` | format every file in place |
-| `just check` | everything CI (continuous integration) runs: `nix flake check`, build the closure, check formatting |
+| `just check` | everything CI runs: `nix flake check`, build the closure, check formatting and `.editorconfig` |
 | `just build` | build the nuc closure, print its store path |
 | `just vm` | boot the nuc config in a local VM; quit with ctrl-a then x |
 | `just vm-secrets` | prove sops-nix decrypts in a VM; exits non-zero on failure |

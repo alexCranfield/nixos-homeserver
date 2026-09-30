@@ -1,4 +1,4 @@
-Closes #
+Closes #<!-- issue number, so the merge closes it -->
 
 ## What and why
 
@@ -10,7 +10,7 @@ or amends a decision. -->
 <!-- The issue's criteria, copied as a checklist. Tick each only when the
 evidence below shows it. -->
 
-- [ ] 
+- [ ] <!-- criterion -->
 
 ## Evidence
 
