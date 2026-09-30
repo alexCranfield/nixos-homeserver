@@ -78,6 +78,9 @@ remember.
    Exposing one takes an explicit `0.0.0.0:<port>:<port>`, so forgetting
    closes a port instead of opening it. A compose file can still override the
    network option with its own `driver_opts`, which the check in 3 rejects.
+   The option is applied only when a network is created, and Compose reuses an
+   unchanged network, so a network older than the setting keeps its old
+   address. That can only matter if the setting ever changes.
    Public ports are IPv4 only: an explicit `0.0.0.0` does not also bind `[::]`,
    and the router forwards IPv4. Exposing a game over IPv6 would be a separate
    decision.
@@ -86,7 +89,7 @@ remember.
    `networking.firewall`. The firewall configuration then stays a true list of
    what is exposed, even though Docker's traffic does not pass through it.
 3. **A flake check compares the two.** It fails `just check`, and so CI
-   (continuous integration), if a compose file:
+   (continuous integration), if a compose file under `stacks/`:
    - publishes a port without naming its host address;
    - publishes a port on all interfaces that its stack does not declare;
    - sets `host_binding_ipv4` on a network;
@@ -101,6 +104,10 @@ remember.
    - The client must reach the declared port over IPv4.
    - It must fail to reach the undeclared one over IPv4 and IPv6. NixOS drops
      rather than rejects by default, so "fail" means a timeout, not a refusal.
+   - The undeclared port is published *without* an address, because that is
+     the case the default exists for. So the test's compose file lives under
+     `tests/`, outside `stacks/` where the check in 3 looks. A fixture that
+     named `127.0.0.1` would pass whatever the daemon did.
    - The negative control is to remove `default-network-opts` and watch the
      test fail.
 5. **Admin interfaces stay on loopback.** Grafana, Open WebUI and anything else
