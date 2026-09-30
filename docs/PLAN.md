@@ -99,10 +99,10 @@ Ticket bodies with tasks and acceptance criteria are in `scripts/tickets.py`; `s
 - **2.6** README badges + architecture diagram (Mermaid) for the CV angle. AC: README explains the pipeline in one screen.
 
 ### Phase 3: Container platform, observability, backups
-- **3.1** Docker module: `virtualisation.docker` (or podman with docker compat, decide in ADR 0006), data-root on `@docker` subvolume, log rotation, `docker system prune` timer. AC: `docker run hello-world` as `ops`.
-- **3.2** Reusable `compose-stack` NixOS module: input = stack name + compose file path + sops env file; output = systemd unit that `docker compose up -d` on activation and `down` on stop, restarts on file change, ordered after `docker.service` and network-online. AC: a `hello` stack deploys via comin and is a systemd service.
+- **3.1** Docker module: rootful `virtualisation.docker` per ADR 0006, data-root on `@docker` subvolume, `docker system prune` timer. Daemon settings from ADR 0006: `ip = "127.0.0.1"`, `no-new-privileges`, nobody in the `docker` group; logs go to journald (the NixOS default), so retention is journald's; decide `live-restore` after testing it across a deploy and a reboot. AC: `sudo docker run hello-world` works and `ops` is not in the `docker` group; a two-machine NixOS VM test reaches a declared port and is refused by an undeclared one over IPv4 and IPv6, and fails when the `ip` setting is removed.
+- **3.2** Reusable `compose-stack` NixOS module: input = stack name + compose file path + sops env file; output = systemd unit that `docker compose up -d` on activation and `down` on stop, restarts on file change, ordered after `docker.service` and network-online. Takes each stack's public ports as an option and opens exactly those in the firewall; a flake check fails if a compose file publishes an undeclared port on all interfaces, uses `network_mode: host`, or mounts the Docker socket (ADR 0006). AC: a `hello` stack deploys via comin and is a systemd service; each check rule has a negative control that turns `just check` red.
 - **3.3** Data layout: `/srv/data/<stack>` btrfs subvolumes, ownership conventions, `docs/runbooks/data-layout.md`. AC: documented, first stack uses it.
-- **3.4** Observability stack: Prometheus + node-exporter (NixOS module) + cAdvisor + Grafana (compose), Grafana behind Tailscale only. Dashboards: host, containers, per-game-server. AC: Grafana reachable at `http://nuc:3000` over Tailscale, host dashboard populated.
+- **3.4** Observability stack: Prometheus, node-exporter and cAdvisor as native NixOS services (no container gets the Docker socket, ADR 0006) + Grafana (compose) bound to loopback and published with Tailscale Serve. Dashboards: host, containers, per-game-server. AC: Grafana reachable over Tailscale and refused from the LAN, host dashboard populated.
 - **3.5** Restic backups: `services.restic.backups.nas` to `sftp:<nas-user>@<nas-host>:<nas-backup-path>`, nightly, btrfs snapshot before backup, retention 7d/4w/6m, `restic check` weekly, failure notification. Add `nas` host key + restic password to sops. AC: restore test of one file into `/tmp` succeeds.
 - **3.6** Alerting: Grafana or Prometheus alert rules for disk >85%, backup age >36h, unit failed. AC: one test alert delivered.
 
@@ -147,17 +147,16 @@ Decisions deliberately not yet made, each with a ticket and a deadline.
 
 | Decision | Ticket | Must precede |
 |---|---|---|
-| Docker or Podman (ADR 0006) | 0.6 (#6) | 3.1, the first container |
 | Workstation key passphrase, and how the dev shell handles the prompt | 0.8 (#56) | 1.5, the first real secret |
 | Disk encryption on the nuc (ADR 0009) | 1.0 (#57) | 1.2, partitioning |
 | K3s or stay on Compose (ADR 0008) | 8.1 (#49) | anything in Phase 8 |
 
-ADR numbers are reserved by these tickets, which is why the sequence has gaps:
-0006, 0008, 0009 and 0010 (security posture, 7.2) are claimed but unwritten.
+ADR numbers are reserved by these tickets, so `docs/adr/README.md` lists numbers
+with no file yet: 0008, 0009 and 0010 (security posture, 7.2). ADR 0006
+(rootful Docker) was decided in ticket 0.6 (#6).
 
 ## Assumptions to flag
 
 - Hostname `nuc` and user `ops` are placeholders, change in ticket 1.3 if preferred.
 - Second M.2 slot stays empty for now; plan treats 1 TB as shared budget with per-stack quotas.
-- Docker rather than Podman is assumed; ADR 0006 in ticket 3.1 can flip it before any stack depends on it.
 - Router supports DHCP reservations and port forwarding.
