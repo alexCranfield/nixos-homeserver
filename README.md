@@ -1,5 +1,7 @@
 # nixos-homeserver
 
+[![CI](https://github.com/alexCranfield/nixos-homeserver/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alexCranfield/nixos-homeserver/actions/workflows/ci.yml)
+
 Declarative NixOS configuration for a home server on an ASRock Industrial NUC BOX-358H
 (Intel Core Ultra X7 358H, 96 GB DDR5, 1 TB NVMe). It runs Docker Compose game servers
 (Minecraft, Palworld, Satisfactory), local LLMs (Ollama + Open WebUI) and development
@@ -8,7 +10,7 @@ shells for Shopify admin scripting.
 ## How it works
 
 ```
-pull request ──▶ GitHub Actions: nix flake check, build closure, fmt
+pull request ──▶ GitHub Actions: just check (flake check, build closure, fmt)
 merge to main ──▶ comin on the server polls, runs nixos-rebuild switch
 ```
 
@@ -47,7 +49,7 @@ by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
 |---|---|
 | `just` | list the targets |
 | `just fmt` | format every file in place |
-| `just check` | everything CI runs: `nix flake check`, build the closure, check formatting |
+| `just check` | everything CI (continuous integration) runs: `nix flake check`, build the closure, check formatting |
 | `just build` | build the nuc closure, print its store path |
 | `just vm` | boot the nuc config in a local VM; quit with ctrl-a then x |
 | `just vm-secrets` | prove sops-nix decrypts in a VM; exits non-zero on failure |
@@ -56,8 +58,9 @@ by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
 | `just secrets-show <file>` | print a secret without opening an editor |
 | `just secrets-rekey <file>` | re-encrypt after changing recipients in `.sops.yaml` |
 
-`just check` is the single source of truth for what CI runs, so the workflow in
-ticket 0.4 calls it rather than restating the commands. `just vm-secrets` exits
+`just check` is the single source of truth for what CI runs:
+`.github/workflows/ci.yml` calls it rather than restating the commands (see
+[docs/runbooks/ci.md](docs/runbooks/ci.md)). `just vm-secrets` exits
 non-zero when decryption fails, because the VM powers off with status 0 either
 way and only the console distinguishes them.
 

@@ -1,0 +1,55 @@
+# CI (continuous integration). Validates every pull request and every push to
+# main on GitHub-hosted runners, so main is always something comin can deploy
+# (ADR, Architecture Decision Record, 0003 in docs/adr/). The steps are
+# `just check`, the same target run locally, so CI and the workstation cannot
+# drift apart.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# The job only reads the repository. A public repo accepts pull requests from
+# anyone, so the token gets nothing it does not need.
+permissions:
+  contents: read
+
+# A new push to the same pull request makes the older run pointless, so pull
+# requests share one group per branch and cancel. Each commit on main gets a
+# group of its own: GitHub keeps only one pending run per group, so a shared
+# group would drop results during back-to-back merges.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Actions are pinned by commit, not tag: a tag can be moved to different
+      # code after review, a commit hash cannot. The comment records the tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Do not leave the token in .git/config while pull request code runs.
+          persist-credentials: false
+
+      # Upstream Nix, the same distribution the server runs, rather than
+      # Determinate Nix. ADR 0007: CI checks what the server will evaluate.
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      # The installer's Nix only enters the dev shell. The checks run with the
+      # dev shell's Nix, which is the server's version; print both as evidence.
+      # Entering the shell evaluates flake.nix, so a syntax error there fails
+      # here, before `just check`.
+      - name: Enter dev shell (evaluates flake.nix)
+        run: |
+          echo "installer: $(nix --version)"
+          echo "dev shell: $(nix develop --command nix --version)"
+
+      # No extra binary cache. Everything except about 36 small configuration
+      # derivations comes from cache.nixos.org already; see docs/runbooks/ci.md.
+      - name: just check
+        run: nix develop --command just check

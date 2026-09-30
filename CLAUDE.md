@@ -10,8 +10,8 @@ Records) in `docs/adr/` for why each major choice was made.
 Work is tracked as GitHub Issues, one per plan ticket, grouped by phase
 milestone. Issue numbers map to ticket ids in order: 0.1 is #1, 8.4 is #52.
 Numbers from #53 on are shared between pull requests and later issues; the
-tickets added after the original import are 0.8 (#56) and 1.0 (#57), neither of
-which is in `scripts/tickets.py`, so re-running the filing script cannot
+tickets added after the original import are 0.8 (#56), 0.9 (#61) and 1.0 (#57),
+none of which is in `scripts/tickets.py`, so re-running the filing script cannot
 duplicate them. The issues are the source of truth for status, not
 `docs/PLAN.md`.
 
@@ -78,8 +78,8 @@ arrives as a pull request, squash-merged.
 5. **Close the issue from the merge**, with the verification comment the
    definition of done requires.
 
-The branch deletes itself on merge. Required status checks join this gate once
-ticket 0.4 has CI running.
+The branch deletes itself on merge. The CI check `check` must also be green
+before merging; `main`'s ruleset enforces it (see `docs/runbooks/ci.md`).
 
 ## Conventions
 

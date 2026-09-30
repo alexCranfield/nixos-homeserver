@@ -69,6 +69,13 @@
       # by flake.lock like everything else, per ADR 0007.
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [
+          # The Nix the server runs: NixOS defaults `nix.package` to this same
+          # package. Everything run in this shell, including `just check` in CI,
+          # evaluates the flake with the Nix comin will use (ADR 0007). Taken
+          # from pkgs rather than from the nuc configuration, so a broken host
+          # config cannot stop the shell, and its tools, from starting. The
+          # `devshell-nix-matches-server` check catches the two drifting apart.
+          nix
           just # task runner; see ./justfile
           sops # edit and decrypt secrets/
           age # generate and inspect age keys
@@ -85,8 +92,22 @@
       # rejects. The wrapper walks the tree instead.
       formatter.${system} = pkgs.nixfmt-tree;
 
-      # `nix flake check` builds this, so a broken configuration fails in CI
-      # before it can reach the server.
-      checks.${system}.toplevel = self.nixosConfigurations.nuc.config.system.build.toplevel;
+      # `nix flake check` evaluates these, and builds any not already built or
+      # cached, so a broken configuration fails in CI before it reaches the
+      # server.
+      checks.${system} = {
+        toplevel = self.nixosConfigurations.nuc.config.system.build.toplevel;
+
+        # Fails `nix flake check` if the server stops using the dev shell's Nix,
+        # for example after a `nix.package` override on the host.
+        devshell-nix-matches-server =
+          let
+            server = self.nixosConfigurations.nuc.config.nix.package;
+          in
+          if server.outPath == pkgs.nix.outPath then
+            pkgs.emptyFile
+          else
+            throw "the dev shell has ${pkgs.nix.name} but nuc runs ${server.name}; use pkgs.nix on the host (ADR 0007: no nix.package override) or update devShells.default to match";
+      };
     };
 }
