@@ -49,8 +49,10 @@ File a new issue, rather than fixing it inline or leaving it unsaid, when:
 - You find a **problem outside the current ticket's scope**.
 
 Keep the ticket shape used everywhere else: Goal, Tasks, Acceptance criteria,
-Depends on. Label it with a `phase:N` and at least one `area:*` label, and
-attach it to the phase milestone it belongs to. `scripts/file_issues.py` is for
+Depends on. `.github/ISSUE_TEMPLATE/ticket.md` lays it out, and
+`.github/pull_request_template.md` carries the checklist for a pull request.
+Label it with a `phase:N` and at least one `area:*` label, and attach it to the
+phase milestone it belongs to. `scripts/file_issues.py` is for
 the original bulk import and is idempotent; ad-hoc follow-ups go straight to
 GitHub.
 

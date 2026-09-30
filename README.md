@@ -29,6 +29,9 @@ modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
 scripts/tickets.py                 ticket definitions; file_issues.py files them
+.github/workflows/ci.yml           CI: runs just check on every pull request and push to main
+.github/                           issue and pull request templates, CODEOWNERS
+.editorconfig                      whitespace and indentation for editors
 ```
 
 Build the whole system without a machine:

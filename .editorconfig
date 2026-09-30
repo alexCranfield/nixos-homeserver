@@ -1,0 +1,26 @@
+# Editor settings for anyone who opens this repo (https://editorconfig.org).
+# nixfmt, run by `nix fmt` and enforced in CI (continuous integration), owns
+# the layout of .nix files; these settings only keep editors from fighting it.
+# For everything else they are the whole convention.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Two trailing spaces are a Markdown hard line break, so never strip them.
+# Prose is wrapped by hand at about 80 columns; no max_line_length, because
+# tables, links and long commands cannot wrap.
+[*.md]
+trim_trailing_whitespace = false
+
+# just requires recipe bodies to be indented; this repo uses four spaces.
+[justfile]
+indent_size = 4
+
+[*.py]
+indent_size = 4
