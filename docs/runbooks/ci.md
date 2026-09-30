@@ -14,7 +14,11 @@ nix develop --command just check
 ```
 
 `just check` is the same target you run locally: `nix flake check`, a build of
-the nuc system closure, and `nix fmt -- --ci`. The workflow does not restate
+the nuc system closure, `nix fmt -- --ci`, and `editorconfig-checker`, which
+holds every file git does not ignore to `.editorconfig` (line endings, final
+newline, trailing whitespace, tabs). That includes untracked files, so a stray
+scratch file in the tree fails `just check` locally until it is removed or
+ignored. The workflow does not restate
 those commands, so changing what "checked" means is a change to the `justfile`,
 and the workstation and CI change together.
 

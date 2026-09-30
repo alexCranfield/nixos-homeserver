@@ -1,0 +1,5 @@
+# Every path is owned by Alex, so GitHub requests his review on any pull request
+# he did not open himself. Until Claude has its own machine user (#61), Claude's
+# pull requests are opened with Alex's token and no request is made; the
+# ruleset does not require code-owner review, so this file enforces nothing yet.
+* @alexCranfield
