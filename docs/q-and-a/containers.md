@@ -23,7 +23,8 @@ rootless.
 What rootless would cost here:
 
 - Per-stack `MemoryMax` and `CPUWeight` (ticket 4.5) are easy on a system unit.
-  Under a user's own systemd instance they need cgroup delegation.
+  Rootless, they live on user units under that user's own systemd manager,
+  away from the rest of the system's declarations.
 - The NixOS declaration grows from a few lines to a lingering user,
   subordinate user-ID ranges and per-user units. Quadlet, Podman's
   systemd-native unit format, has no NixOS option in 26.05.
@@ -63,16 +64,27 @@ then take the FORWARD chain to the container, so a default-deny firewall never
 sees them. `ports: ["3000:3000"]` is reachable from the LAN (local area network)
 even though NixOS never opened 3000.
 
-1. Make the default safe: the daemon setting `ip = "127.0.0.1"` binds any port
-   published without an address to loopback. Exposing a port takes an explicit
-   `0.0.0.0:`. Forgetting now closes a port instead of opening it.
+1. Make the default safe: bind any port published without an address to
+   loopback. Exposing one then takes an explicit `0.0.0.0:`, so forgetting
+   closes a port instead of opening it. Docker keeps this default in two
+   places:
+   - the `ip` daemon setting covers only the built-in `bridge` network;
+   - `default-network-opts` covers the networks Compose creates.
+
+   The first version of this answer named only `ip`. Review of the Docker
+   source caught it, and it would have left every stack open. That is the case
+   for step 4.
 2. Declare public ports once, in Nix, per stack, and open exactly those in the
    firewall. The firewall configuration becomes a true list of what is exposed.
-3. A flake check fails if a compose file publishes an undeclared port on all
-   interfaces, uses host networking, or mounts the Docker socket.
-4. A two-machine NixOS VM (virtual machine) test: a client must reach the
-   declared port and be refused by the undeclared one. Remove the `ip` setting
-   and the test must fail. That is the negative control.
+3. A flake check fails if a compose file publishes a port without naming its
+   host address, publishes an undeclared port on all interfaces, overrides the
+   network's default address, uses host networking, or mounts the Docker
+   socket.
+4. A two-machine NixOS VM (virtual machine) test, deploying a real stack
+   through Compose: a client must reach the declared port and fail to reach the
+   undeclared one. It times out rather than being refused, because NixOS drops
+   packets. Remove the network default and the test must fail. That is the
+   negative control.
 5. Admin interfaces stay on loopback, and Tailscale Serve publishes them to the
    tailnet. Binding to the Tailscale address instead can fail at boot, because
    Docker may start before `tailscale0` has its address.
@@ -82,10 +94,12 @@ even though NixOS never opened 3000.
 - Nobody joins the `docker` group, because membership is root without a
   password. Use `sudo docker`.
 - No container gets `/var/run/docker.sock`. Mounting it read-only does not help:
-  `:ro` stops writes to the socket file, not API calls through it. Monitoring is
+  `:ro` stops writes to the socket file, not API (application programming
+  interface) calls through it. Monitoring is
   the usual excuse, so cAdvisor and node-exporter run as native NixOS services.
-- `no-new-privileges` daemon-wide stops setuid binaries escalating inside a
-  container.
+- `no-new-privileges` daemon-wide stops setuid binaries and file capabilities
+  escalating inside a container. Entrypoints that drop from root with `gosu`
+  still work.
 - `cap_drop`, `read_only` and non-root users are applied stack by stack in the
   security review.
 

@@ -17,4 +17,6 @@ Join the server to a Tailscale tailnet. SSH, Grafana, Open WebUI and any future 
   firewall, so "default deny" does not hold for containers on its own.
   Containerised admin interfaces therefore bind to loopback and reach the
   tailnet through Tailscale Serve, and only ports a stack declares as public
-  are exposed. ADR 0006 lists the checks that enforce this.
+  are exposed. ADR 0006 lists the checks that enforce this. For those
+  interfaces, the "LAN access still works as a fallback" consequence above no
+  longer holds; whether SSH keeps a LAN fallback is ticket 1.4's call (#11).

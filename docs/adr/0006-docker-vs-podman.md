@@ -33,7 +33,7 @@ What mattered for this server:
 | Compose files used unchanged (ADR 0002) | Yes | Nearly all, via the socket | Mostly; `podman-compose` is a reimplementation |
 | Compromised game server | Root daemon; `docker` group is root-equivalent | Same as A | Contained to an unprivileged user |
 | Published ports vs the NixOS firewall | Bypass it | Bypass it | Ordinary sockets; the firewall applies |
-| Per-stack `MemoryMax` / `CPUWeight` (ticket 4.5) | Set on the stack's system unit | Same | Needs systemd delegation under a user manager |
+| Per-stack `MemoryMax` / `CPUWeight` (ticket 4.5) | Set on the stack's system unit | Same | Limits live on user units under the user's own systemd manager, outside the system-level declarations |
 | Declaring it in NixOS | `virtualisation.docker` | `virtualisation.podman` + `dockerSocket` | Lingering user, subordinate ID ranges, user units; Quadlet (Podman's systemd-native units) has no NixOS option in 26.05 |
 | cAdvisor (ticket 3.4) | First-class | Supported | Weakest |
 | K3s later (Phase 8) | Irrelevant: K3s uses containerd | Same | Same |
@@ -66,23 +66,43 @@ remember.
 
 **Published ports**
 
-1. **Loopback by default.** `virtualisation.docker.daemon.settings.ip =
-   "127.0.0.1"`. A port published without an address binds to the server alone.
-   Exposing one to the network takes an explicit `0.0.0.0:<port>:<port>`, so
-   forgetting closes a port instead of opening it.
+1. **Loopback by default, on every network.** Two daemon settings, because
+   Docker keeps the default in two places:
+   - `ip = "127.0.0.1"` covers only Docker's built-in `bridge` network, used
+     by a bare `docker run`;
+   - `default-network-opts.bridge."com.docker.network.bridge.host_binding_ipv4"
+     = "127.0.0.1"` covers every bridge network created afterwards, including
+     the `<project>_default` network each Compose stack creates for itself.
+
+   A port published without an address then binds to the server alone.
+   Exposing one takes an explicit `0.0.0.0:<port>:<port>`, so forgetting
+   closes a port instead of opening it. A compose file can still override the
+   network option with its own `driver_opts`, which the check in 3 rejects.
+   Public ports are IPv4 only: an explicit `0.0.0.0` does not also bind `[::]`,
+   and the router forwards IPv4. Exposing a game over IPv6 would be a separate
+   decision.
 2. **Public ports declared once, in Nix.** The compose-stack module (ticket 3.2,
    #23) takes each stack's public ports as an option and opens exactly those in
    `networking.firewall`. The firewall configuration then stays a true list of
    what is exposed, even though Docker's traffic does not pass through it.
 3. **A flake check compares the two.** It fails `just check`, and so CI
-   (continuous integration), if a compose file publishes a port on all
-   interfaces that its stack does not declare, uses `network_mode: host`, or
-   mounts the Docker socket.
+   (continuous integration), if a compose file:
+   - publishes a port without naming its host address;
+   - publishes a port on all interfaces that its stack does not declare;
+   - sets `host_binding_ipv4` on a network;
+   - uses `network_mode: host`;
+   - mounts the Docker socket.
+
+   It reads both the short (`"0.0.0.0:25565:25565"`) and long (`host_ip:`) port
+   syntaxes, and port ranges.
 4. **A VM (virtual machine) test proves it end to end.** A two-machine NixOS
-   test: the server runs a container publishing one declared port and one
-   undeclared port, and a client must reach the first and be refused by the
-   second, over IPv4 and IPv6. The negative control is to remove the `ip`
-   setting and watch the test fail.
+   test that deploys a stack through the compose-stack module, not a bare
+   `docker run`, since the two use different networks.
+   - The client must reach the declared port over IPv4.
+   - It must fail to reach the undeclared one over IPv4 and IPv6. NixOS drops
+     rather than rejects by default, so "fail" means a timeout, not a refusal.
+   - The negative control is to remove `default-network-opts` and watch the
+     test fail.
 5. **Admin interfaces stay on loopback.** Grafana, Open WebUI and anything else
    admin-facing binds to `127.0.0.1` and is published to the tailnet with
    Tailscale Serve, not bound to the Tailscale address. At boot, Docker can
@@ -93,25 +113,36 @@ remember.
 6. **Nobody is in the `docker` group.** Membership is root without a password.
    Stacks run as systemd units, and interactive use goes through `sudo docker`.
 7. **No container gets the Docker socket**, read-only or otherwise: read-only
-   does not stop API calls. Enforced by the check in 3. Monitoring is the usual
+   stops writes to the socket file, not API (application programming
+   interface) calls through it. Enforced by the check in 3. Monitoring is the usual
    reason for mounting it, so cAdvisor and node-exporter run as native NixOS
    services, not containers.
-8. **`no-new-privileges` daemon-wide**, so a setuid binary inside a container
-   cannot gain privileges. A stack whose image needs otherwise opts out in its
-   compose file, visibly in review.
+8. **`no-new-privileges` daemon-wide**, so a process inside a container cannot
+   gain privileges through a setuid binary or file capabilities. Entrypoints
+   that start as root and drop to a user with `gosu` or `su-exec` still work;
+   `sudo` or `su` from a non-root user does not. An image that needs it opts
+   out per container with `security_opt: ["no-new-privileges=false"]`, which
+   shows up in review.
 9. **Per-image hardening** (`cap_drop: [ALL]`, `read_only`, a non-root `user:`)
    is applied stack by stack where the image tolerates it, and audited in the
    security review (7.2, #45).
 
 ## Consequences
 
-- Upstream compose files and documentation apply as written, apart from
-  explicit bind addresses on public ports.
+- Upstream compose files and documentation apply as written, apart from an
+  explicit host address on every published port.
+- The first draft of this ADR relied on the `ip` setting alone. Review of the
+  Docker 29.7.2 source showed that it covers only the built-in `bridge` network,
+  so every Compose stack would have published on all interfaces. The two-setting
+  default in 1, and a VM test that goes through Compose, both come from that
+  finding.
 - Tickets 3.1 (#22) and 3.2 (#23) carry the implementation: 3.1 the daemon
-  settings and the VM test, 3.2 the public-port option and the flake check, each
-  with its own negative control.
+  settings, 3.2 the public-port option, the flake check and the VM test, since
+  the test deploys through the compose-stack module. Each has its own negative
+  control.
 - ADR 0005's "admin surfaces listen only on the Tailscale interface" is met
-  through loopback plus Tailscale Serve. See the note added there.
+  through loopback plus Tailscale Serve, so containerised admin interfaces have
+  no LAN fallback. See the note added there.
 - A container escape, or a malicious image, yields root on the host. The
   measures above narrow the ways in; they do not change that outcome. This is the
   cost accepted in exchange for the friction avoided.
