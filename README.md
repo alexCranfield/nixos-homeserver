@@ -23,7 +23,7 @@ from `main`, backs up to the NAS (network-attached storage) with restic, and is 
 flake.nix                          inputs, nixosConfigurations.nuc, formatter, checks
 flake.lock                         pinned revisions; commit every change
 hosts/nuc/default.nix              the host: imports hardware + base
-hosts/nuc/hardware-configuration.nix   PLACEHOLDER until the machine exists
+hosts/nuc/hardware-configuration.nix   PLACEHOLDER until the first install (#13)
 modules/base/default.nix           config applied to every host
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM
 .sops.yaml                         which age keys can decrypt which files
@@ -83,7 +83,12 @@ does not re-encrypt anything on its own.
 
 ## Status
 
-Phase 0 (workstation and repo foundations) in progress. See the
+Phase 0 (workstation and repo foundations) is done apart from the key
+passphrase (#56) and the machine user (#61). CI (continuous integration) is
+live and required on `main`, and ADRs (Architecture Decision Records) 0001 to
+0007 are written. The hardware arrived on 2026-10-01; Phase 1 starts with
+assembly and BIOS checks (#8), and the install (#13) waits on the
+disk-encryption decision (#57) and the disk layout (#9). See the
 [milestones](https://github.com/alexCranfield/nixos-homeserver/milestones).
 
 ## License
