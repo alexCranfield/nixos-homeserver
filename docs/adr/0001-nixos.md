@@ -12,4 +12,4 @@ Run NixOS 26.05 (stable) with the whole system declared in a flake: disks (disko
 - One command (`nixos-anywhere`) installs the machine; every change is a commit.
 - Rollback is a bootloader menu entry or a `git revert`.
 - Learning curve is real; the module language and error messages are unfamiliar. Mitigated by building a QEMU VM of the config locally before deploying.
-- Some Intel GPU tooling lands in nixpkgs later than in Ubuntu; acceptable because LLM work starts on CPU.
+- Some Intel GPU tooling lands in nixpkgs later than in Ubuntu; acceptable because LLM (large language model) work starts on CPU.

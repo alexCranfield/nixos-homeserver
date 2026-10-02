@@ -11,10 +11,15 @@ GitHub-hosted Actions run `nix flake check`, build the system closure and check 
 ## Consequences
 - Nothing on the server accepts inbound connections for deployment.
 - Deploy latency is about a minute after merge.
-- CI cannot test hardware-specific behaviour; the VM build catches most config errors.
+- CI (continuous integration) cannot test hardware-specific behaviour; the VM build catches most config errors.
 - `main` is protected by a ruleset requiring a pull request, added 2026-09-13
   after a defect reached `main` unreviewed. The repository was also found to be
   private on that date, contrary to this record; it was made public, which is
   what makes rulesets and unmetered Actions minutes available and lets comin
   pull without credentials.
 - Broken commits on `main` are caught by CI before merge; if one slips through, the previous generation still boots.
+- As built (ticket 0.4, #4, 2026-09-29): the workflow runs `just check`, which
+  covers the three checks above plus `.editorconfig` conformance, and `check`
+  is a required status check on `main`, so a red pull request cannot merge.
+  The weekly `flake.lock` pull request is ticket 2.2 and does not exist yet.
+  See `docs/runbooks/ci.md`.
