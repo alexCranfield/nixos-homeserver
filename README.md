@@ -82,8 +82,8 @@ ssh -i ~/.ssh/id_nuc -p 2222 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChe
 ```
 
 While the VM is still booting, QEMU already accepts the connection, so ssh
-fails with `kex_exchange_identification: read: Connection reset by peer`; that
-means wait, not broken. Under software emulation, booting takes minutes.
+just hangs; that means wait, not broken. Under software emulation, booting
+takes a minute or more.
 
 The forward listens on 127.0.0.1 only, so the VM is not reachable from the LAN.
 The `-o` options are for VMs only, as for the
