@@ -110,3 +110,48 @@ Sources: [POSIX rationale for the shell utilities](https://pubs.opengroup.org/on
 [Stallman on the name](https://www.stallman.org/articles/posix.html).
 
 </details>
+
+### What does `ssh -n` do, and why did the virtual machine test need it?
+
+*2026-10-03*
+
+> Why did we need to background the ssh process with -n?
+
+<details>
+<summary>Answer</summary>
+
+Nothing was backgrounded. `-n` points ssh's standard input at `/dev/null`, so
+ssh never reads any. It still runs in the foreground: the caller waits for it,
+and its output and exit code come back as usual.
+
+By default ssh reads its standard input and forwards it to the remote command,
+which is what makes `echo hi | ssh nuc cat` work. The `base-ssh` VM (virtual
+machine) test ran ssh inside the client VM, from a root shell that the NixOS
+test driver controls by writing commands to that shell's standard input. The
+test therefore hung at random:
+
+1. ssh closes its own standard output as soon as the remote side signals
+   end-of-file, a moment before it receives the exit status and quits.
+2. The driver sees the output is complete and writes its next line,
+   `echo ${PIPESTATUS[0]}`, to ask for the exit code.
+3. ssh is still alive, reads that line, and forwards it to the nuc.
+4. The client's shell never sees the line, and the driver waits forever.
+
+It only struck when the timing lined up, which is more likely in slow software
+emulation without KVM (Kernel-based Virtual Machine) acceleration. A remote
+command that closes its output and then keeps the session open,
+`'echo early; exec >&- 2>&-; sleep 10'`, made it hang every time without `-n`
+and pass with it.
+
+The man page links `-n` with backgrounding because a background ssh that read
+the terminal would steal your typing. That is the same problem in another form.
+It also works the other way round: bash gives a command started with `&` an
+empty standard input when job control is off, as it is in scripts. A debugging
+wrapper that backgrounded ssh would have hidden the bug.
+
+Rule of thumb: when ssh runs from a script and is not meant to receive piped
+input, use `-n` or `< /dev/null`. The classic victim is
+`while read host; do ssh "$host" uptime; done < hosts.txt`, which reaches only
+the first host, because ssh swallows the rest of the file.
+
+</details>

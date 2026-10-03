@@ -105,6 +105,9 @@
       checks.${system} = {
         toplevel = self.nixosConfigurations.nuc.config.system.build.toplevel;
 
+        # Ticket 1.3 (#10): key-only SSH as ops, root refused, 26.05 booted.
+        base-ssh = import ./tests/base-ssh.nix { inherit pkgs inputs nixpkgs; };
+
         # Fails `nix flake check` if the server stops using the dev shell's Nix,
         # for example after a `nix.package` override on the host.
         devshell-nix-matches-server =

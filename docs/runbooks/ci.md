@@ -77,6 +77,17 @@ nix build --dry-run --store "$(mktemp -d)" --option substituters https://cache.n
   '.#nixosConfigurations.nuc.config.system.build.toplevel'
 ```
 
+**VM (virtual machine) tests run in CI.** Since #10, `nix flake check` also runs
+`base-ssh`, a NixOS test that boots two VMs and logs in over SSH. NixOS tests
+require the `kvm` system feature. `install-nix-action` provides it on GitHub's
+Linux runners (`enable_kvm`, on by default; the job log shows "Enabled KVM"),
+and with it the test takes about 25 seconds; the first run, on #71, finished in
+under two minutes in all. If the build instead stops because no machine has the
+`kvm` and `nixos-test` features, the runner lost KVM (Kernel-based Virtual
+Machine) access; the test itself is not at fault. Locally, without KVM access,
+the test falls back to software emulation and takes about four minutes;
+`docs/runbooks/workstation.md` has the udev rule that fixes that.
+
 **Actions pinned by commit hash.** `uses: owner/action@<40-character hash> #
 vX.Y.Z`. A tag can be moved to point at different code after it was reviewed; a
 commit hash cannot. Bumping an action means looking up the new release's commit

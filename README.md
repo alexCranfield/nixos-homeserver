@@ -26,8 +26,12 @@ hosts/nuc/default.nix              the host: imports hardware + base
 hosts/nuc/hardware-configuration.nix   PLACEHOLDER until the first install (#13)
 hosts/installer/default.nix        live USB: latest kernel, survey tools, ops key
 keys/ops.pub                       the admin SSH public key (private half on the workstation)
-modules/base/default.nix           config applied to every host
-modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM
+modules/base/default.nix           config applied to every host; imports the files below
+modules/base/ssh.nix               the ops account and key-only sshd
+modules/base/nix.nix               Nix settings and weekly garbage collection
+modules/base/system.nix            UTC clock, locale, boot menu retention, git and tmux
+modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
+tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
 scripts/tickets.py                 ticket definitions; file_issues.py files them
