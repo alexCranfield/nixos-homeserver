@@ -137,12 +137,12 @@ guests report a real CPU (central processing unit) rather than `QEMU TCG CPU`.
 
 ## Logging in to `just vm`
 
-The VM forwards 127.0.0.1:2222 on the workstation to its sshd, so `ssh -i
-~/.ssh/id_nuc -p 2222 ops@127.0.0.1` reaches it (the README has the full
-command). If QEMU exits with `Could not set up host forwarding rule
-'tcp:127.0.0.1:2222-:22'`, something else holds port 2222, often a second VM:
-`just vm` and `just vm-secrets` both use it, so run one at a time. `ss -ltnp |
-grep 2222` shows the holder.
+The VM forwards 127.0.0.1:2222 on the workstation to its sshd, so
+`ssh -i ~/.ssh/id_nuc -p 2222 ops@127.0.0.1` reaches it (the README has the
+full command). If QEMU exits with
+`Could not set up host forwarding rule 'tcp:127.0.0.1:2222-:22'`, something
+else holds port 2222, often a second VM: `just vm` and `just vm-secrets` both
+use it, so run one at a time. `ss -ltnp | grep 2222` shows the holder.
 
 ## Uninstall
 
