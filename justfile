@@ -29,6 +29,10 @@ check:
 build:
     nix build --print-out-paths '.#nixosConfigurations.nuc.config.system.build.toplevel'
 
+# Build the live USB image (latest kernel, ops key) and print its path.
+iso:
+    nix build --print-out-paths '.#nixosConfigurations.installer.config.system.build.isoImage'
+
 # Boot the nuc configuration in a local VM. Quit with ctrl-a then x.
 vm:
     #!/usr/bin/env bash

@@ -111,6 +111,30 @@ direnv exec . bash -c 'echo $TICKET_0_1_SHELL; hello'   # loaded / Hello, world!
   tools. Not an issue for Nix, but worth knowing when a dev shell tool resolves
   to something unexpected.
 
+## Hardware acceleration for VMs
+
+`/dev/kvm` exists in WSL, but it is `root:kvm` mode 0660, so QEMU falls back to
+TCG (QEMU's software emulator), which is many times slower. Two different users
+need access:
+
+- **You**, for `just vm` and `just vm-secrets`, which run QEMU directly.
+- **Nix's build users**, for VM tests run as flake checks (`tests/`), which run
+  inside the build sandbox. Adding yourself to `kvm` does not help these. Nix
+  only schedules them because the daemon, running as root, sees `/dev/kvm` and
+  advertises the `kvm` system feature.
+
+The fix CI (continuous integration) uses covers both: a udev rule opening the
+device to everyone. On a single-user workstation that is an acceptable trade.
+
+```bash
+echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+ls -l /dev/kvm   # expect crw-rw-rw-
+```
+
+Check it worked: a VM test's log no longer says `falling back to tcg`, and its
+guests report a real CPU (central processing unit) rather than `QEMU TCG CPU`.
+
 ## Uninstall
 
 ```bash

@@ -24,6 +24,8 @@ flake.nix                          inputs, nixosConfigurations.nuc, formatter, c
 flake.lock                         pinned revisions; commit every change
 hosts/nuc/default.nix              the host: imports hardware + base
 hosts/nuc/hardware-configuration.nix   PLACEHOLDER until the first install (#13)
+hosts/installer/default.nix        live USB: latest kernel, survey tools, ops key
+keys/ops.pub                       the admin SSH public key (private half on the workstation)
 modules/base/default.nix           config applied to every host
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM
 .sops.yaml                         which age keys can decrypt which files
@@ -54,6 +56,7 @@ by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
 | `just fmt` | format every file in place |
 | `just check` | everything CI runs: `nix flake check`, build the closure, check formatting and `.editorconfig` |
 | `just build` | build the nuc closure, print its store path |
+| `just iso` | build the live USB image, print its store path ([hardware.md](docs/runbooks/hardware.md)) |
 | `just vm` | boot the nuc config in a local VM; quit with ctrl-a then x |
 | `just vm-secrets` | prove sops-nix decrypts in a VM; exits non-zero on failure |
 | `just deploy` | emergency manual deploy; normally comin pulls `main` itself |
