@@ -30,6 +30,7 @@ modules/base/default.nix           config applied to every host; imports the fil
 modules/base/ssh.nix               the ops account and key-only sshd
 modules/base/nix.nix               Nix settings and weekly garbage collection
 modules/base/system.nix            UTC clock, locale, boot menu retention, git and tmux
+modules/base/vm.nix                SSH into `just vm` on 127.0.0.1:2222; no effect on a real host
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
 .sops.yaml                         which age keys can decrypt which files
@@ -61,7 +62,7 @@ by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
 | `just check` | everything CI runs: `nix flake check`, build the closure, check formatting and `.editorconfig` |
 | `just build` | build the nuc closure, print its store path |
 | `just iso` | build the live USB image, print its store path ([hardware.md](docs/runbooks/hardware.md)) |
-| `just vm` | boot the nuc config in a local VM; quit with ctrl-a then x |
+| `just vm` | boot the nuc config in a local VM; log in as below; quit with ctrl-a then x |
 | `just vm-secrets` | prove sops-nix decrypts in a VM; exits non-zero on failure |
 | `just deploy` | emergency manual deploy; normally comin pulls `main` itself |
 | `just secrets-edit <file>` | edit an encrypted secret, re-encrypting on save |
@@ -73,6 +74,16 @@ by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
 [docs/runbooks/ci.md](docs/runbooks/ci.md)). `just vm-secrets` exits
 non-zero when decryption fails, because the VM powers off with status 0 either
 way and only the console distinguishes them.
+
+To log in to `just vm`, wait for its login prompt, then from a second terminal:
+
+```bash
+ssh -i ~/.ssh/id_nuc -p 2222 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ops@127.0.0.1
+```
+
+The forward listens on 127.0.0.1 only, so the VM is not reachable from the LAN.
+The `-o` options are for the VM only, as for the live USB: deleting `.vm/`
+gives it a new host key.
 
 Two habits worth keeping. Use `secrets-show` rather than `secrets-edit` when you
 only want to look: saving from an editor rewrites the file with a fresh MAC and
