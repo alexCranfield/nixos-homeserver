@@ -81,9 +81,15 @@ To log in to `just vm`, wait for its login prompt, then from a second terminal:
 ssh -i ~/.ssh/id_nuc -p 2222 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no ops@127.0.0.1
 ```
 
+While the VM is still booting, QEMU already accepts the connection, so ssh
+fails with `kex_exchange_identification: read: Connection reset by peer`; that
+means wait, not broken. Under software emulation, booting takes minutes.
+
 The forward listens on 127.0.0.1 only, so the VM is not reachable from the LAN.
-The `-o` options are for the VM only, as for the live USB: deleting `.vm/`
-gives it a new host key.
+The `-o` options are for VMs only, as for the
+[live USB](docs/runbooks/hardware.md): `just vm-secrets` boots from a fresh
+directory every run, and deleting `.vm/` does the same for `just vm`, so the
+host key on that port keeps changing.
 
 Two habits worth keeping. Use `secrets-show` rather than `secrets-edit` when you
 only want to look: saving from an editor rewrites the file with a fresh MAC and
