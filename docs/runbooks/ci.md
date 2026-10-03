@@ -78,12 +78,13 @@ nix build --dry-run --store "$(mktemp -d)" --option substituters https://cache.n
 ```
 
 **VM (virtual machine) tests run in CI.** Since #10, `nix flake check` also runs
-`base-ssh`, a NixOS test that boots two VMs and logs in over SSH. That adds two
-VM images to the build and a few minutes to the run. NixOS tests require the
-`kvm` system feature, so the job depends on the runner exposing `/dev/kvm` to
-the Nix build users, which `install-nix-action` is expected to do on GitHub's
-Linux runners. If a run fails with "required system feature kvm", that is the
-cause, not the test. Locally, without KVM (Kernel-based Virtual Machine) access,
+`base-ssh`, a NixOS test that boots two VMs and logs in over SSH. NixOS tests
+require the `kvm` system feature. `install-nix-action` provides it on GitHub's
+Linux runners (`enable_kvm`, on by default; the job log shows "Enabled KVM"),
+and with it the test takes about 25 seconds; the first run, on #71, finished in
+under two minutes in all. If the build instead stops because no machine has the
+`kvm` and `nixos-test` features, the runner lost KVM (Kernel-based Virtual
+Machine) access; the test itself is not at fault. Locally, without KVM access,
 the test falls back to software emulation and takes about four minutes;
 `docs/runbooks/workstation.md` has the udev rule that fixes that.
 
