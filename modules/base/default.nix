@@ -10,11 +10,18 @@
 # live here as `lib.mkDefault`, which a host may then override. Identity has no
 # sensible fallback, so it does not.
 #
-# Deliberately minimal. Ticket 1.3 (#10) adds the ops user, sshd, nix settings,
-# garbage collection, the latest kernel, microcode and locale.
+# Split by concern: ssh.nix (the ops account and sshd), nix.nix (Nix settings
+# and garbage collection), system.nix (clock, bootloader retention, tools).
+# Hardware-specific settings, such as the kernel series and CPU microcode,
+# belong to the host.
 { lib, inputs, ... }:
 {
-  imports = [ inputs.sops-nix.nixosModules.sops ];
+  imports = [
+    inputs.sops-nix.nixosModules.sops
+    ./ssh.nix
+    ./nix.nix
+    ./system.nix
+  ];
 
   # Secrets are decrypted at activation into /run/secrets, never into the Nix
   # store, which is world readable. See ADR 0004.
