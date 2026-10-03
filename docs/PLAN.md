@@ -93,7 +93,7 @@ Ticket bodies with tasks and acceptance criteria are in `scripts/tickets.py`; `s
 ### Phase 2: GitOps, updates, rollback
 - **2.1** `comin` module: poll `main` of the public repo every 60 s, deploy on new commit. Optionally require signed commits (comin supports GPG-verified commits). AC: push a change to `motd`, see it on host within 2 min without SSH.
 - **2.2** `update-flake-lock.yml`: weekly Action opens a PR bumping `flake.lock`; CI builds it. Enable auto-merge on green for nixpkgs-only bumps (decide after first month). AC: first automated PR merged and deployed via comin.
-- **2.3** Safe update policy: `system.autoUpgrade` disabled (comin owns it), `boot.loader.systemd-boot.configurationLimit = 10`, kernel-change reboots scheduled in a maintenance window (e.g. 04:00 Tue) via a timer; game servers get a pre-reboot RCON (remote console) warning hook (Phase 4 wires this). AC: documented in `docs/runbooks/updates.md`.
+- **2.3** Safe update policy: `system.autoUpgrade` disabled (comin owns it), `boot.loader.systemd-boot.configurationLimit = 10` (already set in 1.3, #10), kernel-change reboots scheduled in a maintenance window (e.g. 04:00 Tue) via a timer; game servers get a pre-reboot RCON (remote console) warning hook (Phase 4 wires this). AC: documented in `docs/runbooks/updates.md`.
 - **2.4** Rollback drill: deploy a deliberately broken service, confirm comin/systemd fails safely, roll back via bootloader generation and via `git revert`. AC: both paths documented and tested.
 - **2.5** Notifications: comin/systemd failure → ntfy or Discord webhook (secret in sops). AC: a forced failure produces a notification.
 - **2.6** README badges + architecture diagram (Mermaid) for the CV angle. AC: README explains the pipeline in one screen.

@@ -111,7 +111,7 @@ Sources: [POSIX rationale for the shell utilities](https://pubs.opengroup.org/on
 
 </details>
 
-### What does `ssh -n` do, and why did the VM test need it?
+### What does `ssh -n` do, and why did the virtual machine test need it?
 
 *2026-10-03*
 

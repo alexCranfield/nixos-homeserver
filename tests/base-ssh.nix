@@ -16,6 +16,7 @@ let
   # stdin, and ssh closes its stdout before it exits. The driver then sends its
   # next line, ssh forwards that line to the nuc, and the driver waits forever.
   ssh = "ssh -n -i key -o StrictHostKeyChecking=no -o BatchMode=yes";
+  opsKey = pkgs.lib.strings.trim (builtins.readFile ../keys/ops.pub);
 in
 pkgs.testers.runNixOSTest {
   name = "base-ssh";
@@ -66,6 +67,11 @@ pkgs.testers.runNixOSTest {
         groups = client.succeed("${ssh} ops@nuc id -nG").split()
         print(f"groups: {groups}")
         assert "wheel" in groups and "docker" not in groups, groups
+
+    with subtest("the real ops key from keys/ops.pub is trusted"):
+        # The logins above use the test key, so they would still pass if the
+        # real key were dropped. Without it, a real install locks Alex out.
+        nuc.succeed("grep -qxF '${opsKey}' /etc/ssh/authorized_keys.d/ops")
 
     with subtest("the only host key is ed25519"):
         nuc.succeed("test -e /etc/ssh/ssh_host_ed25519_key")

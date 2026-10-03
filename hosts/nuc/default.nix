@@ -17,7 +17,8 @@
   boot.kernelPackages = pkgs.linuxPackages_latest;
   hardware.cpu.intel.updateMicrocode = true;
   # Firmware the kernel loads at boot, notably the Xe3 iGPU's GuC and HuC
-  # microcontroller blobs; the igc NIC driver needs none.
+  # microcontroller blobs. The NICs are expected to use igc, which needs none;
+  # the hardware survey (#8) confirms the driver.
   hardware.enableRedistributableFirmware = true;
 
   # Records the release at which this machine's persistent state was created.
