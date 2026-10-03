@@ -64,6 +64,12 @@
         ];
       };
 
+      # Live USB for the hardware survey and the install, with the latest
+      # kernel and the ops key. Build with `just iso`; see hosts/installer.
+      nixosConfigurations.installer = nixpkgs.lib.nixosSystem {
+        modules = [ ./hosts/installer ];
+      };
+
       # Toolchain for working on this repo. direnv loads it on `cd` via .envrc,
       # so `just` and `sops` are on PATH without `nix shell` each time. Pinned
       # by flake.lock like everything else, per ADR 0007.
