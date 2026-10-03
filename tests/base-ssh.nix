@@ -43,7 +43,9 @@ pkgs.testers.runNixOSTest {
         version = client.succeed("${ssh} ops@nuc nixos-version").strip()
         print(f"nixos-version: {version}")
         assert version.startswith("26.05"), version
-        print("kernel: " + client.succeed("${ssh} ops@nuc uname -r").strip())
+        kernel = client.succeed("${ssh} ops@nuc uname -r").strip()
+        print(f"kernel: {kernel}")
+        assert kernel.startswith("${pkgs.linuxPackages_latest.kernel.version}"), kernel
 
     with subtest("passwords are not offered at all"):
         status, out = client.execute(

@@ -1,9 +1,11 @@
-# Host-agnostic system defaults: clock, bootloader retention, admin tools.
+# Host-agnostic system defaults: clock, locale, bootloader retention, admin tools.
 { ... }:
 {
   # UTC, so logs never jump at daylight-saving changes and timers mean the same
   # thing all year. Maintenance windows are written in UTC.
   time.timeZone = "UTC";
+  # The NixOS default, stated so it is a decision rather than an accident.
+  i18n.defaultLocale = "en_US.UTF-8";
 
   # Ten generations in the boot menu: enough to roll back past a bad week of
   # deploys without filling the ESP (EFI System Partition).
