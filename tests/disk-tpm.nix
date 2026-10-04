@@ -81,7 +81,9 @@ pkgs.testers.runNixOSTest {
     ''
       import re
 
-      PROMPT = "Please enter passphrase for disk cryptroot"
+      # systemd names the disk by its partition label, then the mapping:
+      # "Please enter passphrase for disk disk-main-luks (cryptroot):".
+      PROMPT = r"Please enter passphrase for disk \S+ \(cryptroot\)"
 
       def boot(expect_prompt):
           """Start the VM and answer the passphrase prompt, or assert it never came."""
@@ -92,7 +94,7 @@ pkgs.testers.runNixOSTest {
               nuc.wait_for_console_text(PROMPT, timeout=300)
               nuc.send_console("${passphrase}\n")
           nuc.wait_for_unit("multi-user.target")
-          prompted = PROMPT in nuc.get_console_log()
+          prompted = re.search(PROMPT, nuc.get_console_log()) is not None
           assert prompted == expect_prompt, f"passphrase prompt shown: {prompted}"
 
       def reboot(expect_prompt):
