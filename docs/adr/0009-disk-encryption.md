@@ -1,7 +1,11 @@
 # ADR 0009: Disk encryption on the nuc
 
 Date: 2026-10-03. Status: accepted, on condition that the hardware survey (#8)
-finds a TPM (Trusted Platform Module) 2.0.
+finds a TPM (Trusted Platform Module) 2.0. Condition met 2026-10-04: the survey
+found Intel's firmware TPM 2.0 (manufacturer `INTC`, vendor `PTL`) with a
+SHA-256 bank covering every PCR (Platform Configuration Register), and AES
+(Advanced Encryption Standard) XTS at about 9.4 GB/s. See the record in
+`docs/runbooks/hardware.md`.
 
 ## Context
 
@@ -43,10 +47,9 @@ wiping the drive and reinstalling.
 
 Notes on the less obvious cells:
 
-- **D without Secure Boot.** The key is sealed to PCR (Platform Configuration
-  Register) 7, which records the Secure Boot state and keys. With Secure Boot
-  off, a thief who boots their own USB stick reproduces the same PCR 7 value
-  and the TPM releases the key. So D protects scenario 1 at once, and does not
+- **D without Secure Boot.** The key is sealed to PCR 7, which records the
+  Secure Boot state and keys. With Secure Boot off, a thief who boots their own
+  USB stick reproduces the same PCR 7 value and the TPM releases the key. So D protects scenario 1 at once, and does not
   yet protect scenario 2.
 - **D with Secure Boot, and what it still leaves.** #47 turns on Secure Boot with
   Alex's own keys and turns off the boot menu editor, which otherwise allows
@@ -177,7 +180,7 @@ What goes with the decision:
 - **Failure mode.** If the TPM refuses the key for any reason, the server waits
   at the recovery prompt until someone types the passphrase at the console.
   That is an outage, not data loss.
-- **Performance.** AES (Advanced Encryption Standard) runs in hardware on this
+- **Performance.** AES runs in hardware on this
   CPU. The survey can measure the cost with `cryptsetup benchmark`; it is not
   expected to matter for game servers or model loading.
 - **ADR 0004.** Its consequences gain a line: the host key is protected at rest

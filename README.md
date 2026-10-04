@@ -110,9 +110,9 @@ does not re-encrypt anything on its own.
 Phase 0 (workstation and repo foundations) is done apart from the key
 passphrase (#56) and the machine user (#61). CI (continuous integration) is
 live and required on `main`, and ADRs (Architecture Decision Records) 0001 to
-0007 are written. The hardware arrived on 2026-10-01; Phase 1 starts with
-assembly and BIOS checks (#8), and the install (#13) waits on the
-disk-encryption decision (#57) and the disk layout (#9). See the
+0007 and 0009 are written. The hardware arrived on 2026-10-01 and was assembled
+and surveyed on 2026-10-04 (#8). Disk encryption is decided (ADR 0009); the
+install (#13) waits on the disk layout (#9) and networking (#11). See the
 [milestones](https://github.com/alexCranfield/nixos-homeserver/milestones).
 
 ## License
