@@ -1,12 +1,9 @@
-# PLACEHOLDER. The machine does not exist yet.
+# PLACEHOLDER kernel module lists, until the install.
 #
-# Ticket 1.2 (#9) replaces the fileSystems below with a disko-generated layout.
-# Ticket 1.6 (#13) replaces the kernel module lists with the real output of
-# `nixos-generate-config --show-hardware-config` run on the NUC itself.
-#
-# Until then these values exist only so the closure evaluates and builds. They
-# describe nothing real, and the labels are deliberately obvious so a stray
-# install cannot silently succeed against the wrong disk.
+# Ticket 1.6 (#13) replaces them with the real output of
+# `nixos-generate-config --show-hardware-config --no-filesystems` run on the NUC
+# itself. `--no-filesystems` because the disk is declared in disko.nix, which
+# generates fileSystems and swapDevices; listing them here too would conflict.
 { modulesPath, ... }:
 {
   imports = [ (modulesPath + "/installer/scan/not-detected.nix") ];
@@ -14,7 +11,7 @@
   # Announced on every build and in CI so the placeholder cannot reach a real
   # machine unnoticed. Deleting this warning is part of ticket 1.6 (#13).
   warnings = [
-    "hosts/nuc/hardware-configuration.nix is still the placeholder; replace it in tickets 1.2 (#9) and 1.6 (#13)"
+    "hosts/nuc/hardware-configuration.nix is still the placeholder; replace it in ticket 1.6 (#13)"
   ];
 
   boot.initrd.availableKernelModules = [
@@ -27,15 +24,4 @@
   boot.kernelModules = [ "kvm-intel" ];
   boot.extraModulePackages = [ ];
 
-  fileSystems."/" = {
-    device = "/dev/disk/by-label/PLACEHOLDER-ROOT";
-    fsType = "btrfs";
-  };
-
-  fileSystems."/boot" = {
-    device = "/dev/disk/by-label/PLACEHOLDER-BOOT";
-    fsType = "vfat";
-  };
-
-  swapDevices = [ ];
 }

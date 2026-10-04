@@ -108,6 +108,16 @@
         # Ticket 1.3 (#10): key-only SSH as ops, root refused, 26.05 booted.
         base-ssh = import ./tests/base-ssh.nix { inherit pkgs inputs nixpkgs; };
 
+        # Ticket 1.2 (#9): the partitioning script nixos-anywhere will run.
+        disko-script = self.nixosConfigurations.nuc.config.system.build.diskoScript;
+
+        # Tickets 1.2 (#9) and 1.0 (#57): the encrypted layout boots, asks for
+        # the passphrase, then unlocks from the TPM, as ADR 0009 says.
+        disk-tpm = import ./tests/disk-tpm.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
         # Fails `nix flake check` if the server stops using the dev shell's Nix,
         # for example after a `nix.package` override on the host.
         devshell-nix-matches-server =

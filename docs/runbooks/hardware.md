@@ -48,7 +48,7 @@ Never use them against the installed server.
 
 - [ ] Both DDR5 SO-DIMMs (laptop-size memory modules) seated.
 - [ ] NVMe (Non-Volatile Memory Express) drive in the **primary** M.2 slot.
-      The second slot stays empty for now.
+      The second slot stays empty for now; see "The second M.2 slot" below.
 - [ ] Photograph the labels before closing the case: RAM part numbers, NVMe
       model and serial.
 
@@ -115,7 +115,7 @@ So a firmware update is never done remotely or unattended:
 2. At the prompt, type the recovery passphrase from the offline backup.
 3. SSH in as ops (it has no password, so the console login won't work) and
    replace the TPM key, wiping the old one:
-   `sudo systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7 <LUKS partition>`.
+   `sudo systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/disk-main-luks`.
    Once #47 lands, bind PCR (Platform Configuration Register) 15 to its
    pre-unlock value as well, which must be written out because it is no longer
    zero on a running system:
@@ -125,6 +125,23 @@ So a firmware update is never done remotely or unattended:
 Before sending the whole machine away, for a warranty repair or a sale, wipe
 the TPM key slot the same way, without enrolling a new one, or clear the TPM in
 the BIOS.
+
+## The second M.2 slot
+
+Empty, and kept for a future data disk: models for the local LLMs (large
+language models) and game worlds once they outgrow the shared 1 TB.
+
+`hosts/nuc/disko.nix` names the system drive `/dev/nvme0n1`. The kernel numbers
+NVMe drives in the order it finds them, so with a second drive fitted that name
+may point at the wrong one, and a reinstall would wipe it. Before fitting one:
+
+1. Find the system drive's stable name: `ls -l /dev/disk/by-id/ | grep nvme`,
+   the entry without a `-part` suffix that links to the current `nvme0n1`.
+2. Put that path in `disko.nix` in place of `/dev/nvme0n1`, by pull request.
+
+The installed system does not care: it finds its partitions by label
+(`disk-main-ESP`, `disk-main-luks`), not by drive name. Only disko's
+partitioning, at install, uses the name.
 
 ## Lost ops key
 

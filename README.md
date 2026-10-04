@@ -22,8 +22,9 @@ from `main`, backs up to the NAS (network-attached storage) with restic, and is 
 ```
 flake.nix                          inputs, nixosConfigurations.nuc, formatter, checks
 flake.lock                         pinned revisions; commit every change
-hosts/nuc/default.nix              the host: imports hardware + base
-hosts/nuc/hardware-configuration.nix   PLACEHOLDER until the first install (#13)
+hosts/nuc/default.nix              the host: imports disko, hardware + base; encrypted-boot settings
+hosts/nuc/disko.nix                the disk: ESP (EFI System Partition), btrfs in LUKS2 (Linux Unified Key Setup), swapfile
+hosts/nuc/hardware-configuration.nix   kernel modules: PLACEHOLDER until the first install (#13)
 hosts/installer/default.nix        live USB: latest kernel, survey tools, ops key
 keys/ops.pub                       the admin SSH public key (private half on the workstation)
 modules/base/default.nix           config applied to every host; imports the files below
@@ -33,6 +34,7 @@ modules/base/system.nix            UTC clock, locale, boot menu retention, git a
 modules/base/vm.nix                SSH into `just vm` on 127.0.0.1:2222; no effect on a real host
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
+tests/disk-tpm.nix                 VM test: the real layout boots, then unlocks from an emulated TPM (Trusted Platform Module)
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
 scripts/tickets.py                 ticket definitions; file_issues.py files them

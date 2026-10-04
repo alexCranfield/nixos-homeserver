@@ -1,0 +1,135 @@
+# The nuc's disk, declared. disko turns this into the partitioning script that
+# nixos-anywhere runs at install (#13), and into the `fileSystems`, `swapDevices`
+# and `boot.initrd.luks.devices` this host boots with.
+#
+# GPT (GUID Partition Table) with two partitions:
+#
+#   ESP (EFI System Partition), 1 GiB, vfat, /boot. Unencrypted, as the
+#     firmware must read it. Holds systemd-boot and one kernel and initrd per
+#     generation; 1 GiB keeps the ten generations in system.nix with room over.
+#   cryptroot, the rest. LUKS2 (Linux Unified Key Setup, version 2), holding one
+#     btrfs filesystem with the subvolumes below (ADR 0009).
+#
+# Changing anything here on an installed machine does nothing to the disk.
+# disko only partitions at install; after that this file just describes what is
+# there, and a mismatch shows up as a failed mount at boot.
+{
+  disko.devices.disk.main = {
+    type = "disk";
+    # The only NVMe (Non-Volatile Memory Express) drive. Kernel names follow probe
+    # order, so a second drive in the empty M.2 slot could take this name.
+    # Before fitting one, change this to the drive's /dev/disk/by-id path; see
+    # docs/runbooks/hardware.md.
+    device = "/dev/nvme0n1";
+    content = {
+      type = "gpt";
+      partitions = {
+        ESP = {
+          size = "1G";
+          type = "EF00";
+          content = {
+            type = "filesystem";
+            format = "vfat";
+            mountpoint = "/boot";
+            # Only root can read the boot loader's files, including its random
+            # seed.
+            mountOptions = [ "umask=0077" ];
+          };
+        };
+
+        luks = {
+          size = "100%";
+          content = {
+            type = "luks";
+            name = "cryptroot";
+            # The recovery passphrase, read only while formatting. nixos-anywhere
+            # copies it here with `--disk-encryption-keys` (ADR 0009); it is
+            # never in this repo or the Nix store.
+            passwordFile = "/tmp/disk.key";
+            settings = {
+              # TRIM (discard) reaches the SSD. It reveals which blocks are in
+              # use, never their content; ADR 0009 accepts that.
+              allowDiscards = true;
+              # Try a TPM (Trusted Platform Module) key first, then fall back
+              # to the passphrase prompt. Until `systemd-cryptenroll` adds a TPM
+              # key after the first boot, the prompt is all there is.
+              crypttabExtraOpts = [ "tpm2-device=auto" ];
+            };
+            content = {
+              type = "btrfs";
+              extraArgs = [ "-f" ];
+              # A btrfs `compress` mount option applies to the whole filesystem,
+              # whichever subvolume it is written on, so leaving it off @docker
+              # would not stop @docker being compressed. The per-directory
+              # property does: files created under it inherit "none".
+              postCreateHook = ''
+                mnt=$(mktemp -d)
+                mount /dev/mapper/cryptroot "$mnt" -o subvol=/
+                btrfs property set "$mnt/@docker" compression none
+                umount "$mnt"
+                rmdir "$mnt"
+              '';
+              subvolumes =
+                let
+                  # zstd level 1: nearly free on this CPU, and most of what
+                  # compresses well (the Nix store, logs, game worlds) does so
+                  # at level 1 about as well as at the default of 3.
+                  compressed = [
+                    "compress=zstd:1"
+                    "noatime"
+                  ];
+                in
+                {
+                  "@root" = {
+                    mountpoint = "/";
+                    mountOptions = compressed;
+                  };
+                  "@nix" = {
+                    mountpoint = "/nix";
+                    mountOptions = compressed;
+                  };
+                  "@home" = {
+                    mountpoint = "/home";
+                    mountOptions = compressed;
+                  };
+                  # Container data, /srv/data/<stack> (ticket 3.3, #24).
+                  "@srv" = {
+                    mountpoint = "/srv";
+                    mountOptions = compressed;
+                  };
+                  # Docker's images and named volumes (ticket 3.1, #22). Left
+                  # uncompressed as the ticket asks: a volume may hold a database,
+                  # whose small in-place rewrites fragment compressed extents. A
+                  # weak reason either way; postCreateHook above turns it off.
+                  "@docker" = {
+                    mountpoint = "/var/lib/docker";
+                    mountOptions = [ "noatime" ];
+                  };
+                  # Snapshots of the others, for the backups in ticket 3.5 (#26).
+                  # A snapshot is not itself snapshotted, so it lives apart.
+                  "@snapshots" = {
+                    mountpoint = "/.snapshots";
+                    mountOptions = compressed;
+                  };
+                  # A swapfile on disk rather than zram (compressed swap in RAM).
+                  # Swap is the margin for the day a large model and the game
+                  # servers together outgrow 96 GB; zram can only squeeze what is
+                  # already in RAM, so it gives the least room exactly then.
+                  # No hibernation, so 16 GiB is a margin, not RAM-sized.
+                  #
+                  # Its own subvolume because btrfs cannot snapshot a subvolume
+                  # holding an active swapfile. `btrfs filesystem mkswapfile`
+                  # creates it uncompressed and copy-on-write disabled, as swap
+                  # requires. Inside LUKS, so swapped-out memory is encrypted too.
+                  "@swap" = {
+                    mountpoint = "/.swapvol";
+                    swap.swapfile.size = "16G";
+                  };
+                };
+            };
+          };
+        };
+      };
+    };
+  };
+}
