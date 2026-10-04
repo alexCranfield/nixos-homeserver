@@ -4,8 +4,8 @@ Date: 2026-10-03. Status: accepted, on condition that the hardware survey (#8)
 finds a TPM (Trusted Platform Module) 2.0. Condition met 2026-10-04: the survey
 found Intel's firmware TPM 2.0 (manufacturer `INTC`, vendor `PTL`) with a
 SHA-256 bank covering every PCR (Platform Configuration Register), and AES
-(Advanced Encryption Standard) in XTS mode at about 9,400 MiB/s. See the record in
-`docs/runbooks/hardware.md`.
+(Advanced Encryption Standard) in XTS mode at about 9,400 MiB/s. See the record
+in `docs/runbooks/hardware.md`.
 
 ## Context
 

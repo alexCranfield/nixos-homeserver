@@ -88,23 +88,23 @@ many distributions it guesses right, which is why it is the default.
 <summary>Answer</summary>
 
 Usually not: they are separate settings, often on separate menus. On AMI
-(American Megatrends) firmware like this nuc's, the TPM is usually under Advanced (often a "Trusted
-Computing" page), and Secure Boot under Security or Boot. On firmware P1.10 the
-TPM setting Alex found was labelled "TPM 2.0", with no mention of PTT (Platform
-Trust Technology).
+(American Megatrends) firmware like this nuc's, the TPM is usually under
+Advanced (often a "Trusted Computing" page), and Secure Boot under Security or
+Boot. On firmware P1.10 the TPM setting Alex found was labelled "TPM 2.0", with
+no mention of PTT (Platform Trust Technology).
 
 They are related, which is why it's easy to assume they go together:
 
 - **Secure Boot** decides what is allowed to run: the firmware refuses a
   bootloader not signed by a trusted key.
 - **The TPM** records what did run. Each boot stage is measured into its PCRs
-  (Platform Configuration Registers), and the TPM releases a sealed secret,
-  such as ADR (Architecture Decision Record) 0009's disk key, only when those
-measurements match.
+  (Platform Configuration Registers), and the TPM releases a sealed secret, such
+  as ADR (Architecture Decision Record) 0009's disk key, only when those
+  measurements match.
 
 Each is weak alone. ADR 0009 seals its key to PCR 7, which records the Secure
 Boot state rather than the exact software booted. Without Secure Boot, an
-attacker can boot their own software and still reproduce PCR 7. Without the TPM, nothing ties the
-disk key to the boot at all. ADR 0009 and #47 combine them.
+attacker can boot their own software and still reproduce PCR 7. Without the TPM,
+nothing ties the disk key to the boot at all. ADR 0009 and #47 combine them.
 
 </details>
