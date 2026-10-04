@@ -11,7 +11,8 @@
 # sensible fallback, so it does not.
 #
 # Split by concern: ssh.nix (the ops account and sshd), nix.nix (Nix settings
-# and garbage collection), system.nix (clock, bootloader retention, tools).
+# and garbage collection), system.nix (clock, bootloader retention, tools),
+# vm.nix (SSH into `just vm`, which changes nothing on a real host).
 # Hardware-specific settings, such as the kernel series and CPU microcode,
 # belong to the host.
 { lib, inputs, ... }:
@@ -21,6 +22,7 @@
     ./ssh.nix
     ./nix.nix
     ./system.nix
+    ./vm.nix
   ];
 
   # Secrets are decrypted at activation into /run/secrets, never into the Nix
