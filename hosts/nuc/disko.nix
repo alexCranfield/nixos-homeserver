@@ -52,9 +52,12 @@
               # TRIM (discard) reaches the SSD. It reveals which blocks are in
               # use, never their content; ADR 0009 accepts that.
               allowDiscards = true;
-              # Try a TPM (Trusted Platform Module) key first, then fall back
-              # to the passphrase prompt. Until `systemd-cryptenroll` adds a TPM
-              # key after the first boot, the prompt is all there is.
+              # Unlock with a TPM (Trusted Platform Module) key, falling back
+              # to the passphrase prompt; until `systemd-cryptenroll` adds a TPM
+              # key after the first boot, the prompt is all there is. Stated
+              # for clarity rather than need: with systemd 260 the disk test
+              # unlocks from the TPM without this line too, because a TPM key
+              # enrolled in the LUKS header is tried on its own.
               crypttabExtraOpts = [ "tpm2-device=auto" ];
             };
             content = {
