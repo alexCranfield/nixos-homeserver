@@ -16,7 +16,7 @@ it, or supersede it with a new ADR, rather than editing it quietly (see
 | [0006](0006-docker-vs-podman.md) | Rootful Docker, with published ports and the root daemon handled by fail-closed defaults and checks | Accepted |
 | [0007](0007-nix-distribution-policy.md) | Match flake inputs, not Nix versions; the dev shell carries the server's Nix | Accepted, amended 2026-09-27 |
 | 0008 | K3s or stay on Compose | Reserved: ticket 8.1 (#49) |
-| [0009](0009-disk-encryption.md) | Full-disk LUKS (Linux Unified Key Setup) unlocked by a TPM (Trusted Platform Module) key sealed to PCR (Platform Configuration Register) 7; theft protection completes with Secure Boot | Accepted, on condition the survey finds a TPM 2.0 |
+| [0009](0009-disk-encryption.md) | Whole-root LUKS2 (Linux Unified Key Setup) unlocked by a TPM (Trusted Platform Module) key sealed to PCR (Platform Configuration Register) 7; Secure Boot (#47) extends it to partial theft protection | Accepted, on condition the survey finds a TPM 2.0 |
 | 0010 | Security posture | Reserved: ticket 7.2 (#45) |
 
 Numbers are claimed by the ticket that will write the ADR, which is why the

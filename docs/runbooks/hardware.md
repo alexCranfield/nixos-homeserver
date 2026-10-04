@@ -48,14 +48,13 @@ Never use them against the installed server.
 Photograph every screen you change.
 
 - [ ] **Record the BIOS version first.** If ASRock has a newer release, update
-      now, before anything is installed. If #57 chooses a TPM-sealed disk key,
-      a later firmware update changes the TPM's measurements and can block
-      automatic unlock.
+      now, before anything is installed. The disk key will be sealed in the
+      TPM (Trusted Platform Module, ADR 0009), and every later firmware update
+      changes what the TPM measures, so it blocks the automatic unlock once.
 - [ ] Restore on AC (alternating current) power loss: **power on**.
 - [ ] VT-x and VT-d: **on**.
-- [ ] TPM (Trusted Platform Module) 2.0 / Intel PTT (Platform Trust
-      Technology): record whether it exists, and turn it **on**. This decides
-      #57.
+- [ ] TPM 2.0 / Intel PTT (Platform Trust Technology): record whether it
+      exists, and turn it **on**. ADR 0009's disk encryption depends on it.
 - [ ] Secure Boot: **off**. Record whether custom keys can be enrolled, for
       #47 later.
 - [ ] Boot order: USB, then NVMe, for now. After the install (#13), put NVMe
@@ -81,6 +80,25 @@ ls /sys/class/tpm/ && tpm2_getcap properties-fixed | head -20
 bootctl status 2>/dev/null | head -15       # Secure Boot state, firmware
 dmesg | grep -iE 'firmware|xe |igc|error' | head -40
 ```
+
+## Firmware updates after the install
+
+The disk unlocks itself with a key sealed in the TPM (ADR 0009). A BIOS update,
+including one that only refreshes the Secure Boot revocation list, changes what
+the TPM measures, and the next boot stops at the recovery passphrase prompt.
+So a firmware update is never done remotely or unattended:
+
+1. Update the firmware with someone at the console.
+2. At the prompt, type the recovery passphrase from the offline backup.
+3. Log in as ops and replace the TPM key, wiping the old one:
+   `sudo systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7 <LUKS partition>`
+   (once #47 lands, `--tpm2-pcrs=7+15`; PCR means Platform Configuration
+   Register).
+4. Reboot once more and confirm it comes up without the prompt.
+
+Before sending the whole machine away, for a warranty repair or a sale, wipe
+the TPM key slot the same way, without enrolling a new one, or clear the TPM in
+the BIOS.
 
 ## Lost ops key
 
