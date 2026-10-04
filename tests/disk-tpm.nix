@@ -180,9 +180,13 @@ pkgs.testers.runNixOSTest {
           assert re.search(r"^zstd ", out, re.M), "/srv/probe was not compressed"
 
       with subtest("PCR 7 holds a measurement, so the boot was measured"):
-          driver = nuc.succeed("basename $(readlink /sys/class/tpm/tpm0/device/driver)").strip()
-          print(f"TPM driver: {driver}")
-          assert driver == "tpm_crb", driver
+          # The module, not the driver: on kernel 7.2 the tpm_crb module
+          # registers its driver as tpm_crb_acpi.
+          module = nuc.succeed(
+              "basename $(readlink /sys/class/tpm/tpm0/device/driver/module)"
+          ).strip()
+          print(f"TPM driver module: {module}")
+          assert module == "tpm_crb", module
           pcr7 = nuc.succeed("systemd-analyze pcrs 7 --json=short")
           print(pcr7)
           assert re.search(r'"sha256":"[0-9a-f]{64}"', pcr7), pcr7
