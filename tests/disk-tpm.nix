@@ -147,9 +147,11 @@ pkgs.testers.runNixOSTest {
               assert got == f"/dev/mapper/cryptroot[/{subvol}]", (target, got)
 
       with subtest("16 GiB of swap, inside the encrypted volume"):
-          swaps = nuc.succeed("swapon --show=NAME,SIZE --noheadings --bytes").split()
-          print(swaps)
-          assert swaps == ["/.swapvol/swapfile", str(16 * 1024**3)], swaps
+          swaps = nuc.succeed("swapon --show=NAME --noheadings").split()
+          assert swaps == ["/.swapvol/swapfile"], swaps
+          # The file's size: swapon reports one 4 KiB page less, the swap header.
+          size = nuc.succeed("stat -c %s /.swapvol/swapfile").strip()
+          assert size == str(16 * 1024**3), size
 
       with subtest("the ESP is 1 GiB of vfat"):
           size = nuc.succeed("lsblk -bndo SIZE /dev/vdb1").strip()
