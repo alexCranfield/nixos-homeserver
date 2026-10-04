@@ -1,7 +1,7 @@
 # ADR 0009: Disk encryption on the nuc
 
-Date: 2026-10-03. Status: proposed. Waiting on the TPM (Trusted Platform
-Module) answer from the hardware survey (#8) and on Alex's decision.
+Date: 2026-10-03. Status: accepted, on condition that the hardware survey (#8)
+finds a TPM (Trusted Platform Module) 2.0.
 
 ## Context
 
@@ -88,9 +88,24 @@ out by unattended boot.
 
 ## Decision
 
-Pending. To be filled in with Alex's choice once the survey reports the TPM.
+**D.** Alex chose it on 2026-10-03. The whole root goes in a LUKS2 container,
+unlocked at boot by a TPM key sealed to PCR 7, with a recovery passphrase in a
+second key slot, kept offline like the age key backup.
 
-## Consequences (if D is chosen)
+The one condition is the TPM itself. If the survey in #8 finds no TPM 2.0, or
+one the firmware cannot enable, this ADR is reopened to choose between E and A.
+It does not fall back to either silently.
+
+Three things go with the decision:
+
+- **#47 (Secure Boot) gets the criteria that make D protect against theft:**
+  Secure Boot on with Alex's own keys, the boot menu editor off, and the TPM key
+  re-enrolled against the new PCR 7.
+- **#9's layout and #13's install implement it,** as the consequences below
+  describe.
+- **A VM test proves the unlock before the real install,** as #57 requires.
+
+## Consequences
 
 - **Install (#13).** nixos-anywhere passes the initial passphrase with
   `--disk-encryption-keys`, and disko formats the LUKS container with it. After
