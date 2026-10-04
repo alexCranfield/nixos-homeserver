@@ -87,7 +87,9 @@ pkgs.testers.runNixOSTest {
           """Start the VM and answer the passphrase prompt, or assert it never came."""
           nuc.start()
           if expect_prompt:
-              nuc.wait_for_console_text(PROMPT)
+              # Bounded, so a boot that never asks fails here instead of hanging
+              # until CI (continuous integration) gives up.
+              nuc.wait_for_console_text(PROMPT, timeout=300)
               nuc.send_console("${passphrase}\n")
           nuc.wait_for_unit("multi-user.target")
           prompted = PROMPT in nuc.get_console_log()
@@ -105,6 +107,12 @@ pkgs.testers.runNixOSTest {
           nuc.succeed("${lib.getExe build.unmount}")
           nuc.succeed("rm /tmp/disk.key")
           nuc.succeed("${installed}/bin/switch-to-configuration boot")
+          # That adds the installed system as a second boot menu entry; the
+          # default stays the test system. Make it the default, as on the NUC.
+          entry = nuc.succeed(
+              "ls /boot/loader/entries | grep -x 'nixos-generation-[0-9]*-specialisation-installed.conf'"
+          ).strip()
+          nuc.succeed(f"bootctl set-default {entry}")
 
       with subtest("first boot stops at the passphrase prompt"):
           reboot(expect_prompt=True)
