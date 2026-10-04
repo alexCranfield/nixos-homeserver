@@ -86,25 +86,27 @@ pkgs.testers.runNixOSTest {
       # "Please enter passphrase for disk disk-main-luks (cryptroot):".
       PROMPT = r"Please enter passphrase for disk \S+ \(cryptroot\)"
 
-      def wait_for_prompt(timeout=300):
-          """Bounded, so a boot that never asks fails here instead of hanging
-          until CI (continuous integration) gives up. Not
-          wait_for_console_text(timeout=...), which reads one console line per
-          second and falls behind a booting kernel."""
-          deadline = time.monotonic() + timeout
-          while not re.search(PROMPT, nuc.get_console_log()):
-              assert time.monotonic() < deadline, "no passphrase prompt"
-              time.sleep(1)
+      BOOTED = "Reached target Multi-User System"
 
-      def boot(expect_prompt):
-          """Start the VM and answer the passphrase prompt, or assert it never came."""
+      def boot(expect_prompt, timeout=600):
+          """Start the VM and see which comes first on the console: the
+          passphrase prompt or the end of the boot. Bounded, so a wrong outcome
+          fails in minutes instead of hanging until CI (continuous integration)
+          gives up. Not wait_for_console_text(timeout=...), which reads one
+          console line per second and falls behind a booting kernel."""
           nuc.start()
-          if expect_prompt:
-              wait_for_prompt()
+          deadline = time.monotonic() + timeout
+          while True:
+              console = nuc.get_console_log()
+              prompted = re.search(PROMPT, console) is not None
+              if prompted or BOOTED in console:
+                  break
+              assert time.monotonic() < deadline, "neither a prompt nor a boot"
+              time.sleep(1)
+          assert prompted == expect_prompt, f"passphrase prompt shown: {prompted}"
+          if prompted:
               nuc.send_console("${passphrase}\n")
           nuc.wait_for_unit("multi-user.target")
-          prompted = re.search(PROMPT, nuc.get_console_log()) is not None
-          assert prompted == expect_prompt, f"passphrase prompt shown: {prompted}"
 
       def reboot(expect_prompt):
           nuc.succeed("sync")
@@ -191,5 +193,8 @@ pkgs.testers.runNixOSTest {
           )
           reboot(expect_prompt=True)
           nuc.succeed("findmnt -no SOURCE / | grep -q '^/dev/mapper/cryptroot'")
+          # --wipe-slot=tpm2 replaced the key rather than adding a second one.
+          tokens = nuc.succeed("cryptsetup luksDump /dev/vdb2 | grep -c systemd-tpm2").strip()
+          assert tokens == "1", f"{tokens} TPM keys enrolled"
     '';
 }
