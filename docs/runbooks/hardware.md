@@ -20,8 +20,17 @@ just iso                                   # prints /nix/store/...-nixos-minimal
 cp -L "$(just iso)"/iso/*.iso /mnt/c/Users/<you>/Downloads/
 ```
 
-Write it to a USB stick from Windows with Rufus (choose **DD image** mode when
-asked) or balenaEtcher. Any stick of 2 GB or more; it is wiped.
+Write it to a USB stick from Windows with Rufus or balenaEtcher. Any stick of
+2 GB or more; it is wiped. In Rufus, after you press START, a prompt asks how
+to write the image: choose **DD Image mode**, never the recommended ISO mode.
+ISO mode rebuilds the stick as FAT32, whose 11-character label cannot hold
+`nixos-minimal-26.05-x86_64`, and the boot stops with
+`Timed out waiting for device /dev/disk/by-label/nixos-minimal-...`. The file
+system and cluster size fields in Rufus's main window appear in both modes and
+are ignored in DD mode, so they don't show which mode was used.
+
+Use a **USB-A** port for the keyboard and the stick. Under Linux the nuc's
+USB-C ports showed no devices in the survey (see the record below and #75).
 
 Boot it on the nuc from the firmware's boot menu. Then find its address, either
 from the router's DHCP (Dynamic Host Configuration Protocol) lease list or with
@@ -47,8 +56,12 @@ Never use them against the installed server.
 
 Photograph every screen you change.
 
-- [ ] **Record the BIOS version first.** If ASRock has a newer release, update
-      now, before anything is installed. The disk key will be sealed in the
+- [ ] **Record the BIOS version first.** The firmware screen calls it the UEFI
+      (Unified Extensible Firmware Interface) version. If ASRock has a newer
+      release, update now, before anything is installed. Check the download's
+      SHA-1 against ASRock's page: their checksum is for the zip as
+      downloaded, not the file inside it. The update resets most settings, so
+      make the ones below afterwards. The disk key will be sealed in the
       TPM (Trusted Platform Module, ADR 0009). A later firmware update can
       change what the TPM measures and block the automatic unlock once, so
       treat every update as if it will.
@@ -56,6 +69,8 @@ Photograph every screen you change.
 - [ ] VT-x and VT-d: **on**.
 - [ ] TPM 2.0 / Intel PTT (Platform Trust Technology): record whether it
       exists, and turn it **on**. ADR 0009's disk encryption depends on it.
+      On firmware P1.10 Alex found a "TPM 2.0" setting and no PTT option; the
+      survey shows it is Intel's firmware TPM.
 - [ ] Secure Boot: **off**. Record whether custom keys can be enrolled, for
       #47 later.
 - [ ] Boot order: USB, then NVMe, for now. After the install (#13), put NVMe
@@ -76,9 +91,15 @@ lspci -k                                    # driver bound to the iGPU (xe) and 
 ip -br link                                 # interface names and MAC (hardware) addresses
 for i in $(ls /sys/class/net | grep -v lo); do echo "$i: $(ethtool "$i" | grep -E 'Speed|Link detected' | tr -d '\t')"; done
 nvme list
-smartctl -a /dev/nvme0n1 | head -40
-ls /sys/class/tpm/ && tpm2_getcap properties-fixed | head -20
+smartctl -H -A /dev/nvme0n1                 # health verdict and wear
+ls /sys/class/tpm/ && tpm2_getcap properties-fixed | grep -A2 -E 'FAMILY_INDICATOR|MANUFACTURER'
+tpm2_getcap pcrs                            # which PCR banks exist
+ls /sys/class/iommu/                        # IOMMU active if dmar* listed
 bootctl status 2>/dev/null | head -15       # Secure Boot state, firmware
+cryptsetup benchmark                        # disk encryption speed (ADR 0009)
+lsusb -t                                    # which USB controllers see devices
+ls /sys/class/typec/                        # absent if Linux manages no USB-C port
+for z in /sys/class/thermal/thermal_zone*; do echo "$(cat $z/type) $(($(cat $z/temp)/1000))C"; done
 dmesg | grep -iE 'firmware|xe |igc|error' | head -40
 ```
 
@@ -123,18 +144,29 @@ Boot (#47); after that the live USB is the only route.
 
 ## Record
 
-Filled in from the survey output when ticket 1.1 closes.
+Surveyed on 2026-10-04 from the live USB, over SSH.
 
 | Item | Value |
 |---|---|
-| BIOS version and date | |
-| RAM modules (size, part number, speed) | |
-| `free -g` total | |
-| NVMe model, firmware, size | |
-| iGPU driver bound (`lspci -k`) | |
-| NIC 1: interface, MAC, driver | |
-| NIC 2: interface, MAC, driver | |
-| TPM 2.0 present | |
-| Secure Boot custom keys possible | |
-| Kernel used for the survey | |
-| `dmesg` firmware or driver errors | |
+| BIOS version and date | P1.10, 2026-05-26 (updated from P1.00, as shipped) |
+| CPU | Intel Core Ultra X7 358H: 16 cores, no hyper-threading, AES (Advanced Encryption Standard) in hardware |
+| RAM modules (size, part number, speed) | 2 × 48 GB Micron `CT48G56C46S5.M16C1`, 5600 MT/s |
+| `free -g` total | 93 |
+| NVMe model, firmware, size | Seagate FireCuda 530 `ZP1000GM30023`, firmware `SU6SM003`, 1.00 TB; SMART (Self-Monitoring, Analysis and Reporting Technology) passed, 0 % used |
+| iGPU driver bound (`lspci -k`) | `xe`; graphics microcontroller firmware loaded (GuC, HuC, GSC and DMC blobs) |
+| NPU (neural processing unit) | `intel_vpu`, firmware loaded |
+| NIC 1: interface, MAC, driver | `enp44s0`, Intel I226-LM, `9c:6b:00:5c:46:51`, `igc`; 2.5 Gb/s link, DHCP lease |
+| NIC 2: interface, MAC, driver | `enp45s0`, Intel I226-V, `9c:6b:00:5c:46:52`, `igc`; 2.5 Gb/s link, DHCP lease |
+| Wi-Fi and Bluetooth | Intel BE211, `iwlwifi` and `btintel_pcie` (unused) |
+| TPM 2.0 present | Yes: family 2.0, manufacturer `INTC`, vendor `PTL` (Intel's firmware TPM); SHA-256 bank covers PCRs 0 to 23 |
+| Secure Boot | Off. Whether custom keys can be enrolled was not checked; left to #47 |
+| IOMMU (input-output memory management unit) | Active: DMA (direct memory access) remapping units `dmar0` to `dmar2` |
+| `cryptsetup benchmark`, aes-xts 256-bit key | about 9,400 MiB/s each way |
+| Kernel used for the survey | 7.2.3 |
+| Temperatures at idle | CPU 46 °C, NVMe 23 °C |
+| `dmesg` firmware or driver errors | SoundWire audio link 3: bus clashes and `Clock stop failed -110` (audio only, harmless on a server). `intel-hid: failed to enable HID power button`, yet one press of the button still powered off cleanly |
+| USB | USB-A works (keyboard on `0000:00:14.0`). The USB-C ports' controller (`0000:00:0d.0`) logged nothing when a keyboard was plugged into either USB-C port; whether that was through a true USB-C plug is unconfirmed. The firmware reports the USB-C connector manager (`USBC000`, `\_SB_.UBTC`) as not present (`status=0`), which is consistent with `/sys/class/typec` being absent. See #75 |
+
+The NVMe error log held 13 entries and 8 unsafe shutdowns at 0 power-on hours,
+probably from factory testing and firmware-screen power cycles. Recheck after the
+install (#13) that neither grows.
