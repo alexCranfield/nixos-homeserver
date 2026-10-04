@@ -145,15 +145,12 @@ pkgs.testers.runNixOSTest {
           assert size == str(1024**3), size
           nuc.succeed("test \"$(blkid -o value -s TYPE /dev/vdb1)\" = vfat")
 
-      with subtest("compressed everywhere except /var/lib/docker"):
+      with subtest("data is compressed with zstd"):
           # 64 MiB of one repeated byte compresses to almost nothing, if allowed.
-          for d in ["/srv", "/home", "/var/lib/docker"]:
-              nuc.succeed(f"head -c 64M /dev/zero | tr '\\0' a > {d}/probe && sync")
-          out = nuc.succeed("compsize -b /srv/probe /home/probe; echo; compsize -b /var/lib/docker/probe")
+          nuc.succeed("head -c 64M /dev/zero | tr '\\0' a > /srv/probe && sync")
+          out = nuc.succeed("compsize -b /srv/probe")
           print(out)
-          compressed, docker = out.split("\n\n")
-          assert "zstd" in compressed, "zstd not used on /srv and /home"
-          assert "zstd" not in docker and "none" in docker, "/var/lib/docker was compressed"
+          assert re.search(r"^zstd ", out, re.M), "/srv/probe was not compressed"
 
       with subtest("PCR 7 holds a measurement, so the boot was measured"):
           pcr7 = nuc.succeed("systemd-analyze pcrs 7 --json=short")

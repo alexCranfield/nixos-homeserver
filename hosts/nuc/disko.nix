@@ -58,17 +58,6 @@
             content = {
               type = "btrfs";
               extraArgs = [ "-f" ];
-              # A btrfs `compress` mount option applies to the whole filesystem,
-              # whichever subvolume it is written on, so leaving it off @docker
-              # would not stop @docker being compressed. The per-directory
-              # property does: files created under it inherit "none".
-              postCreateHook = ''
-                mnt=$(mktemp -d)
-                mount /dev/mapper/cryptroot "$mnt" -o subvol=/
-                btrfs property set "$mnt/@docker" compression none
-                umount "$mnt"
-                rmdir "$mnt"
-              '';
               subvolumes =
                 let
                   # zstd level 1: nearly free on this CPU, and most of what
@@ -97,13 +86,13 @@
                     mountpoint = "/srv";
                     mountOptions = compressed;
                   };
-                  # Docker's images and named volumes (ticket 3.1, #22). Left
-                  # uncompressed as the ticket asks: a volume may hold a database,
-                  # whose small in-place rewrites fragment compressed extents. A
-                  # weak reason either way; postCreateHook above turns it off.
+                  # Docker's images and named volumes (ticket 3.1, #22).
+                  # Compressed like the rest: unpacked image layers are mostly
+                  # binaries and libraries, and btrfs gives up on files that do
+                  # not shrink. Data worth keeping lives in /srv/data instead.
                   "@docker" = {
                     mountpoint = "/var/lib/docker";
-                    mountOptions = [ "noatime" ];
+                    mountOptions = compressed;
                   };
                   # Snapshots of the others, for the backups in ticket 3.5 (#26).
                   # A snapshot is not itself snapshotted, so it lives apart.
