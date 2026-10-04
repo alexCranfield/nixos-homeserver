@@ -80,18 +80,27 @@ pkgs.testers.runNixOSTest {
     in
     ''
       import re
+      import time
 
       # systemd names the disk by its partition label, then the mapping:
       # "Please enter passphrase for disk disk-main-luks (cryptroot):".
       PROMPT = r"Please enter passphrase for disk \S+ \(cryptroot\)"
 
+      def wait_for_prompt(timeout=300):
+          """Bounded, so a boot that never asks fails here instead of hanging
+          until CI (continuous integration) gives up. Not
+          wait_for_console_text(timeout=...), which reads one console line per
+          second and falls behind a booting kernel."""
+          deadline = time.monotonic() + timeout
+          while not re.search(PROMPT, nuc.get_console_log()):
+              assert time.monotonic() < deadline, "no passphrase prompt"
+              time.sleep(1)
+
       def boot(expect_prompt):
           """Start the VM and answer the passphrase prompt, or assert it never came."""
           nuc.start()
           if expect_prompt:
-              # Bounded, so a boot that never asks fails here instead of hanging
-              # until CI (continuous integration) gives up.
-              nuc.wait_for_console_text(PROMPT, timeout=300)
+              wait_for_prompt()
               nuc.send_console("${passphrase}\n")
           nuc.wait_for_unit("multi-user.target")
           prompted = re.search(PROMPT, nuc.get_console_log()) is not None
