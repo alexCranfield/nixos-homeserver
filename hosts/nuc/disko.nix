@@ -6,9 +6,11 @@
 #
 #   ESP (EFI System Partition), 1 GiB, vfat, /boot. Unencrypted, as the
 #     firmware must read it. Holds systemd-boot and one kernel and initrd per
-#     generation; 1 GiB keeps the ten generations in system.nix with room over.
+#     generation; 1 GiB should hold the ten generations in system.nix with
+#     room over, to be measured after the install (#13).
 #   cryptroot, the rest. LUKS2 (Linux Unified Key Setup, version 2), holding one
-#     btrfs filesystem with the subvolumes below (ADR 0009).
+#     btrfs filesystem with the subvolumes below (ADR, Architecture Decision
+#     Record, 0009).
 #
 # Changing anything here on an installed machine does nothing to the disk.
 # disko only partitions at install; after that this file just describes what is
@@ -60,9 +62,9 @@
               extraArgs = [ "-f" ];
               subvolumes =
                 let
-                  # zstd level 1: nearly free on this CPU, and most of what
-                  # compresses well (the Nix store, logs, game worlds) does so
-                  # at level 1 about as well as at the default of 3.
+                  # zstd level 1, the fastest, rather than btrfs's default of 3:
+                  # nearly free on this CPU, at some cost in ratio. Not measured
+                  # on this machine's data.
                   compressed = [
                     "compress=zstd:1"
                     "noatime"
@@ -87,9 +89,11 @@
                     mountOptions = compressed;
                   };
                   # Docker's images and named volumes (ticket 3.1, #22).
-                  # Compressed like the rest: unpacked image layers are mostly
-                  # binaries and libraries, and btrfs gives up on files that do
-                  # not shrink. Data worth keeping lives in /srv/data instead.
+                  # Compressed like the rest. Unpacked image layers are mostly
+                  # binaries and libraries, which usually shrink, and files that
+                  # are already compressed cost little: btrfs stops trying on a
+                  # file whose first data does not shrink. Data worth keeping
+                  # lives in /srv/data instead.
                   "@docker" = {
                     mountpoint = "/var/lib/docker";
                     mountOptions = compressed;

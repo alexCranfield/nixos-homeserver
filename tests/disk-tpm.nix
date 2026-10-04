@@ -1,5 +1,5 @@
 # Acceptance test for tickets 1.2 (#9) and 1.0 (#57): the nuc's real disk layout,
-# encrypted, unlocks as ADR 0009 says it will.
+# encrypted, unlocks as ADR (Architecture Decision Record) 0009 says it will.
 #
 # One VM (virtual machine) running the nuc configuration, with a blank second
 # disk and an emulated TPM (Trusted Platform Module). The script does what the
@@ -7,14 +7,22 @@
 # machine boots from it and asks for the passphrase, a TPM key is enrolled, and
 # the next boot unlocks unattended.
 #
-# The boot is measured: the VM boots through UEFI firmware with TPM support
-# (OVMFFull) and systemd-boot, as the NUC does. QEMU's default direct kernel
-# boot skips the firmware, so nothing would be measured into PCR (Platform
+# The boot is measured: the VM boots through UEFI (Unified Extensible Firmware
+# Interface) firmware with TPM support (OVMFFull, the full build of OVMF, the Open
+# Virtual Machine Firmware) and systemd-boot, as the NUC does. The default for
+# QEMU (Quick Emulator) test VMs, booting the kernel directly, skips the firmware, so nothing would be measured into PCR (Platform
 # Configuration Register) 7 and a key sealed to it would prove nothing.
 #
-# What it does not cover: the boot loader runs from the test VM's own boot disk,
-# not from the ESP (EFI System Partition) disko creates. The test checks that
-# ESP's size and format; nixos-anywhere installs the loader to it in #13.
+# What it does not cover, left to the real install (#13):
+#  - The boot loader runs from the test VM's own boot disk, not from the ESP
+#    (EFI System Partition) disko creates. The test checks that ESP's size and
+#    format; nixos-anywhere installs the loader to it, and /boot's umask=0077 is
+#    not checked.
+#  - The Nix store comes from the host, not from @nix.
+#  - The test writes /tmp/disk.key itself; nixos-anywhere's
+#    `--disk-encryption-keys` is what puts it there for real.
+#  - QEMU's TPM is emulated, so the NUC's firmware TPM and its real PCR 7 value
+#    are first exercised on the hardware.
 {
   pkgs,
   inputs,
@@ -45,6 +53,10 @@ pkgs.testers.runNixOSTest {
         # Only the full build of the firmware measures the boot into the TPM.
         efi.OVMF = pkgs.OVMFFull;
         tpm.enable = true;
+        # CRB (Command Response Buffer), the interface Intel's firmware TPM
+        # uses, so the initrd's tpm_crb driver is what unlocks the disk here too.
+        # QEMU's x86 default is the older TIS interface (tpm_tis).
+        tpm.deviceModel = "tpm-crb";
         # The installed system boots from the host's store, so the test does not
         # copy a whole closure onto the disk first.
         mountHostNixStore = true;
@@ -168,13 +180,16 @@ pkgs.testers.runNixOSTest {
           assert re.search(r"^zstd ", out, re.M), "/srv/probe was not compressed"
 
       with subtest("PCR 7 holds a measurement, so the boot was measured"):
+          driver = nuc.succeed("basename $(readlink /sys/class/tpm/tpm0/device/driver)").strip()
+          print(f"TPM driver: {driver}")
+          assert driver == "tpm_crb", driver
           pcr7 = nuc.succeed("systemd-analyze pcrs 7 --json=short")
           print(pcr7)
           assert re.search(r'"sha256":"[0-9a-f]{64}"', pcr7), pcr7
           assert '"sha256":"' + "0" * 64 + '"' not in pcr7, "PCR 7 is all zeros"
 
       with subtest("with a TPM key enrolled, the next boot is unattended"):
-          # The command the install runbook gives, from ADR 0009.
+          # The enrolment command ADR 0009 gives for the install.
           nuc.succeed(
               "PASSWORD='${passphrase}' systemd-cryptenroll"
               " --tpm2-device=auto --tpm2-pcrs=7 /dev/vdb2"
