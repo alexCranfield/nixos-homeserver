@@ -35,6 +35,7 @@ modules/base/vm.nix                SSH into `just vm` on 127.0.0.1:2222; no effe
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
 tests/disk-tpm.nix                 VM test: the real layout boots, then unlocks from an emulated TPM (Trusted Platform Module)
+tests/disk-tpm.py                  its test script, in Python; disk-tpm.nix passes in the values only Nix knows
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
 scripts/tickets.py                 ticket definitions; file_issues.py files them
