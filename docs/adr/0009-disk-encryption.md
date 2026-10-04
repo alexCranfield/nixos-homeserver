@@ -56,7 +56,9 @@ Notes on the less obvious cells:
   - **A swapped root.** An attacker can replace the root partition with one
     they control. PCR 7 is never extended after unlock, so their code can still
     unseal the real key. The fix is to measure the unlocked volume into PCR 15
-    and bind the key to PCR 7 and 15 together; #47 does that.
+    and bind the key to PCR 7 and to PCR 15's value *before* any unlock, which
+    is all zeros; #47 does that. Once a volume is unlocked, PCR 15 no longer
+    matches, so the key cannot be unsealed a second time.
   - **DMA (Direct Memory Access) through USB4 or Thunderbolt.** This needs the
     IOMMU (input-output memory management unit) on. VT-d is enabled in the BIOS
     checklist; #45 confirms the kernel uses it.
@@ -124,8 +126,11 @@ What goes with the decision:
   machine.** They are in that issue's acceptance criteria:
   - Secure Boot on, with Alex's own keys enrolled;
   - the boot menu editor off;
-  - the unlocked volume measured into PCR 15, with the TPM key bound to PCRs 7
-    and 15;
+  - the unlocked volume measured into PCR 15, with the TPM key bound to PCR 7
+    and to PCR 15's pre-unlock, all-zero value. Enrolment runs on the booted
+    system, where PCR 15 already holds measurements, so the zero value must be
+    given explicitly (`--tpm2-pcrs=7+15:sha256=` and 64 zeros). Binding to the
+    current value would lock every later boot;
   - re-enrolment with `systemd-cryptenroll --wipe-slot=tpm2`. Adding a new TPM
     key without wiping the old one leaves a key that still unseals with Secure
     Boot turned off, which undoes the rest.
@@ -162,8 +167,9 @@ What goes with the decision:
   (hardware runbook). After that, any firmware or revocation-list update is done
   with someone at the console: the next boot stops at the recovery prompt, the
   passphrase is typed, and the TPM key is re-enrolled with
-  `systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7` (plus
-  15 once #47 lands). The hardware runbook carries this rule.
+  `systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7`, with
+  PCR 15's zero value added once #47 lands. The hardware runbook carries this
+  rule.
 - **Sending the machine away.** Before a warranty repair or sale of the whole
   NUC, wipe the TPM key slot (`systemd-cryptenroll --wipe-slot=tpm2`) or clear
   the TPM in the BIOS. The machine then stops at the passphrase prompt instead

@@ -49,8 +49,9 @@ Photograph every screen you change.
 
 - [ ] **Record the BIOS version first.** If ASRock has a newer release, update
       now, before anything is installed. The disk key will be sealed in the
-      TPM (Trusted Platform Module, ADR 0009), and every later firmware update
-      changes what the TPM measures, so it blocks the automatic unlock once.
+      TPM (Trusted Platform Module, ADR 0009). A later firmware update can
+      change what the TPM measures and block the automatic unlock once, so
+      treat every update as if it will.
 - [ ] Restore on AC (alternating current) power loss: **power on**.
 - [ ] VT-x and VT-d: **on**.
 - [ ] TPM 2.0 / Intel PTT (Platform Trust Technology): record whether it
@@ -84,16 +85,20 @@ dmesg | grep -iE 'firmware|xe |igc|error' | head -40
 ## Firmware updates after the install
 
 The disk unlocks itself with a key sealed in the TPM (ADR 0009). A BIOS update,
-including one that only refreshes the Secure Boot revocation list, changes what
-the TPM measures, and the next boot stops at the recovery passphrase prompt.
+including one that only refreshes the Secure Boot revocation list, can change
+what the TPM measures, and then the next boot stops at the recovery passphrase
+prompt.
 So a firmware update is never done remotely or unattended:
 
 1. Update the firmware with someone at the console.
 2. At the prompt, type the recovery passphrase from the offline backup.
-3. Log in as ops and replace the TPM key, wiping the old one:
-   `sudo systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7 <LUKS partition>`
-   (once #47 lands, `--tpm2-pcrs=7+15`; PCR means Platform Configuration
-   Register).
+3. SSH in as ops (it has no password, so the console login won't work) and
+   replace the TPM key, wiping the old one:
+   `sudo systemd-cryptenroll --wipe-slot=tpm2 --tpm2-device=auto --tpm2-pcrs=7 <LUKS partition>`.
+   Once #47 lands, bind PCR (Platform Configuration Register) 15 to its
+   pre-unlock value as well, which must be written out because it is no longer
+   zero on a running system:
+   `--tpm2-pcrs=7+15:sha256=0000000000000000000000000000000000000000000000000000000000000000`.
 4. Reboot once more and confirm it comes up without the prompt.
 
 Before sending the whole machine away, for a warranty repair or a sale, wipe
