@@ -150,8 +150,8 @@ Surveyed on 2026-10-04 from the live USB, over SSH.
 | NVMe model, firmware, size | Seagate FireCuda 530 `ZP1000GM30023`, firmware `SU6SM003`, 1.00 TB; SMART (Self-Monitoring, Analysis and Reporting Technology) passed, 0 % used |
 | iGPU driver bound (`lspci -k`) | `xe`; GuC, HuC, GSC and DMC firmware loaded |
 | NPU (neural processing unit) | `intel_vpu`, firmware loaded |
-| NIC 1: interface, MAC, driver | `enp44s0`, Intel I226-LM, `9c:6b:00:5c:46:51`, `igc` |
-| NIC 2: interface, MAC, driver | `enp45s0`, Intel I226-V, `9c:6b:00:5c:46:52`, `igc`; 2.5 Gb/s link |
+| NIC 1: interface, MAC, driver | `enp44s0`, Intel I226-LM, `9c:6b:00:5c:46:51`, `igc`; 2.5 Gb/s link, DHCP lease |
+| NIC 2: interface, MAC, driver | `enp45s0`, Intel I226-V, `9c:6b:00:5c:46:52`, `igc`; 2.5 Gb/s link, DHCP lease |
 | Wi-Fi and Bluetooth | Intel BE211, `iwlwifi` and `btintel_pcie` (unused) |
 | TPM 2.0 present | Yes: family 2.0, manufacturer `INTC`, vendor `PTL` (Intel's firmware TPM); SHA-256 bank covers PCRs (Platform Configuration Registers) 0 to 23 |
 | Secure Boot | Off. Whether custom keys can be enrolled was not checked; left to #47 |
