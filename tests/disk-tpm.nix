@@ -55,8 +55,9 @@ pkgs.testers.runNixOSTest {
         efi.OVMF = pkgs.OVMFFull;
         tpm.enable = true;
         # CRB (Command Response Buffer), the interface Intel's firmware TPM
-        # uses, so the initrd's tpm_crb driver is what unlocks the disk here too.
-        # The NixOS test VM's x86 default is the older TIS interface (tpm_tis).
+        # uses, so the tpm_crb driver is what unlocks the disk here too.
+        # The NixOS test VM's x86 default is the older TIS (TPM Interface
+        # Specification) interface, driver tpm_tis.
         tpm.deviceModel = "tpm-crb";
         # The installed system boots from the host's store, so the test does not
         # copy a whole closure onto the disk first.

@@ -141,7 +141,8 @@ may point at the wrong one, and a reinstall would wipe it. Before fitting one:
 
 The installed system does not care: it finds its partitions by label
 (`disk-main-ESP`, `disk-main-luks`), not by drive name. Only disko's
-partitioning, at install, uses the name.
+partitioning, at install, uses the name. A drive that held another disko
+layout may carry the same labels, so wipe a reused drive before fitting it.
 
 ## Lost ops key
 

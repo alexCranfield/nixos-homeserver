@@ -5,6 +5,11 @@
 #   - from the driver: `nuc` (the VM), `subtest`;
 #   - from the preamble disk-tpm.nix puts in front of this file: PASSPHRASE,
 #     WRONG_PCR7, FORMAT_MOUNT, UNMOUNT and INSTALLED.
+#
+# Acronyms: LUKS2, Linux Unified Key Setup version 2; ESP, EFI System
+# Partition; TPM, Trusted Platform Module; PCR, Platform Configuration
+# Register; CRB, Command Response Buffer; TIS, TPM Interface Specification;
+# ADR, Architecture Decision Record.
 import re
 import shlex
 import time
@@ -101,7 +106,7 @@ with subtest("the ESP is 1 GiB of vfat"):
 
 with subtest("data is compressed with zstd"):
     # 64 MiB of one repeated byte compresses to almost nothing, if allowed.
-    nuc.succeed("head -c 64M /dev/zero | tr '\\0' a > /srv/probe && sync")
+    nuc.succeed(r"head -c 64M /dev/zero | tr '\0' a > /srv/probe && sync")
     out = nuc.succeed("compsize -b /srv/probe")
     print(out)
     assert re.search(r"^zstd ", out, re.M), "/srv/probe was not compressed"
@@ -130,7 +135,8 @@ with subtest("with a TPM key enrolled, the next boot is unattended"):
     # The recovery passphrase keeps its own slot beside the TPM key.
     nuc.succeed("cryptsetup luksDump /dev/vdb2 | grep -q systemd-tpm2")
     nuc.succeed(
-        f"printf %s {QUOTED} | cryptsetup open --test-passphrase /dev/vdb2 -"
+        f"printf %s {QUOTED}"
+        " | cryptsetup open --test-passphrase --key-file=- /dev/vdb2"
     )
 
 with subtest("a key sealed to a different PCR 7 falls back to the passphrase"):
