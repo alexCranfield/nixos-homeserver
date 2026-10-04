@@ -54,10 +54,11 @@
               allowDiscards = true;
               # Unlock with a TPM (Trusted Platform Module) key, falling back
               # to the passphrase prompt; until `systemd-cryptenroll` adds a TPM
-              # key after the first boot, the prompt is all there is. Stated
-              # for clarity rather than need: with systemd 260 the disk test
-              # unlocks from the TPM without this line too, because a TPM key
-              # enrolled in the LUKS header is tried on its own.
+              # key after the first boot, the prompt is all there is. Not needed
+              # in the VM test: with systemd 260 it unlocks from the TPM without
+              # this line too, because a TPM key enrolled in the LUKS header is
+              # tried on its own. Kept because it names the TPM as the unlock
+              # device; whether that matters on the NUC is untested.
               crypttabExtraOpts = [ "tpm2-device=auto" ];
             };
             content = {
@@ -65,9 +66,8 @@
               extraArgs = [ "-f" ];
               subvolumes =
                 let
-                  # zstd level 1, the fastest, rather than btrfs's default of 3:
-                  # nearly free on this CPU, at some cost in ratio. Not measured
-                  # on this machine's data.
+                  # zstd level 1 rather than btrfs's default of 3: faster, at
+                  # some cost in ratio. Not measured on this machine's data.
                   compressed = [
                     "compress=zstd:1"
                     "noatime"

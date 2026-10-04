@@ -25,9 +25,10 @@
 
   # The root is encrypted (ADR 0009, hosts/nuc/disko.nix). systemd in the initrd
   # (early boot environment) is what unlocks it with a TPM (Trusted Platform
-  # Module) key, and its TPM support puts the tpm_crb driver Intel's firmware
-  # TPM uses into the initrd. Both are the 26.05 defaults, stated because the
-  # unlock depends on them.
+  # Module) key, and its TPM support adds the TPM software (tpm2-tss) and units
+  # to the initrd. Both are the 26.05 defaults, stated because the unlock
+  # depends on them. The tpm_crb driver Intel's firmware TPM uses is built into
+  # linuxPackages_latest, so no kernel module is involved.
   boot.initrd.systemd.enable = true;
   boot.initrd.systemd.tpm2.enable = true;
 

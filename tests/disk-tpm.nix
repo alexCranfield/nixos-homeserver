@@ -7,10 +7,11 @@
 # machine boots from it and asks for the passphrase, a TPM key is enrolled, and
 # the next boot unlocks unattended.
 #
-# The boot is measured: the VM boots through UEFI (Unified Extensible Firmware
-# Interface) firmware with TPM support (OVMFFull, the full build of OVMF, the Open
-# Virtual Machine Firmware) and systemd-boot, as the NUC does. The default for
-# QEMU (Quick Emulator) test VMs, booting the kernel directly, skips the firmware, so nothing would be measured into PCR (Platform
+# The boot is measured: the VM boots through UEFI (Unified Extensible
+# Firmware Interface) firmware with TPM support (OVMFFull, the full build of
+# OVMF, the Open Virtual Machine Firmware) and systemd-boot, as the NUC does.
+# The default for QEMU (Quick Emulator) test VMs, booting the kernel directly,
+# skips the firmware, so nothing would be measured into PCR (Platform
 # Configuration Register) 7 and a key sealed to it would prove nothing.
 #
 # What it does not cover, left to the real install (#13):
@@ -55,7 +56,7 @@ pkgs.testers.runNixOSTest {
         tpm.enable = true;
         # CRB (Command Response Buffer), the interface Intel's firmware TPM
         # uses, so the initrd's tpm_crb driver is what unlocks the disk here too.
-        # QEMU's x86 default is the older TIS interface (tpm_tis).
+        # The NixOS test VM's x86 default is the older TIS interface (tpm_tis).
         tpm.deviceModel = "tpm-crb";
         # The installed system boots from the host's store, so the test does not
         # copy a whole closure onto the disk first.
@@ -180,13 +181,11 @@ pkgs.testers.runNixOSTest {
           assert re.search(r"^zstd ", out, re.M), "/srv/probe was not compressed"
 
       with subtest("PCR 7 holds a measurement, so the boot was measured"):
-          # The module, not the driver: on kernel 7.2 the tpm_crb module
-          # registers its driver as tpm_crb_acpi.
-          module = nuc.succeed(
-              "basename $(readlink /sys/class/tpm/tpm0/device/driver/module)"
-          ).strip()
-          print(f"TPM driver module: {module}")
-          assert module == "tpm_crb", module
+          # On kernel 7.2 the CRB driver is named tpm_crb_acpi; the TIS one,
+          # QEMU's other interface, would be tpm_tis.
+          driver = nuc.succeed("basename $(readlink /sys/class/tpm/tpm0/device/driver)").strip()
+          print(f"TPM driver: {driver}")
+          assert driver.startswith("tpm_crb"), driver
           pcr7 = nuc.succeed("systemd-analyze pcrs 7 --json=short")
           print(pcr7)
           assert re.search(r'"sha256":"[0-9a-f]{64}"', pcr7), pcr7
