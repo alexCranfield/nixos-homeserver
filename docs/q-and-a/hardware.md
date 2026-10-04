@@ -34,7 +34,7 @@ measurements of the boot are made by the UEFI firmware too.
 Usually not. A vendor publishes the checksum of the file it serves, here a
 zip. The firmware file inside the zip is different bytes, so it has a different
 hash. Hash the download itself, before extracting it. If that matches, the
-download is intact and genuine, and so is everything inside it.
+download arrived intact, and so did everything inside it.
 
 On Windows: `Get-FileHash <file> -Algorithm SHA1` in PowerShell, or
 `certutil -hashfile <file> SHA1`. In WSL (Windows Subsystem for Linux):
@@ -68,8 +68,9 @@ out of the ISO, and installs its own boot setup. The stick stays a normal
 readable drive, which suits Windows installers. But anything the image relied
 on beyond its files can be lost. Here it was the volume label: NixOS's early
 boot waits for the disk labelled `nixos-minimal-26.05-x86_64`, FAT32 labels
-hold 11 characters, and the boot timed out. The cluster-size option was the
-giveaway: only ISO mode creates a file system, so only ISO mode asks.
+hold 11 characters, and the boot timed out. Rufus asks which mode to use in a
+prompt after START. The file system and cluster size fields in its main window
+show up either way, so they are not a sign of ISO mode; DD mode ignores them.
 
 Rule of thumb: use DD mode for Linux images. Most are "hybrid" images, made to
 be copied raw onto a stick. ISO mode is Rufus guessing how to rebuild one; for
@@ -87,9 +88,10 @@ many distributions it guesses right, which is why it is the default.
 <summary>Answer</summary>
 
 Usually not: they are separate settings, often on separate menus. On AMI
-firmware like this nuc's, the TPM is usually under Advanced (often a "Trusted
+(American Megatrends) firmware like this nuc's, the TPM is usually under Advanced (often a "Trusted
 Computing" page), and Secure Boot under Security or Boot. On firmware P1.10 the
-TPM setting is labelled "TPM 2.0", not PTT (Platform Trust Technology).
+TPM setting Alex found was labelled "TPM 2.0", with no mention of PTT (Platform
+Trust Technology).
 
 They are related, which is why it's easy to assume they go together:
 
@@ -97,10 +99,12 @@ They are related, which is why it's easy to assume they go together:
   bootloader not signed by a trusted key.
 - **The TPM** records what did run. Each boot stage is measured into its PCRs
   (Platform Configuration Registers), and the TPM releases a sealed secret,
-  such as ADR 0009's disk key, only when those measurements match.
+  such as ADR (Architecture Decision Record) 0009's disk key, only when those
+measurements match.
 
-Each is weak alone. Without Secure Boot, an attacker can boot their own
-software that reproduces the measurements. Without the TPM, nothing ties the
+Each is weak alone. ADR 0009 seals its key to PCR 7, which records the Secure
+Boot state rather than the exact software booted. Without Secure Boot, an
+attacker can boot their own software and still reproduce PCR 7. Without the TPM, nothing ties the
 disk key to the boot at all. ADR 0009 and #47 combine them.
 
 </details>
