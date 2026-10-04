@@ -18,6 +18,10 @@ Encrypt secrets with sops using age. Recipients are the workstation key and each
 - A third class of recipient exists as of ticket 0.5: a throwaway key scoped by
   `.sops.yaml` to the bootstrap test file alone, so a local VM can prove
   decryption without any real secret being at risk.
+- The host key is protected at rest only as far as ADR 0009 protects the disk:
+  fully against a drive that leaves without the machine, from the install on;
+  partly against theft of the whole machine, once Secure Boot (#47) is on.
+  Note added 2026-10-03.
 - A host that declares a secret it cannot decrypt fails the rebuild, but not the
   boot: at boot the secret is simply absent and the unit that needs it starts
   anyway. Services must check for their secret rather than assume it arrived.

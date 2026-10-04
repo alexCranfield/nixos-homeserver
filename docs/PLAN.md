@@ -80,7 +80,7 @@ Ticket bodies with tasks and acceptance criteria are in `scripts/tickets.py`; `s
 - **0.9** (#61, added 2026-09-27) Machine user for Claude, so pull requests are authored by it and Alex's approval can be required by the ruleset rather than kept as a convention (GitHub never lets an author approve their own pull request). Alex creates the account and token; Claude switches its git identity and tooling. AC: a bot pull request cannot merge without Alex's approval, and a push after approval needs re-approval.
 
 ### Phase 1: Bare-metal install and base OS
-- **1.0** (#57, added 2026-09-15) Decide disk encryption and record it as ADR 0009. **Blocks 1.2**, since retrofitting LUKS means reinstalling. The host's age key is its SSH host key, so on an unencrypted disk physical possession yields every server secret. Encryption conflicts with unattended reboot; a TPM-sealed key is the only option giving both, and is only meaningful with Secure Boot (7.4). Declining is a valid outcome if written down. AC: ADR 0009 states a decision, and 1.2's layout reflects it.
+- **1.0** (#57, added 2026-09-15) Decide disk encryption and record it as ADR 0009. **Blocks 1.2**, since retrofitting LUKS (Linux Unified Key Setup) means reinstalling. The host's age key is its SSH host key, so on an unencrypted disk physical possession yields every server secret. Encryption conflicts with unattended reboot; a TPM-sealed (Trusted Platform Module) key is the only option giving both, and is only meaningful with Secure Boot (7.4). Declining is a valid outcome if written down. AC: ADR 0009 states a decision, and 1.2's layout reflects it. Decided 2026-10-03: LUKS2 unlocked by a TPM key sealed to PCR (Platform Configuration Register) 7, on condition the survey (1.1) finds a TPM 2.0; see ADR 0009.
 - **1.1** Hardware prep: seat RAM/NVMe, BIOS: restore power on AC loss, boot order USB, disable Secure Boot (lanzaboote is a stretch), enable VT-x/VT-d. Record BIOS version. AC: checklist in `docs/runbooks/hardware.md`.
 - **1.2** `disko.nix`: GPT (GUID Partition Table), 1 GB ESP (EFI System Partition), btrfs root with subvolumes `@root @nix @home @srv @docker @snapshots`, 16 GB swapfile (or zram). Leave second M.2 slot documented for future data disk. AC: `nix build .#nixosConfigurations.nuc.config.system.build.diskoScript` succeeds.
 - **1.3** Base module (shared policy only; hostname and stateVersion live in `hosts/nuc/`): user `ops` (wheel, ssh key only, no password sudo prompt kept), `sshd` keys-only + no root login, `nix.settings` (flakes, trusted users, auto-optimise), weekly GC (garbage collection), `linuxPackages_latest`, `hardware.cpu.intel.updateMicrocode`, timezone/locale. As built (#10): split into `modules/base/{ssh,nix,system}.nix`; kernel, microcode and firmware are hardware choices, so they live in `hosts/nuc/`; timezone UTC (Alex's choice); locale `en_US.UTF-8`, the NixOS default, set explicitly; `ops` has no password and is not in `docker` (ADR 0006); the ops key is `keys/ops.pub`, a dedicated key; tmux runs with defaults until Alex ports his configuration (6.1, #39). The acceptance test is the flake check `base-ssh`, a two-VM NixOS test, rather than a manual `just vm` login. AC: VM boots, SSH login as `ops` works.
@@ -148,12 +148,12 @@ Decisions deliberately not yet made, each with a ticket and a deadline.
 | Decision | Ticket | Must precede |
 |---|---|---|
 | Workstation key passphrase, and how the dev shell handles the prompt | 0.8 (#56) | 1.5, the first real secret |
-| Disk encryption on the nuc (ADR 0009) | 1.0 (#57) | 1.2, partitioning |
 | K3s or stay on Compose (ADR 0008) | 8.1 (#49) | anything in Phase 8 |
 
 ADR numbers are reserved by these tickets, so `docs/adr/README.md` lists numbers
-with no file yet: 0008, 0009 and 0010 (security posture, 7.2). ADR 0006
-(rootful Docker) was decided in ticket 0.6 (#6).
+with no file yet: 0008 and 0010 (security posture, 7.2). ADR 0006 (rootful
+Docker) was decided in ticket 0.6 (#6), and ADR 0009 (disk encryption) in 1.0
+(#57).
 
 ## Assumptions to flag
 
