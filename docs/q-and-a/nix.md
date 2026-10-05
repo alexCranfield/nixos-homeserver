@@ -261,3 +261,47 @@ Ollama on top of that one shared kernel, which also means a container escape is
 a kernel-level problem (ticket 7.2).
 
 </details>
+
+### Where do dotfiles live, and does Nix manage them or does Ansible?
+
+*2026-10-04*
+
+> Say later on if we want to configure items such as a tmux conf file, or a
+> bashrc/alias setup, would that live on luks or the EF partition? Would we be
+> able to configure those in nix? Or would we add a layer on top for
+> ansible/puppet?
+
+<details>
+<summary>Answer</summary>
+
+**Inside LUKS (Linux Unified Key Setup), like everything except the boot
+loader.** The ESP (EFI System Partition) holds only the boot loader, kernels
+and initrds, because the firmware reads it before the disk is unlocked. It is
+unencrypted, so nothing sensitive belongs there. That includes the initrd:
+`boot.initrd.secrets` would put a secret on the ESP in plaintext, so this repo
+does not use it.
+
+**Nix configures them, with no Ansible or Puppet layer.** Nix is the
+configuration management layer, and comin applies each change from `main`.
+There are two ways:
+
+1. System-wide, with NixOS options, written to `/etc` for every user:
+
+   ```nix
+   programs.tmux.extraConfig = ''
+     set -g mouse on
+   '';
+   programs.bash.shellAliases = { ll = "ls -alh"; };
+   ```
+
+2. Per user, with home-manager, already a flake input. It manages
+   `~/.tmux.conf`, `~/.bashrc`, git settings and so on for `ops`, as links
+   into the Nix store. Porting the tmux configuration this way is ticket 6.1
+   (#39).
+
+**Ansible on top would fight Nix.** Files Nix manages are read-only links into
+the store, and `/etc` is rewritten on every rebuild, so Ansible's edits would be
+rejected or undone. They would also fall outside the generations, so rolling
+back from the boot menu would no longer cover them.
+
+</details>
