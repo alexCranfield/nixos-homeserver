@@ -108,3 +108,32 @@ attacker can boot their own software and still reproduce PCR 7. Without the TPM,
 nothing ties the disk key to the boot at all. ADR 0009 and #47 combine them.
 
 </details>
+
+### Is a 1 GiB EFI System Partition big enough?
+
+*2026-10-04*
+
+> Is 1GB large enough for the EF00 drive?
+
+<details>
+<summary>Answer</summary>
+
+Yes, with room to spare. `EF00` is the GPT (GUID Partition Table) type code
+for the ESP (EFI System Partition), a partition rather than a drive. It holds
+only what the firmware must read before anything is decrypted:
+
+- the systemd-boot loader, well under 1 MB;
+- one kernel and one initrd (the early boot environment) per boot menu entry.
+
+NixOS names those files by their content, so generations with the same kernel
+and initrd share one copy, and only a kernel update or an initrd change adds a
+new pair. A pair is roughly 50 to 70 MB; the disk test's kernel reported about
+42 MB for the initrd alone. `boot.loader.systemd-boot.configurationLimit = 10`
+caps the menu at ten entries, so even ten different kernels come to about
+700 MB.
+
+If it ever filled up, `nixos-rebuild` would fail while installing the boot
+loader, and the machine would still boot from what is already there. Actual
+usage is measured after the install (#13).
+
+</details>
