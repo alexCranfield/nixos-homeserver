@@ -13,7 +13,7 @@ so an encrypted file still diffs sensibly in a pull request.
 
 | Key | Location | Backed up | Can decrypt |
 |---|---|---|---|
-| Workstation | sops default path | off-machine, see password manager | everything |
+| Workstation | sops default path, encrypted with a passphrase | off-machine, the same encrypted file; see password manager | everything |
 | VM test | beside it, `vm-test.txt` | no, throwaway | `secrets/test.yaml` only |
 | `nuc` host | derived from its SSH host key | n/a, regenerated on reinstall | added in ticket 1.7 (#14) |
 
@@ -22,10 +22,11 @@ password manager rather than in this public repository. They are deliberately
 not encrypted in-repo: you need them precisely when the key is gone, so a
 sops-encrypted note would be unreadable at exactly the wrong moment.
 
-The backup is restore-tested, not merely asserted. Verified 2026-09-13 by
-copying it into an isolated `HOME` and decrypting `secrets/test.yaml` with that
-copy alone, with a no-key control confirming the isolation held. Re-run that
-test whenever the key changes.
+The backup is restore-tested, not merely asserted. First verified 2026-09-13
+by copying it into an isolated `HOME` and decrypting `secrets/test.yaml` with
+that copy alone, with a no-key control confirming the isolation held. Re-run
+that test, as written under [Restore test](#restore-test), whenever the key or
+its passphrase changes.
 
 **If the workstation key and its backup are both lost**, every secret here is
 unrecoverable. There is no reset. Generate a new key, re-create every secret by
@@ -36,13 +37,118 @@ repository is public, so every ciphertext ever pushed can be archived by anyone.
 Re-encrypting a compromised token leaves the old ciphertext in the wild against
 the day the key leaks.
 
+## The workstation key's passphrase
+
+The workstation key file is itself encrypted with age, using a passphrase
+(#56). The file alone no longer decrypts anything. This matters on WSL
+(Windows Subsystem for Linux): Windows Explorer, and anything running as you on
+Windows, can read the Linux home through `\\wsl$`, whatever the file's mode
+says.
+
+**Day to day little changes.** The dev shell's sops (3.13) recognises an
+encrypted identity file and asks for its passphrase. It asks through gpg-agent when it
+finds one running, as it does on this workstation: pinentry prompts in the
+terminal, and the agent then holds the passphrase in memory. With GnuPG's
+defaults the entry expires 10 minutes after its last use, and after 2 hours
+regardless. Nothing decrypted is written to disk. Without an agent, sops
+prompts in the terminal on every run.
+
+To make the agent forget the passphrase now, for example before leaving the
+machine or before a test that must prompt:
+
+```bash
+gpg-connect-agent reloadagent /bye
+```
+
+The prompt needs a terminal on standard input, so piping into sops fails
+rather than prompting. A wrong passphrase fails with `incorrect passphrase`
+and clears the cached entry.
+
+**If the passphrase is lost, the key is lost**, and the backup with it, since
+the backup is the same encrypted file. That is the both-lost case above. The
+passphrase is in the password manager beside the recovery note, so the key
+survives as long as the password manager and the backup both do.
+
+### Setting the passphrase
+
+Done once, on 2026-10-0X. Repeat it to change the passphrase, starting from a
+decrypted copy (`age -d -o keys.txt.plain keys.txt`). Run it in a terminal;
+`age -p` asks for the passphrase twice.
+
+```bash
+cd ~/.config/sops/age
+umask 077
+age -p -a -o keys.txt.age keys.txt   # -a: armored text, readable by eye
+mv keys.txt keys.txt.plain           # out of the default path, or the next
+mv keys.txt.age keys.txt             # check passes without the passphrase
+```
+
+Check it, with a negative control:
+
+```bash
+gpg-connect-agent reloadagent /bye
+sops -d secrets/test.yaml            # prompts; prints the test value
+gpg-connect-agent reloadagent /bye
+sops -d secrets/test.yaml            # type a wrong passphrase: must fail
+```
+
+Before deleting the plaintext, look for other copies of the secret line
+anywhere you could have written one. Process substitution keeps the key off the
+command line, where `ps` would show it:
+
+```bash
+grep -rlF -f <(grep '^AGE-SECRET-KEY-' keys.txt.plain) / \
+  --exclude-dir={proc,sys,dev,nix,mnt} 2>/dev/null
+```
+
+The only hit should be `keys.txt.plain` itself. Directories you cannot read
+are skipped, and you could not have written to them without sudo. `/mnt` is
+excluded because it is the Windows drives, which take a long time to search;
+include `/mnt/c/Users` if the key was ever copied to the Windows side. Then:
+
+```bash
+shred -u keys.txt.plain
+```
+
+`shred` overwrites before deleting. On ext4 inside the WSL disk image that is
+a best effort, not a guarantee.
+
+Then replace the backup with the encrypted `keys.txt`, and delete the old
+plaintext copy there too. If the backup location keeps snapshots, the older
+snapshots still hold the plaintext: delete them, or accept that and note it
+with the recovery note. Then run the restore test.
+
+### Restore test
+
+What someone holding only the passphrase and the backup does. The backup's
+location is in the password manager.
+
+```bash
+gpg-connect-agent reloadagent /bye   # no cached passphrase to lean on
+T=$(mktemp -d)
+mkdir -p "$T/sops/age"
+cp <the backup copy> "$T/sops/age/keys.txt"
+XDG_CONFIG_HOME="$T" sops -d secrets/test.yaml   # prompts; prints the test value
+```
+
+The control, which proves sops was not finding the usual key:
+
+```bash
+XDG_CONFIG_HOME="$(mktemp -d)" sops -d secrets/test.yaml   # must fail
+rm -rf "$T"
+```
+
+For a real restore, put the file at `~/.config/sops/age/keys.txt` instead.
+
 ## Adding a secret
 
 ```bash
 nix shell nixpkgs#sops --command sops secrets/<name>.yaml
 ```
 
-That opens an editor on the decrypted content and re-encrypts on save.
+That opens an editor on the decrypted content and re-encrypts on save. It asks
+for the workstation key's passphrase first, unless gpg-agent still holds it. In
+the dev shell, `just secrets-edit <name>.yaml` does the same.
 
 Then declare it in the module that needs the secret, naming its file explicitly:
 
@@ -108,6 +214,9 @@ Isolate `HOME` and `XDG_CONFIG_HOME` to test scoping honestly.
 The short version is `just vm-secrets`, which stages the key, boots the VM,
 greps for the marker, cleans up, and exits non-zero on failure. The manual
 procedure below is what it does, for when you need to watch it or change a step.
+
+This uses the throwaway key, which is not passphrase-protected, so it runs
+without a prompt. The workstation key is not involved.
 
 A VM (virtual machine) regenerates its SSH host keys each boot, so it can never be a recipient of
 anything encrypted earlier. `modules/dev/vm-secrets.nix` hands it the throwaway
