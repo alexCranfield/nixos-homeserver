@@ -47,9 +47,9 @@ Windows, can read the Linux home through `\\wsl$`, whatever the file's mode
 says.
 
 **Day to day, little changes.** The dev shell's sops (3.13) recognises an
-encrypted identity file and asks for its passphrase. It asks through gpg-agent when it
-finds one running, as it does on this workstation: pinentry prompts in the
-terminal, and the agent then holds the passphrase in memory. With GnuPG's
+encrypted identity file and asks for its passphrase. It asks through gpg-agent
+when it finds one running, as it does on this workstation: pinentry prompts in
+the terminal, and the agent then holds the passphrase in memory. With GnuPG's
 defaults the entry expires 10 minutes after its last use, and after 2 hours
 regardless. Nothing decrypted is written to disk. Without an agent, sops
 prompts in the terminal on every run.
@@ -62,8 +62,8 @@ gpg-connect-agent reloadagent /bye
 ```
 
 When gpg-agent asks, standard input must be the terminal, so piping into sops
-fails rather than prompting. Piping its output is fine. A wrong passphrase fails with `incorrect passphrase`
-and clears the cached entry.
+fails rather than prompting. Piping its output is fine. A wrong passphrase
+fails with `incorrect passphrase` and clears the cached entry.
 
 pinentry draws a box in the terminal, and needs room for it. In a short pane
 sops fails with `gpg-agent passphrase request errored: ERR 83886381 Screen or
@@ -83,7 +83,8 @@ survives as long as the password manager and the backup both do.
 
 ### Setting the passphrase
 
-Done once, on 2026-10-11. To change the passphrase, decrypt the file back with
+Done once, on 2026-10-11. To change the passphrase, set `K` as in the first
+block below, decrypt the file back with
 `(umask 077; age -d -o "$K/keys.txt.plain" "$K/keys.txt")`, so the plaintext
 is not created readable by others, and repeat from the `age -p` line. Then
 replace the backup, re-run the restore test, and update the password manager.
@@ -170,8 +171,8 @@ just secrets-edit <name>.yaml
 
 That opens an editor on the decrypted content and re-encrypts on save. It asks
 for the workstation key's passphrase first, unless gpg-agent still holds it.
-Use the dev shell's sops, as `just` does: it is pinned by the flake (3.13), and
-reading an encrypted key file needs a recent sops.
+Run it inside the repository, so `just` finds the dev shell's sops (3.13,
+pinned by the flake); reading an encrypted key file needs a recent sops.
 
 Then declare it in the module that needs the secret, naming its file explicitly:
 
