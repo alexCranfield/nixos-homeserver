@@ -15,6 +15,14 @@ Encrypt secrets with sops using age. Recipients are the workstation key and each
   workstation key is backed up off-machine; the location is recorded in the
   password manager rather than here, since naming it in a public repository is
   free reconnaissance.
+- The workstation key is itself encrypted with a passphrase (#56), so the file
+  alone, or its backup, decrypts nothing. sops reads the encrypted file
+  directly, and gpg-agent caches the passphrase in memory (with GnuPG's
+  defaults, 10 minutes after last use, 2 hours at most); no decrypted copy
+  is written to disk. The cost: losing the passphrase loses the key and its
+  backup together, which is the both-lost case above. The
+  passphrase is kept in the password manager with the recovery note. Note
+  added 2026-10-11.
 - A third class of recipient exists as of ticket 0.5: a throwaway key scoped by
   `.sops.yaml` to the bootstrap test file alone, so a local VM can prove
   decryption without any real secret being at risk.

@@ -76,7 +76,7 @@ Ticket bodies with tasks and acceptance criteria are in `scripts/tickets.py`; `s
 - **0.5** Secrets bootstrap: generate `age` keys (workstation + placeholder host key), `.sops.yaml`, `sops-nix` input, one test secret decrypted in a NixOS VM build. AC: `sops -d secrets/test.yaml` works; a public-repo secret scan shows only ciphertext.
 - **0.6** ADRs (Architecture Decision Records): review 0001-0005 and 0007, which already exist, then write `0006-docker-vs-podman.md` and an index. AC: each ADR states context, decision, consequences; index lists all of them.
 - **0.7** `just`/`nix run` task targets: `fmt`, `check`, `build`, `deploy` (manual `nixos-rebuild --target-host` for emergencies), `vm` (build a QEMU VM of the config). AC: `just vm` boots the config locally.
-- **0.8** (#56, added 2026-09-15) Passphrase-protect the workstation age key. Depends on 0.7, since the dev shell decides how `sops` is invoked. Must land before 1.5 adds the first real secret. AC: decryption needs the passphrase, and the restore test passes with the protected copy.
+- **0.8** (#56, added 2026-09-15) Passphrase-protect the workstation age key. Depends on 0.7, since the dev shell decides how `sops` is invoked. Must land before 1.5 adds the first real secret. AC: decryption needs the passphrase, and the restore test passes with the protected copy. As built: sops reads the encrypted key file itself, and gpg-agent caches the passphrase in memory; no decrypted session copy (see `docs/runbooks/secrets.md`).
 - **0.9** (#61, added 2026-09-27) Machine user for Claude, so pull requests are authored by it and Alex's approval can be required by the ruleset rather than kept as a convention (GitHub never lets an author approve their own pull request). Alex creates the account and token; Claude switches its git identity and tooling. AC: a bot pull request cannot merge without Alex's approval, and a push after approval needs re-approval.
 
 ### Phase 1: Bare-metal install and base OS
@@ -147,7 +147,6 @@ Decisions deliberately not yet made, each with a ticket and a deadline.
 
 | Decision | Ticket | Must precede |
 |---|---|---|
-| Workstation key passphrase, and how the dev shell handles the prompt | 0.8 (#56) | 1.5, the first real secret |
 | K3s or stay on Compose (ADR 0008) | 8.1 (#49) | anything in Phase 8 |
 
 ADR numbers are reserved by these tickets, so `docs/adr/README.md` lists numbers

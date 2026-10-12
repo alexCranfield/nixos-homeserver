@@ -229,4 +229,7 @@ Keep it off anything that syncs, treat every copy as an event worth noticing,
 and passphrase-protect it before the first real secret arrives (#56). The
 server's equivalent risk is its host key on an unencrypted disk (#57).
 
+Update 2026-10-11: done in #56. The key file is encrypted with a passphrase,
+and gpg-agent caches the passphrase in memory; see `docs/runbooks/secrets.md`.
+
 </details>
