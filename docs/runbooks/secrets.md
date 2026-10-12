@@ -71,16 +71,19 @@ survives as long as the password manager and the backup both do.
 
 ### Setting the passphrase
 
-Done once, on 2026-10-0X. Repeat it to change the passphrase, starting from a
-decrypted copy (`age -d -o keys.txt.plain keys.txt`). Run it in a terminal;
-`age -p` asks for the passphrase twice.
+Done once, on 2026-10-0X. To change the passphrase, decrypt the file back to
+`keys.txt.plain` with `age -d` and repeat from the `age -p` line.
+
+Run every command here from the repository, in a terminal. `age` and `sops`
+come from the dev shell, which direnv loads only inside the repository, so
+`cd`-ing into the key directory loses them. `age -p` asks for the passphrase
+twice.
 
 ```bash
-cd ~/.config/sops/age
-umask 077
-age -p -a -o keys.txt.age keys.txt   # -a: armored text, readable by eye
-mv keys.txt keys.txt.plain           # out of the default path, or the next
-mv keys.txt.age keys.txt             # check passes without the passphrase
+K=~/.config/sops/age
+mv "$K/keys.txt" "$K/keys.txt.plain"   # out of the default path, or the next
+                                       # check passes without the passphrase
+(umask 077; age -p -a -o "$K/keys.txt" "$K/keys.txt.plain")   # -a: armored text
 ```
 
 Check it, with a negative control:
@@ -97,7 +100,7 @@ anywhere you could have written one. Process substitution keeps the key off the
 command line, where `ps` would show it:
 
 ```bash
-grep -rlF -f <(grep '^AGE-SECRET-KEY-' keys.txt.plain) / \
+grep -rlF -f <(grep '^AGE-SECRET-KEY-' "$K/keys.txt.plain") / \
   --exclude-dir={proc,sys,dev,nix,mnt} 2>/dev/null
 ```
 
@@ -107,7 +110,7 @@ excluded because it is the Windows drives, which take a long time to search;
 include `/mnt/c/Users` if the key was ever copied to the Windows side. Then:
 
 ```bash
-shred -u keys.txt.plain
+shred -u "$K/keys.txt.plain"
 ```
 
 `shred` overwrites before deleting. On ext4 inside the WSL disk image that is
