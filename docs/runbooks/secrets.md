@@ -24,7 +24,8 @@ sops-encrypted note would be unreadable at exactly the wrong moment.
 
 The backup is restore-tested, not merely asserted. First verified 2026-09-13
 by copying it into an isolated `HOME` and decrypting `secrets/test.yaml` with
-that copy alone, with a no-key control confirming the isolation held. Re-run
+that copy alone, with a no-key control confirming the isolation held, and
+again on 2026-10-11 with the passphrase-protected copy (#56). Re-run
 that test, as written under [Restore test](#restore-test), whenever the key or
 its passphrase changes.
 
@@ -64,6 +65,17 @@ The prompt needs a terminal on standard input, so piping into sops fails
 rather than prompting. A wrong passphrase fails with `incorrect passphrase`
 and clears the cached entry.
 
+pinentry draws a box in the terminal, and needs room for it. In a short pane
+sops fails with `gpg-agent passphrase request errored: ERR 83886381 Screen or
+window too small <Pinentry>`; that happened here at 6 rows (`stty size`). Make
+the pane taller and run it again. Alternatively, an empty `GPG_AGENT_INFO`
+makes sops skip the agent and prompt on the terminal itself, without caching
+(read from the sops source, not yet exercised here):
+
+```bash
+GPG_AGENT_INFO= sops -d secrets/test.yaml
+```
+
 **If the passphrase is lost, the key is lost**, and the backup with it, since
 the backup is the same encrypted file. That is the both-lost case above. The
 passphrase is in the password manager beside the recovery note, so the key
@@ -71,7 +83,7 @@ survives as long as the password manager and the backup both do.
 
 ### Setting the passphrase
 
-Done once, on 2026-10-0X. To change the passphrase, decrypt the file back to
+Done once, on 2026-10-11. To change the passphrase, decrypt the file back to
 `keys.txt.plain` with `age -d` and repeat from the `age -p` line.
 
 Run every command here from the repository, in a terminal. `age` and `sops`

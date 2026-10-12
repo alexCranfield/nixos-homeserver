@@ -21,7 +21,7 @@ Encrypt secrets with sops using age. Recipients are the workstation key and each
   no decrypted copy is written to disk. The cost: losing the passphrase loses
   the key and its backup together, which is the both-lost case above. The
   passphrase is kept in the password manager with the recovery note. Note
-  added 2026-10-0X.
+  added 2026-10-11.
 - A third class of recipient exists as of ticket 0.5: a throwaway key scoped by
   `.sops.yaml` to the bootstrap test file alone, so a local VM can prove
   decryption without any real secret being at risk.
