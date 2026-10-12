@@ -46,7 +46,7 @@ The workstation key file is itself encrypted with age, using a passphrase
 Windows, can read the Linux home through `\\wsl$`, whatever the file's mode
 says.
 
-**Day to day little changes.** The dev shell's sops (3.13) recognises an
+**Day to day, little changes.** The dev shell's sops (3.13) recognises an
 encrypted identity file and asks for its passphrase. It asks through gpg-agent when it
 finds one running, as it does on this workstation: pinentry prompts in the
 terminal, and the agent then holds the passphrase in memory. With GnuPG's
@@ -61,8 +61,8 @@ machine or before a test that must prompt:
 gpg-connect-agent reloadagent /bye
 ```
 
-The prompt needs a terminal on standard input, so piping into sops fails
-rather than prompting. A wrong passphrase fails with `incorrect passphrase`
+When gpg-agent asks, standard input must be the terminal, so piping into sops
+fails rather than prompting. Piping its output is fine. A wrong passphrase fails with `incorrect passphrase`
 and clears the cached entry.
 
 pinentry draws a box in the terminal, and needs room for it. In a short pane
@@ -83,10 +83,13 @@ survives as long as the password manager and the backup both do.
 
 ### Setting the passphrase
 
-Done once, on 2026-10-11. To change the passphrase, decrypt the file back to
-`keys.txt.plain` with `age -d` and repeat from the `age -p` line.
+Done once, on 2026-10-11. To change the passphrase, decrypt the file back with
+`(umask 077; age -d -o "$K/keys.txt.plain" "$K/keys.txt")`, so the plaintext
+is not created readable by others, and repeat from the `age -p` line. Then
+replace the backup, re-run the restore test, and update the password manager.
 
-Run every command here from the repository, in a terminal. `age` and `sops`
+Run every command here from the repository, in one terminal: the later blocks
+use `$K` from the first. `age` and `sops`
 come from the dev shell, which direnv loads only inside the repository, so
 `cd`-ing into the key directory loses them. `age -p` asks for the passphrase
 twice.
@@ -119,7 +122,10 @@ grep -rlF -f <(grep '^AGE-SECRET-KEY-' "$K/keys.txt.plain") / \
 The only hit should be `keys.txt.plain` itself. Directories you cannot read
 are skipped, and you could not have written to them without sudo. `/mnt` is
 excluded because it is the Windows drives, which take a long time to search;
-include `/mnt/c/Users` if the key was ever copied to the Windows side. Then:
+include `/mnt/c/Users` if the key was ever copied to the Windows side.
+`--exclude-dir` matches a directory name at any depth, so a `dev`, `nix` or
+`mnt` directory inside your home is skipped too, and copies inside compressed
+git objects are not visible to grep at all. Then:
 
 ```bash
 shred -u "$K/keys.txt.plain"
@@ -139,10 +145,11 @@ What someone holding only the passphrase and the backup does. The backup's
 location is in the password manager.
 
 ```bash
+BACKUP=                              # the backup copy; see the password manager
 gpg-connect-agent reloadagent /bye   # no cached passphrase to lean on
 T=$(mktemp -d)
 mkdir -p "$T/sops/age"
-cp <the backup copy> "$T/sops/age/keys.txt"
+cp "$BACKUP" "$T/sops/age/keys.txt"  # or scp, for a copy on another machine
 XDG_CONFIG_HOME="$T" sops -d secrets/test.yaml   # prompts; prints the test value
 ```
 
@@ -158,12 +165,13 @@ For a real restore, put the file at `~/.config/sops/age/keys.txt` instead.
 ## Adding a secret
 
 ```bash
-nix shell nixpkgs#sops --command sops secrets/<name>.yaml
+just secrets-edit <name>.yaml
 ```
 
 That opens an editor on the decrypted content and re-encrypts on save. It asks
-for the workstation key's passphrase first, unless gpg-agent still holds it. In
-the dev shell, `just secrets-edit <name>.yaml` does the same.
+for the workstation key's passphrase first, unless gpg-agent still holds it.
+Use the dev shell's sops, as `just` does: it is pinned by the flake (3.13), and
+reading an encrypted key file needs a recent sops.
 
 Then declare it in the module that needs the secret, naming its file explicitly:
 
