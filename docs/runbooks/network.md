@@ -6,14 +6,21 @@ is `hosts/nuc/network.nix` and `modules/base/firewall.nix`.
 
 ## The ports
 
-| Port | Kernel name | MAC | Use |
+| Port | Kernel name | MAC (hardware) address | Use |
 |---|---|---|---|
 | Intel I226-V | `enp45s0`, renamed `lan0` | `9c:6b:00:5c:46:52` | the server's LAN port |
 | Intel I226-LM | `enp44s0` | `9c:6b:00:5c:46:51` | held down, and kept unplugged |
 
 The cable goes in the I226-V's port. Which physical socket that is was not
-recorded in the hardware survey (#8); check it with a cable the first time,
-by watching which port `ip -br link` shows as `UP`.
+recorded in the hardware survey (#8), and both sockets got an address then.
+Check it on the live USB, before the install (#13): once installed, the nuc
+holds the I226-LM down, so a cable in the wrong socket leaves it off the
+network with no screen to say why. With the cable in one socket:
+
+```bash
+ip -br link              # enp45s0 (the I226-V) should show UP
+sudo ethtool -p enp45s0  # blinks that socket's light until Ctrl-C
+```
 
 The I226-LM is the variant that usually carries Intel AMT (Active Management
 Technology), a remote management engine in firmware. NixOS holds that port
@@ -93,6 +100,14 @@ each port:
 
 ```bash
 nmap -Pn -p- -T4 nuc.home.arpa    # expect 22/tcp open, everything else filtered
+```
+
+The firewall covers IPv6 as well (the `inet` table holds both). If the router
+advertises an IPv6 prefix, `lan0` takes a global IPv6 address too, so scan
+that as well. Find it with `ip -6 -br addr show lan0` on the nuc, then:
+
+```bash
+nmap -6 -Pn -p- -T4 <the nuc's global IPv6 address>   # expect the same: 22 only
 ```
 
 Docker publishes container ports around this firewall (ADR 0006), so the scan

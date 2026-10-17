@@ -7,8 +7,9 @@ import re
 start_all()
 router.wait_for_unit("dnsmasq.service")
 # Nothing on the nuc wants network-online.target yet, so systemd would never
-# start wait-online. Ask for it: this blocks until lan0 is routable, and fails
-# if the held-down port were wrongly required for "online".
+# start wait-online. Ask for it: this blocks until lan0 is routable. (The
+# held-down port cannot block it: systemd forces RequiredForOnline=no on an
+# always-down link, which a run with it set to yes confirmed.)
 nuc.wait_for_unit("multi-user.target")
 nuc.succeed("systemctl start network-online.target")
 nuc.wait_for_unit("systemd-networkd-wait-online.service")

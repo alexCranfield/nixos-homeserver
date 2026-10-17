@@ -1,11 +1,11 @@
 # The nuc's LAN (local area network) connection, ticket 1.4 (#11).
 #
-# Two Intel 2.5 GbE ports, surveyed in #8. The server uses the I226-V; the
+# Two Intel 2.5 GbE (gigabit Ethernet) ports, surveyed in #8. The server uses the I226-V; the
 # I226-LM is the variant that usually carries Intel AMT (Active Management
 # Technology) remote management, so it stays down and unplugged.
 #
 # The address comes from the router: a DHCP (Dynamic Host Configuration
-# Protocol) reservation for the I226-V's MAC address, and the name
+# Protocol) reservation for the I226-V's MAC (hardware) address, and the name
 # nuc.home.arpa, both set on the UniFi Dream Router 7. See
 # docs/runbooks/network.md.
 { ... }:
@@ -48,6 +48,8 @@ in
     matchConfig.PermanentMACAddress = unusedMac;
     linkConfig = {
       ActivationPolicy = "always-down";
+      # systemd forces this for an always-down link anyway; said here so
+      # boot visibly does not wait for this port.
       RequiredForOnline = "no";
     };
   };
