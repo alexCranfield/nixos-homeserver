@@ -7,6 +7,7 @@ Operational procedures, written as tickets are completed.
 - [workstation.md](workstation.md) — Nix and direnv on the WSL workstation (ticket 0.1)
 - [secrets.md](secrets.md) — sops, age, key locations, adding a secret (ticket 0.5)
 - [ci.md](ci.md) — what CI runs, why, and what to do when it is red (ticket 0.4)
+- [network.md](network.md) — the LAN port, the router's reservation and name, the firewall (ticket 1.4)
 - [hardware.md](hardware.md) — the live USB, assembly, BIOS settings and the hardware survey (ticket 1.1; the record fills in when it closes)
 
 ## Planned
