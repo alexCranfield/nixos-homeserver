@@ -11,7 +11,8 @@ Join the server to a Tailscale tailnet. SSH, Grafana, Open WebUI and any future 
 ## Consequences
 - No public SSH, so no fail2ban and no key-scanning noise.
 - Friends do not need Tailscale; they use the forwarded game ports.
-- A Tailscale outage blocks remote admin; LAN (local area network) access still works as a fallback.
+- A Tailscale outage blocks remote admin; LAN (local area network) access
+  still works as a fallback.
 - Game server ports are the only public attack surface; keep those images updated.
 - Note, 2026-09-29 (ADR 0006): Docker's published ports bypass the NixOS
   firewall, so "default deny" does not hold for containers on its own.
@@ -29,14 +30,14 @@ Join the server to a Tailscale tailnet. SSH, Grafana, Open WebUI and any future 
   getting in means a monitor and keyboard on the nuc. The nuc joins with a
   single-use auth key tagged `tag:server`.
 - Note, 2026-10-17 (ticket 1.5, #12): the NixOS firewall does not cover
-  everything on the tailnet. `tailscaled` answers its peer API port, and
-  Tailscale SSH and Serve ports when enabled, inside its own network stack,
-  before the kernel's firewall. So the tailnet's access policy, not the
-  firewall, is what limits who reaches a Serve-published admin interface
-  (ADR 0006). The policy therefore replaces Tailscale's default, which lets
-  every device reach every other, tagged ones included: the owner's devices
-  reach the nuc on 22 only, and the nuc reaches nothing.
-  `docs/runbooks/tailscale.md` has the policy; Serve adds its ports to it.
-  The peer API is the exception to both: the policy lets every device
-  connect to it, and `tailscaled` checks each request against the asking
-  device's permissions instead.
+  everything on the tailnet. `tailscaled` answers its peer API (application
+  programming interface) port, and Tailscale SSH and Serve ports when enabled,
+  inside its own network stack, before the kernel's firewall. So the tailnet's
+  access policy, not the firewall, is what limits who reaches a
+  Serve-published admin interface (ADR 0006). The policy therefore replaces
+  Tailscale's default, which lets every device reach every other, tagged ones
+  included: the owner's devices reach the nuc on 22 only, and the nuc reaches
+  nothing. `docs/runbooks/tailscale.md` has the policy; Serve adds its ports
+  to it. The peer API is the exception to both: `tailscaled` lets any of the
+  nuc's peers connect to it whatever the policy says, and checks each request
+  against the asking device's permissions instead.

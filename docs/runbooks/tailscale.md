@@ -18,18 +18,18 @@ between your own devices (ADR (Architecture Decision Record) 0005). Ticket 1.5
   address, for Taildrop and similar features. `tailscaled` handles those
   connections inside its own network stack, so the packets never reach the
   firewall, which cannot close the port (`wgengine/netstack/netstack.go`,
-  `shouldProcessInbound`). Tailscale SSH and Tailscale Serve work the same way
-  when turned on.
+  `shouldProcessInbound`). To see the port:
+  `ss -ltnp src <the nuc's 100.x address>`. Tailscale SSH and Tailscale Serve
+  work the same way when turned on.
 - **The access policy (below) does not close the peer API either.**
   `tailscaled` lets connections to it past the policy on purpose, and checks
   each request itself, by what the asking device is allowed
   (`net/tstun/wrap.go`: "Let peerapi through the filter; its ACLs are handled
-  at L7", layer 7 being the HTTP requests). So every device on the tailnet
-  can connect to the port, and gets only what its permissions allow: the VM
-  test's client is refused with `403 denied; no debug access`. Serve and
-  Tailscale SSH get no such exception, so the policy does limit them. To see
-  the port:
-  `ss -ltnp src <the nuc's 100.x address>`.
+  at L7", layer 7 being the HTTP (Hypertext Transfer Protocol) requests). So
+  any device the tailnet lists as the nuc's peer can connect to the port, and
+  gets only what its permissions allow. The VM (virtual machine) test shows a
+  request getting past the policy to that check, and being refused. Serve and
+  Tailscale SSH get no such exception, so the policy does limit them.
 - **The nuc keeps its own DNS (Domain Name System).** It runs
   `tailscale up --accept-dns=false`, so its name lookups go to the router and
   do not depend on Tailscale. Other devices still find it by name.
@@ -135,7 +135,7 @@ old entry was still there.
 
 ## Tested in a VM
 
-`nix build .#checks.x86_64-linux.tailscale` runs three VMs (virtual machines):
+`nix build .#checks.x86_64-linux.tailscale` runs three VMs:
 the nuc's real configuration on a LAN, a client on a separate network with no
 route to it, and Headscale, an open-source implementation of Tailscale's
 control server, on both. It checks that:
@@ -153,8 +153,9 @@ control server, on both. It checks that:
   report it;
 - with the nuc tagged `tag:server` and the policy above (in Headscale's
   form), 8080 is closed again although the firewall still opens it, the peer
-  API port is still open, and refuses the client's request, and the nuc can
-  no longer ping the client, as it could before the policy;
+  API port is still open and still answers requests (refusing a debug one,
+  as it did before the policy), and the nuc can no longer ping the client,
+  as it could before the policy;
 - Tailscale SSH is off;
 - 22 is open on `lan0` and `tailscale0` only, and still answers on the LAN.
 

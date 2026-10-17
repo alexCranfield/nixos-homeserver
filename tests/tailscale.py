@@ -11,6 +11,11 @@ import re
 SSH = "ssh -n -i key -o StrictHostKeyChecking=no -o BatchMode=yes"
 
 
+# A peer API request that needs debug access. HTTP: Hypertext Transfer
+# Protocol.
+PEERAPI_DEBUG = "curl -s -w ' %{{http_code}}' http://{ip}:{port}/v0/goroutines"
+
+
 def open_ports(out):
     return sorted(int(p) for p in re.findall(r"^(\d+)/tcp\s+open\b", out, re.M))
 
@@ -22,8 +27,8 @@ headscale.succeed("headscale users create test")
 
 
 def set_policy(acls):
-    # Headscale's form of the tailnet's access policy (HuJSON, a JSON with
-    # comments; plain JSON here). `test@` is the user every device belongs to,
+    # Headscale's form of the tailnet's access policy (HuJSON, JSON (JavaScript
+    # Object Notation) with comments; plain JSON here). `test@` is the user every device belongs to,
     # as Alex's devices belong to him.
     policy = json.dumps({"tagOwners": {"tag:server": ["test@"]}, "acls": acls})
     headscale.succeed(f"printf %s '{policy}' > /tmp/policy.json")
@@ -132,9 +137,15 @@ with subtest("the access policy closes all but SSH and the peer API"):
     nuc.succeed(f"ping -c 1 -W 2 {CLIENT_TS_IP}")
     out = client.succeed(f"nmap -Pn -p 22,8080,{PEERAPI} {NUC_TS_IP}")
     assert open_ports(out) == sorted([22, 8080, PEERAPI]), open_ports(out)
+    PEERAPI_BEFORE_POLICY = " ".join(
+        client.succeed(PEERAPI_DEBUG.format(ip=NUC_TS_IP, port=PEERAPI)).split()
+    )
+    print(f"peer API debug request, before the policy: {PEERAPI_BEFORE_POLICY}")
     # The runbook's rule for the nuc: your devices reach it on TCP 22 only,
-    # and nothing names tag:server as a source. The real tailnet's policy is
-    # checked at #14.
+    # and nothing names tag:server as a source. Its other rule, your devices
+    # to each other, is left out: there is only one such device here, and it
+    # never applies to the tagged nuc. The real tailnet's policy is checked
+    # at #14.
     set_policy(
         [
             {
@@ -145,7 +156,12 @@ with subtest("the access policy closes all but SSH and the peer API"):
             }
         ]
     )
+    # The ping is dropped by the client's copy of the policy; 8080 by the
+    # nuc's, which may arrive a moment later, so wait for that too.
     nuc.wait_until_fails(f"ping -c 1 -W 2 {CLIENT_TS_IP}", timeout=60)
+    client.wait_until_succeeds(
+        f"nmap -Pn -p 8080 {NUC_TS_IP} | grep -q '^8080/tcp *filtered'", timeout=60
+    )
     out = client.succeed(f"nmap -Pn -p 22,8080,{PEERAPI} {NUC_TS_IP}")
     print(out)
     # 8080 is now closed by the policy as well as open in the firewall. The
@@ -155,12 +171,15 @@ with subtest("the access policy closes all but SSH and the peer API"):
     assert open_ports(out) == sorted([22, PEERAPI]), open_ports(out)
     client.succeed(f"{SSH} ops@nuc.tailnet true")
 
-with subtest("the peer API refuses a device the policy gives no access"):
-    out = client.succeed(
-        f"curl -s -w ' %{{http_code}}' http://{NUC_TS_IP}:{PEERAPI}/v0/goroutines"
-    )
+with subtest("past the policy, the peer API still checks each request"):
+    # An HTTP request gets through to tailscaled's own access check, which
+    # refuses it. The check is not the policy: debug is off on the nuc (its
+    # control server never grants it), so the answer was the same before the
+    # policy, as the previous subtest recorded.
+    out = client.succeed(PEERAPI_DEBUG.format(ip=NUC_TS_IP, port=PEERAPI))
     print(out)
     assert " ".join(out.split()) == "denied; no debug access 403", out
+    assert " ".join(out.split()) == PEERAPI_BEFORE_POLICY, PEERAPI_BEFORE_POLICY
 
 with subtest("SSH is open on lan0 and tailscale0 only"):
     rules = nuc.succeed("nft list chain inet nixos-fw input-allow")

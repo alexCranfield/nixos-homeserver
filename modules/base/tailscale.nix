@@ -36,7 +36,7 @@
   # tailnet's access policy limits SSH and Serve; the peer API it lets through
   # on purpose, and checks each request itself (docs/runbooks/tailscale.md).
   # tests/tailscale.nix checks that the peer API is the only such port, and
-  # that it refuses a device with no access.
+  # that it still answers once the policy closes everything but SSH.
   #
   # Tailscale's own UDP (User Datagram Protocol) port, 41641, stays closed.
   # Direct connections usually still form, since the nuc sends first and the

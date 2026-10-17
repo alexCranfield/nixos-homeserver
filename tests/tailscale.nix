@@ -26,7 +26,8 @@ let
   lanIp = "192.168.1.50";
   keys = import "${pkgs.path}/nixos/tests/ssh-keys.nix" pkgs;
   # As in nixpkgs' own headscale test: Tailscale talks to its control server
-  # over HTTPS (HTTP over TLS, Transport Layer Security) only, so the stand-in needs a certificate the others trust.
+  # over HTTPS (HTTP over TLS, Transport Layer Security) only, so the
+  # stand-in needs a certificate the others trust.
   tlsCert = pkgs.runCommand "headscale-cert" { nativeBuildInputs = [ pkgs.openssl ]; } ''
     openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
       -out cert.pem -keyout key.pem \
