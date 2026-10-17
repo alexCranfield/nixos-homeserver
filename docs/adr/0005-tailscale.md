@@ -20,3 +20,17 @@ Join the server to a Tailscale tailnet. SSH, Grafana, Open WebUI and any future 
   are exposed. ADR 0006 lists the checks that enforce this. For those
   interfaces, the "LAN access still works as a fallback" consequence above no
   longer holds; whether SSH keeps a LAN fallback is ticket 1.4's call (#11).
+- Note, 2026-10-17 (ticket 1.5, #12): SSH stays OpenSSH, keys only, carried
+  over the tailnet; Tailscale SSH is not used, so a login still needs the ops
+  key. Port 22 is open on `tailscale0` only, not the whole interface. SSH on
+  the LAN (local area network) stays until ticket 1.7 (#14), when the nuc can
+  decrypt its auth key and join the tailnet unattended, and is then removed:
+  no permanent LAN fallback for SSH. So if the tailnet is down, getting in
+  means a monitor and keyboard on the nuc. The nuc joins with a single-use
+  auth key tagged `tag:server`.
+- Note, 2026-10-17 (ticket 1.5, #12): the NixOS firewall does not cover
+  everything on the tailnet. `tailscaled` answers its peer API port, and
+  Tailscale SSH and Serve ports when enabled, inside its own network stack,
+  before the kernel's firewall. So the tailnet's access rules, not the
+  firewall, are what limit who reaches a Serve-published admin interface
+  (ADR 0006).

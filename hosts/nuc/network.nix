@@ -54,7 +54,8 @@ in
     };
   };
 
-  # SSH from the LAN, until Tailscale (ticket 1.5, #12) is confirmed working.
-  # Then this moves to the Tailscale interface; ADR 0005.
+  # SSH from the LAN as well as the tailnet (modules/base/tailscale.nix), until
+  # the nuc joins the tailnet by itself: its auth key is a secret it can only
+  # decrypt from ticket 1.7 (#14), which removes this. ADR 0005.
   networking.firewall.interfaces.lan0.allowedTCPPorts = [ 22 ];
 }
