@@ -26,7 +26,7 @@ let
   lanIp = "192.168.1.50";
   keys = import "${pkgs.path}/nixos/tests/ssh-keys.nix" pkgs;
   # As in nixpkgs' own headscale test: Tailscale talks to its control server
-  # over HTTPS only, so the stand-in needs a certificate the others trust.
+  # over HTTPS (HTTP over TLS, Transport Layer Security) only, so the stand-in needs a certificate the others trust.
   tlsCert = pkgs.runCommand "headscale-cert" { nativeBuildInputs = [ pkgs.openssl ]; } ''
     openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
       -out cert.pem -keyout key.pem \
@@ -87,7 +87,10 @@ pkgs.testers.runNixOSTest {
     imports = [ trustCert ];
     virtualisation.vlans = [ 2 ];
     services.tailscale.enable = true;
-    environment.systemPackages = [ pkgs.nmap ];
+    environment.systemPackages = [
+      pkgs.curl
+      pkgs.nmap
+    ];
   };
 
   nodes.headscale = {
@@ -109,6 +112,9 @@ pkgs.testers.runNixOSTest {
           };
           urls = [ ];
         };
+        # Set at runtime with `headscale policy set`; until then every device
+        # reaches every other, as under Tailscale's default policy.
+        policy.mode = "database";
         # MagicDNS: each device answers to <its hostname>.tailnet.
         dns = {
           magic_dns = true;

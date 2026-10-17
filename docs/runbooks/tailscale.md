@@ -13,13 +13,22 @@ between your own devices (ADR (Architecture Decision Record) 0005). Ticket 1.5
 - **Port 22 is open on `tailscale0`.** Every other port is closed to the
   tailnet by the firewall, as to the LAN (local area network), with one
   exception below.
-- **`tailscaled` answers one port itself: its peer API.** It listens on a
-  random high port on the tailnet address, for Taildrop and similar features.
-  `tailscaled` handles those connections inside its own network stack, so the
-  packets never reach the firewall, which cannot close the port. Tailscale SSH
-  and Tailscale Serve work the same way when turned on. Only the tailnet's
-  access rules decide which devices reach them. See the source,
-  `wgengine/netstack/netstack.go`, `shouldProcessInbound`. To see the port:
+- **`tailscaled` answers one port itself: its peer API** (application
+  programming interface). It listens on a random high port on the tailnet
+  address, for Taildrop and similar features. `tailscaled` handles those
+  connections inside its own network stack, so the packets never reach the
+  firewall, which cannot close the port (`wgengine/netstack/netstack.go`,
+  `shouldProcessInbound`). Tailscale SSH and Tailscale Serve work the same way
+  when turned on.
+- **The access policy (below) does not close the peer API either.**
+  `tailscaled` lets connections to it past the policy on purpose, and checks
+  each request itself, by what the asking device is allowed
+  (`net/tstun/wrap.go`: "Let peerapi through the filter; its ACLs are handled
+  at L7", layer 7 being the HTTP requests). So every device on the tailnet
+  can connect to the port, and gets only what its permissions allow: the VM
+  test's client is refused with `403 denied; no debug access`. Serve and
+  Tailscale SSH get no such exception, so the policy does limit them. To see
+  the port:
   `ss -ltnp src <the nuc's 100.x address>`.
 - **The nuc keeps its own DNS (Domain Name System).** It runs
   `tailscale up --accept-dns=false`, so its name lookups go to the router and
@@ -38,14 +47,28 @@ Once, before #14. Menu names are from the admin console at
 1. **MagicDNS.** On the DNS page, check MagicDNS is on (it is by default for
    new tailnets). Devices then answer to their hostname, so the nuc is `nuc`,
    or `nuc.<tailnet name>.ts.net` in full.
-2. **The `tag:server` tag.** A tag must have an owner before a key can carry
-   it. In the access controls file, add:
+2. **The access policy.** In the access controls file, give the
+   `tag:server` tag an owner (a key cannot carry a tag without one), and
+   replace the default rule, which lets every device reach every other on
+   every port, tagged ones included:
 
    ```json
    "tagOwners": {
      "tag:server": ["autogroup:admin"],
    },
+   "grants": [
+     // Your own devices reach each other as before.
+     {"src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["*"]},
+     // They reach the nuc on SSH only.
+     {"src": ["autogroup:member"], "dst": ["tag:server"], "ip": ["tcp:22"]},
+   ],
    ```
+
+   The default rule is `"src": ["*"], "dst": ["*"]`, under `grants` or, in
+   an older tailnet, `acls`; delete it. Nothing names `tag:server` as a
+   source, so a compromised nuc reaches no other device. Tailscale Serve
+   (ADR 0006) will add its ports to the second rule. The peer API stays
+   reachable from every device whatever the policy says (above).
 
    A tagged device belongs to the tailnet rather than to your account, and
    Tailscale turns off key expiry for a device tagged when it logs in, so the
@@ -93,6 +116,16 @@ These are #12's acceptance criteria, which need the real nuc on the tailnet:
    nmap -Pn -p- -T4 nuc.home.arpa    # expect every port filtered
    ```
 
+3. The access policy. A scan over the tailnet should find 22 and the peer
+   API's port only (`ss -ltnp` on the nuc names it). And the phone's tailnet
+   address should answer the workstation (the control) but not the nuc:
+
+   ```bash
+   nmap -Pn -p- -T4 nuc              # from WSL, over the tailnet
+   ping -c 1 -W 2 <the phone's 100.x address>               # answers
+   ssh ops@nuc ping -c 1 -W 2 <the phone's 100.x address>   # fails
+   ```
+
 ## Reinstalling
 
 A reinstall gives the nuc a new identity, and the single-use key is spent.
@@ -107,16 +140,23 @@ the nuc's real configuration on a LAN, a client on a separate network with no
 route to it, and Headscale, an open-source implementation of Tailscale's
 control server, on both. It checks that:
 
-- the nuc joins from an auth key in a file, single-use as the real one is;
-- the nuc does not take Tailscale's DNS;
+- the nuc joins from an auth key in a file;
+- both auth keys are single-use, as the real one is, and spent once used;
+- the nuc does not take Tailscale's DNS, while the client, joined without
+  `--accept-dns=false`, does;
 - the client cannot reach the nuc's LAN address, yet logs in as ops over the
   tailnet by the nuc's MagicDNS name, and the nuc sees the login arrive on its
   tailnet address;
-- a full TCP scan over the tailnet finds exactly 22 and `tailscaled`'s peer
-  API port, while a test service listens on 8080; as a negative control,
-  opening 8080 on `tailscale0` makes the scan report it;
+- a full TCP (Transmission Control Protocol) scan over the tailnet finds
+  exactly 22 and `tailscaled`'s peer API port, while a test service listens
+  on 8080; as a negative control, opening 8080 on `tailscale0` makes the scan
+  report it;
+- with the nuc tagged `tag:server` and the policy above (in Headscale's
+  form), 8080 is closed again although the firewall still opens it, the peer
+  API port is still open, and refuses the client's request, and the nuc can
+  no longer ping the client, as it could before the policy;
 - Tailscale SSH is off;
 - 22 is open on `lan0` and `tailscale0` only, and still answers on the LAN.
 
-The real tailnet, the tag and key expiry are not covered: they live in
-Tailscale's service, and are checked at #14.
+The real tailnet, Tailscale's own policy engine and the tag's key expiry are
+not covered: they live in Tailscale's service, and are checked at #14.

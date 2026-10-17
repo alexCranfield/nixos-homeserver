@@ -29,15 +29,19 @@
   # Tailscale Serve (ADR 0006), not through open ports.
   #
   # The firewall does not see everything that arrives over the tailnet.
-  # tailscaled answers some TCP ports on the tailnet address itself, inside its
-  # own network stack, so those packets never reach nftables: its peer API (a
-  # random port, always on), and Tailscale SSH and Serve when turned on. Only
-  # the tailnet's access rules limit who reaches them. tests/tailscale.nix
-  # checks that the peer API is the only such port.
+  # tailscaled answers some TCP (Transmission Control Protocol) ports on the
+  # tailnet address itself, inside its own network stack, so those packets
+  # never reach nftables: its peer API (application programming interface; a
+  # random port, always on), and Tailscale SSH and Serve when turned on. The
+  # tailnet's access policy limits SSH and Serve; the peer API it lets through
+  # on purpose, and checks each request itself (docs/runbooks/tailscale.md).
+  # tests/tailscale.nix checks that the peer API is the only such port, and
+  # that it refuses a device with no access.
   #
-  # Tailscale's own UDP port, 41641, stays closed. Direct connections usually
-  # still form, since the nuc sends first and the firewall lets the replies
-  # back in; when they do not, traffic goes through Tailscale's DERP (Designated
-  # Encrypted Relay for Packets) servers, slower but working.
+  # Tailscale's own UDP (User Datagram Protocol) port, 41641, stays closed.
+  # Direct connections usually still form, since the nuc sends first and the
+  # firewall lets the replies back in; when they do not, traffic goes through
+  # Tailscale's DERP (Designated Encrypted Relay for Packets) servers, slower
+  # but working.
   networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 22 ];
 }
