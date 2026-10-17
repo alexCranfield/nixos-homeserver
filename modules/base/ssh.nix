@@ -21,6 +21,9 @@
 
   services.openssh = {
     enable = true;
+    # Not on every interface. Each host opens 22 where it wants SSH, such as
+    # the nuc's LAN port (hosts/nuc/network.nix); the firewall is default deny.
+    openFirewall = false;
     # ed25519 only. sops-nix derives the host's age identity from this entry
     # (ADR 0004), and fewer key types means fewer to verify on first connect.
     hostKeys = [

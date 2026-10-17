@@ -118,6 +118,13 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 1.4 (#11): reserved address on the right port, the name, and a
+        # LAN scan that finds only SSH.
+        network = import ./tests/network.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
         # Fails `nix flake check` if the server stops using the dev shell's Nix,
         # for example after a `nix.package` override on the host.
         devshell-nix-matches-server =

@@ -30,6 +30,10 @@ pkgs.testers.runNixOSTest {
     users.users.ops.openssh.authorizedKeys.keys = [ keys.snakeOilPublicKey ];
     # Lets the test show that root is refused even holding a valid key.
     users.users.root.openssh.authorizedKeys.keys = [ keys.snakeOilPublicKey ];
+    # The nuc opens SSH on lan0 only, and lan0 is matched by the real port's MAC
+    # address, so here the test network's port keeps its name eth1. The network
+    # test (tests/network.nix) covers the rename and the firewall.
+    networking.firewall.interfaces.eth1.allowedTCPPorts = [ 22 ];
   };
 
   nodes.client = { };

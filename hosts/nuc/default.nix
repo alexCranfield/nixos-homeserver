@@ -8,6 +8,7 @@
     inputs.disko.nixosModules.disko
     ./disko.nix
     ./hardware-configuration.nix
+    ./network.nix
     ../../modules/base
   ];
 

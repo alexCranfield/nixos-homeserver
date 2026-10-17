@@ -24,11 +24,13 @@ flake.nix                          inputs, nixosConfigurations.nuc, formatter, c
 flake.lock                         pinned revisions; commit every change
 hosts/nuc/default.nix              the host: imports disko, hardware + base; encrypted-boot settings
 hosts/nuc/disko.nix                the disk: ESP (EFI System Partition), btrfs in LUKS2 (Linux Unified Key Setup), swapfile
+hosts/nuc/network.nix              the LAN port by MAC address, DHCP, SSH open on the LAN until Tailscale
 hosts/nuc/hardware-configuration.nix   kernel modules: PLACEHOLDER until the first install (#13)
 hosts/installer/default.nix        live USB: latest kernel, survey tools, ops key
 keys/ops.pub                       the admin SSH public key (private half on the workstation)
 modules/base/default.nix           config applied to every host; imports the files below
 modules/base/ssh.nix               the ops account and key-only sshd
+modules/base/firewall.nix          default-deny firewall on nftables
 modules/base/nix.nix               Nix settings and weekly garbage collection
 modules/base/system.nix            UTC clock, locale, boot menu retention, git and tmux
 modules/base/vm.nix                SSH into `just vm` on 127.0.0.1:2222; no effect on a real host
@@ -36,6 +38,8 @@ modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
 tests/disk-tpm.nix                 VM test: the real layout boots, then unlocks from an emulated TPM (Trusted Platform Module)
 tests/disk-tpm.py                  its test script, in Python; disk-tpm.nix passes in the values only Nix knows
+tests/network.nix                  VM test: reserved address on lan0, nuc.home.arpa, a LAN scan finds only SSH
+tests/network.py                   its test script
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
 scripts/tickets.py                 ticket definitions; file_issues.py files them
