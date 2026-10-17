@@ -1,8 +1,8 @@
 # The nuc's LAN (local area network) connection, ticket 1.4 (#11).
 #
-# Two Intel 2.5 GbE (gigabit Ethernet) ports, surveyed in #8. The server uses the I226-V; the
-# I226-LM is the variant that usually carries Intel AMT (Active Management
-# Technology) remote management, so it stays down and unplugged.
+# Two Intel 2.5 GbE (gigabit Ethernet) ports, surveyed in #8. The server uses
+# the I226-V; the I226-LM is the variant that usually carries Intel AMT (Active
+# Management Technology) remote management, so it stays down and unplugged.
 #
 # The address comes from the router: a DHCP (Dynamic Host Configuration
 # Protocol) reservation for the I226-V's MAC (hardware) address, and the name

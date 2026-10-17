@@ -5,9 +5,9 @@
 # Two VMs (virtual machines). `nuc` runs the real host configuration with two
 # network ports, standing in for the I226-V and the I226-LM. `router` stands in
 # for the UniFi Dream Router 7: dnsmasq hands out a DHCP (Dynamic Host
-# Configuration Protocol) reservation by MAC (hardware) address and answers DNS (Domain
-# Name System) queries for home.arpa with the names DHCP clients send. It is
-# also the machine on the LAN that scans the nuc.
+# Configuration Protocol) reservation by MAC (hardware) address and answers DNS
+# (Domain Name System) queries for home.arpa with the names DHCP clients send.
+# It is also the machine on the LAN that scans the nuc.
 #
 # The real MAC addresses are replaced by the VM ports' addresses; everything
 # else about the nuc's network is as it will run.

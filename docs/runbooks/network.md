@@ -15,12 +15,14 @@ The cable goes in the I226-V's port. Which physical socket that is was not
 recorded in the hardware survey (#8), and both sockets got an address then.
 Check it on the live USB, before the install (#13): once installed, the nuc
 holds the I226-LM down, so a cable in the wrong socket leaves it off the
-network with no screen to say why. With the cable in one socket:
+network with no screen to say why. Plug the cable into one socket and run:
 
 ```bash
-ip -br link              # enp45s0 (the I226-V) should show UP
-sudo ethtool -p enp45s0  # blinks that socket's light until Ctrl-C
+ip -br link    # enp45s0 (the I226-V) should show UP; if enp44s0 does, swap
 ```
+
+`ethtool -p`, the usual way to blink a port's light, does not work here: the
+I226's driver, `igc`, does not support it.
 
 The I226-LM is the variant that usually carries Intel AMT (Active Management
 Technology), a remote management engine in firmware. NixOS holds that port
@@ -109,6 +111,11 @@ that as well. Find it with `ip -6 -br addr show lan0` on the nuc, then:
 ```bash
 nmap -6 -Pn -p- -T4 <the nuc's global IPv6 address>   # expect the same: 22 only
 ```
+
+Run it from a machine with an IPv6 route to the LAN, and check that first
+with `ping -6 -c 3 <address>`: a scan that cannot reach the nuc looks the same
+as a clean one. The workstation's WSL (Windows Subsystem for Linux), in its
+default NAT (network address translation) mode, has no such route.
 
 Docker publishes container ports around this firewall (ADR 0006), so the scan
 is worth re-running once stacks arrive.
