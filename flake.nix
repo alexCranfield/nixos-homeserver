@@ -125,6 +125,13 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 1.5 (#12): ops logs in over the tailnet from another network,
+        # and the tailnet sees only SSH.
+        tailscale = import ./tests/tailscale.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
         # Fails `nix flake check` if the server stops using the dev shell's Nix,
         # for example after a `nix.package` override on the host.
         devshell-nix-matches-server =

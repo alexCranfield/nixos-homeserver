@@ -75,7 +75,8 @@ Default deny, on nftables. Nothing is open on any interface except:
 
 | Port | Interface | Why | Until |
 |---|---|---|---|
-| TCP 22 (SSH) | `lan0` | admin access | Tailscale works (ticket 1.5, #12) |
+| TCP 22 (SSH) | `tailscale0` | admin access over the tailnet; see [tailscale.md](tailscale.md) | |
+| TCP 22 (SSH) | `lan0` | admin access until the nuc joins the tailnet by itself | ticket 1.7 (#14) |
 | TCP 22 (SSH) | `eth0`, `just vm` only | the 127.0.0.1:2222 forward into the VM (virtual machine) | |
 
 NixOS's firewall also lets in, on any interface:
