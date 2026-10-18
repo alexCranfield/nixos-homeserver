@@ -9,6 +9,7 @@
     ./disko.nix
     ./hardware-configuration.nix
     ./network.nix
+    ./secrets.nix
     ../../modules/base
   ];
 
