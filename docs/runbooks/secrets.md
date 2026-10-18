@@ -15,7 +15,7 @@ so an encrypted file still diffs sensibly in a pull request.
 |---|---|---|---|
 | Workstation | sops default path, encrypted with a passphrase | off-machine, the same encrypted file; see password manager | everything |
 | VM test | beside it, `vm-test.txt` | no, throwaway | `secrets/test.yaml` only |
-| `nuc` host | derived from its SSH host key | n/a, regenerated on reinstall | added in ticket 1.7 (#14) |
+| `nuc` host | derived from its SSH host key, `/etc/ssh/ssh_host_ed25519_key` on the nuc | n/a, regenerated on reinstall | everything, since ticket 1.7 (#14) |
 
 Recovery details, including where the workstation key is backed up, live in the
 password manager rather than in this public repository. They are deliberately
@@ -204,11 +204,44 @@ runbook. Never put anything real in it.
 `.sops.yaml` decides which keys can open which files. **Rules are first-match,
 and they do not merge.** `secrets/test.yaml` is matched by the narrow rule and
 never reaches the general one, so a key added only to the general rule cannot
-open it. Ticket 1.7 (#14) must add the `nuc` host key to *both* rules, or its
-own acceptance criterion, reading `/run/secrets/test` on the nuc, will fail.
-Recipients alone are not sufficient either: #14 must also declare
-`sops.secrets.test` on the host in `hosts/nuc/`, since nothing declares it
-today.
+open it. That is why the `nuc` host key is in *both* rules (ticket 1.7, #14).
+Recipients alone are not sufficient either: the host must also declare each
+secret, as `hosts/nuc/secrets.nix` does for `sops.secrets.test`.
+
+## The nuc's key
+
+The nuc decrypts with an age identity that sops-nix derives at activation from
+its ed25519 SSH host key; nothing is copied to it by hand. Its public half, the
+`&nuc` recipient in `.sops.yaml`, comes from the host's public key:
+
+```bash
+ssh ops@nuc.home.arpa cat /etc/ssh/ssh_host_ed25519_key.pub > nuc.pub
+ssh-keygen -lf nuc.pub        # must match the fingerprint read at the console
+ssh-to-age -i nuc.pub         # the recipient
+```
+
+Check the fingerprint against the one read at the nuc's console
+([install.md](install.md), step 6) before trusting the recipient: a key fetched
+over the network is only as good as that check. Then add the recipient to both
+rules and re-encrypt each file with `just secrets-rekey <file>`; that step
+decrypts with the workstation key, so it asks for its passphrase.
+
+**A reinstall makes a new host key**, unless the old one is carried over. The
+old recipient then decrypts nothing on the new machine, and every secret must
+be re-encrypted to the new one before the first deploy that needs it. Remove
+the old recipient in the same change.
+
+To prove the nuc can decrypt a file without its secret leaving the machine:
+
+```bash
+sudo cat /run/secrets/test     # as deployed
+# or any file, decrypted on the nuc with its own key, which is never printed:
+sudo sh -c 'SOPS_AGE_KEY=$(ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key) sops -d secrets/test.yaml'
+```
+
+`sops` cannot read the SSH key directly here (`SOPS_AGE_SSH_PRIVATE_KEY_FILE`
+failed on 2026-10-18 with sops 3.13.3), hence `ssh-to-age`. Neither tool is
+installed on the nuc; `nix-shell -p sops ssh-to-age` provides them.
 
 The general pattern is `^secrets/[^/]+\.yaml$`, which deliberately excludes
 `.yml`, subdirectories, and the `stacks/<name>/.env.sops` shape that ticket 3.2

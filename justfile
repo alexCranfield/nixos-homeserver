@@ -63,9 +63,9 @@ vm-secrets:
         exit 1
     fi
 
-# Emergency manual deploy to the nuc. Normally comin pulls main itself.
+# Manual deploy to the nuc, from the current checkout (comin will pull main itself, #16).
 deploy:
-    nixos-rebuild switch --flake '.#nuc' --target-host ops@nuc --elevate sudo
+    nixos-rebuild switch --flake '.#nuc' --target-host ops@nuc.home.arpa --sudo
 
 # Edit an encrypted secret in $EDITOR, re-encrypting on save.
 secrets-edit file:
