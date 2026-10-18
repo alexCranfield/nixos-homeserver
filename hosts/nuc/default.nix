@@ -10,6 +10,7 @@
     ./hardware-configuration.nix
     ./network.nix
     ./secrets.nix
+    ./tailscale.nix
     ../../modules/base
   ];
 

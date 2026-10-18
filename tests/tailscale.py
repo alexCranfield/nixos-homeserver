@@ -60,13 +60,19 @@ with subtest("the nuc joins the tailnet from its auth key file"):
     print(f"nuc's tags: {tags}")
     assert tags == ["tag:server"], tags
 
-with subtest("the nuc keeps its own DNS and does not run Tailscale SSH"):
+with subtest("the nuc keeps its own DNS, runs no Tailscale SSH and refuses Taildrop"):
     prefs = json.loads(nuc.succeed("tailscale debug prefs"))
     print(f"CorpDNS: {prefs['CorpDNS']}, RunSSH: {prefs['RunSSH']}")
     assert prefs["CorpDNS"] is False, prefs["CorpDNS"]
     # Tailscale SSH would answer port 22 inside tailscaled, like the peer API
     # below: around both sshd's key-only rules and the firewall.
     assert prefs["RunSSH"] is False, prefs["RunSSH"]
+    # Taildrop refuses incoming files (disableTaildrop). Read from the running
+    # daemon's environment, not the unit file, so a restart that dropped it
+    # would show.
+    pid = nuc.succeed("systemctl show -p MainPID --value tailscaled").strip()
+    env = nuc.succeed(f"tr '\\0' '\\n' < /proc/{pid}/environ")
+    assert "TS_DISABLE_TAILDROP=true" in env.split("\n"), env
 
 with subtest("the client, on another network, cannot reach the nuc's LAN address"):
     client.wait_for_unit("tailscaled.service")
