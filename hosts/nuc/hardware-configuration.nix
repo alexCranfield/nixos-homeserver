@@ -9,11 +9,14 @@
 # command on the nuc and compare.
 #
 # Notes on the output:
-#  - usbhid is not in the list, as no keyboard was plugged in. The keyboard
-#    still works at the disk passphrase prompt: NixOS's default initrd modules
-#    include usbhid and hid_generic.
-#  - The NPU (neural processing unit) line adds the Intel NPU's firmware and
-#    driver, and turns on hardware.graphics, which the iGPU will want anyway.
+#  - usb_storage and sd_mod are there for the live USB stick, which was
+#    plugged in. usbhid is not, as no keyboard was. The keyboard still works
+#    at the disk passphrase prompt: NixOS's default initrd (early boot
+#    environment) modules include usbhid and hid_generic.
+#  - The NPU (neural processing unit) line adds the NPU's firmware, its
+#    user-space driver and the Level Zero tools, and turns on
+#    hardware.graphics, which the iGPU (integrated graphics) trial, ticket
+#    5.4, would want later. The kernel driver, ivpu, is part of the kernel.
 #  - nixpkgs.hostPlatform and the microcode line repeat default.nix, at a lower
 #    priority (mkDefault).
 {
