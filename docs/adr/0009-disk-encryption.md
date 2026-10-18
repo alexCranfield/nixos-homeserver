@@ -159,8 +159,9 @@ What goes with the decision:
   nuc's own console into `/tmp/disk.key` on the live USB, and
   `--disk-encryption-keys` is not used. A passphrase typed once into a file on
   the workstation did not match the one intended, and the first install could
-  not be unlocked. The console also has the same keyboard layout as the boot
-  prompt, which a file written on Windows does not guarantee. The decision is
+  not be unlocked; why it differed is not known, and a typo is the likeliest
+  cause. The console also has the same keyboard layout as the boot prompt,
+  which a file written on the workstation may not. The decision is
   unchanged; see `docs/runbooks/install.md`.
 - **Layout (#9).** The btrfs subvolumes go inside one LUKS2 container. The ESP
   (EFI System Partition) stays unencrypted, as it must. Discards (TRIM) are

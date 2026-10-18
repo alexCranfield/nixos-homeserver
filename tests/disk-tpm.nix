@@ -20,8 +20,8 @@
 #    format; nixos-anywhere installs the loader to it, and /boot's umask=0077 is
 #    not checked.
 #  - The Nix store comes from the host, not from @nix.
-#  - The test writes /tmp/disk.key itself; nixos-anywhere's
-#    `--disk-encryption-keys` is what puts it there for real.
+#  - The test writes /tmp/disk.key itself; on the real install it is typed at
+#    the nuc's console (docs/runbooks/install.md).
 #  - QEMU's TPM is emulated, so the NUC's firmware TPM and its real PCR 7 value
 #    are first exercised on the hardware.
 {

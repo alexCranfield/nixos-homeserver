@@ -44,9 +44,10 @@
           content = {
             type = "luks";
             name = "cryptroot";
-            # The recovery passphrase, read only while formatting. nixos-anywhere
-            # copies it here with `--disk-encryption-keys` (ADR 0009); it is
-            # never in this repo or the Nix store.
+            # The recovery passphrase, read only while formatting. It is typed
+            # twice at the nuc's console into this file on the live USB
+            # (docs/runbooks/install.md, ADR 0009); it is never in this repo
+            # or the Nix store.
             passwordFile = "/tmp/disk.key";
             settings = {
               # TRIM (discard) reaches the SSD. It reveals which blocks are in

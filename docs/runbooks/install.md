@@ -5,8 +5,8 @@ USB. Ticket 1.6 (#13); first done on 2026-10-18. The install wipes the system
 drive. The reinstall runbook (ticket 1.8, #15) builds on this one and adds
 restoring the data.
 
-The disk is LUKS2 (Linux Unified Key Setup) encrypted (ADR, Architecture
-Decision Record, 0009). Every boot after the install unlocks it with a key
+The disk is LUKS2 (Linux Unified Key Setup) encrypted (ADR (Architecture
+Decision Record) 0009). Every boot after the install unlocks it with a key
 sealed in the TPM (Trusted Platform Module); the passphrase set here is the
 recovery key for when that fails.
 
@@ -19,10 +19,16 @@ recovery key for when that fails.
 - A keyboard and screen are on the nuc. The first boot asks for the passphrase
   there, and the live USB's console is where the passphrase is typed.
 - The ops key is in an SSH agent on the workstation. The live USB lets root in
-  with it.
+  with it. It makes a new host key on every boot, so every `ssh root@…` below
+  takes `-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no`, as in
+  [hardware.md](hardware.md); without them, a reinstall fails on the installed
+  server's key, which `known_hosts` holds under the same name. Never use them
+  against the installed server.
 - `main` holds what is to be installed, CI (continuous integration) is green on
   it, and it builds locally:
   `nix build .#nixosConfigurations.nuc.config.system.build.toplevel`.
+- The commands on the workstation run in the repo's dev shell (direnv, or
+  `nix develop`), which provides `nixos-anywhere`.
 
 ## 1. Read-only checks on the live USB
 
@@ -30,7 +36,8 @@ Nothing here changes the machine. From WSL (Windows Subsystem for Linux), with
 the agent loaded:
 
 ```bash
-ssh root@nuc.home.arpa 'lsblk -o NAME,SIZE,TYPE,MODEL; ip -br link; ls /dev/tpmrm0; systemd-analyze pcrs 7'
+ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@nuc.home.arpa \
+  'lsblk -o NAME,SIZE,TYPE,MODEL; ip -br link; ls /dev/tpmrm0; systemd-analyze pcrs 7'
 ```
 
 - `lsblk` shows one NVMe (Non-Volatile Memory Express) drive, `nvme0n1`, the
@@ -49,7 +56,8 @@ compare before installing; a difference goes in by pull request, so the install
 builds from a reviewed commit.
 
 ```bash
-ssh root@nuc.home.arpa nixos-generate-config --show-hardware-config --no-filesystems
+ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@nuc.home.arpa \
+  nixos-generate-config --show-hardware-config --no-filesystems
 ```
 
 It lists `usb_storage` and `sd_mod` because the live USB stick is plugged in,
@@ -65,13 +73,15 @@ that nothing would show:
 
 ```bash
 read -rsp 'new: ' a; echo; read -rsp 'again: ' b; echo
-[ "$a" = "$b" ] && printf %s "$a" > /tmp/disk.key && chmod 600 /tmp/disk.key && echo saved || echo "no match, run it again"
+[ -n "$a" ] && [ "$a" = "$b" ] && printf %s "$a" > /tmp/disk.key && chmod 600 /tmp/disk.key && echo saved || echo "empty or no match, run it again"
 unset a b
 ```
 
-`printf %s` leaves out the newline, which would otherwise be part of the
-passphrase and impossible to type at the prompt. Store the passphrase in the
-password manager and in the offline backup now, before installing.
+`printf %s` leaves out the trailing newline. disko would drop one anyway (it
+reads the file through `$(cat …)`), but `cryptsetup --key-file` in step 5 reads
+the file byte for byte, and a newline there would fail the check on a good
+disk. Store the passphrase in the password manager and in the offline backup
+now, before installing.
 
 `hosts/nuc/disko.nix` reads the passphrase from `/tmp/disk.key` on the target
 while formatting. nixos-anywhere can copy a file there from the workstation
@@ -99,7 +109,7 @@ nixos-anywhere --flake .#nuc --target-host root@nuc.home.arpa --phases kexec,dis
 ## 5. Before the first boot
 
 ```bash
-ssh root@nuc.home.arpa
+ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@nuc.home.arpa
 cryptsetup open --test-passphrase --key-file /tmp/disk.key /dev/disk/by-partlabel/disk-main-luks && echo unlocks
 efibootmgr
 ```
@@ -107,7 +117,8 @@ efibootmgr
 - The key file unlocks the disk.
 - `efibootmgr` lists a "Linux Boot Manager" entry on the new ESP (EFI System
   Partition). The firmware put it **after** the USB stick both times, so put it
-  first: `efibootmgr -o <its number>,<the USB's>`. A reinstall leaves the old
+  first: `efibootmgr -o <its number>,<the USB's>`, which also drops any entry
+  not listed from the boot order (list any other to keep). A reinstall leaves the old
   install's entries behind, pointing at a partition that no longer exists
   (compare the GUID (globally unique identifier) in each entry with
   `lsblk -no PARTUUID /dev/disk/by-partlabel/disk-main-ESP`); delete those with
@@ -126,10 +137,15 @@ workstation first:
 ssh-keygen -R nuc.home.arpa; ssh-keygen -R 192.168.1.131
 ```
 
-There is no way to read the host key at the console (ops has no password, and
-root is locked), so it cannot be checked out of band before #14. Two separate
-fetches, `ssh-keyscan` and the first login, agreeing is the check. Asking the
-server for its own key over that SSH session proves nothing.
+Check the new host key out of band before trusting it. Asking the server for
+its own key over SSH proves nothing, and two fetches over the LAN (local area
+network) agreeing is only trust on first use. The console has no login (ops
+has no password and root is locked), but the boot menu gives a root shell: at
+the systemd-boot menu press `e`, add ` systemd.debug_shell` to the line, boot,
+type the passphrase, then press Ctrl+Alt+F9 and run
+`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`. Compare it with what the
+first `ssh ops@nuc.home.arpa` shows. The shell lasts that one boot. On
+2026-10-18 this was not done; the key was accepted on the two LAN fetches.
 
 Enrol the TPM key. It asks for the passphrase, so run it in a terminal of your
 own:
@@ -145,6 +161,8 @@ second into the boot.
 
 ## 7. Checks
 
+On the nuc, as ops:
+
 ```bash
 nixos-version; systemctl is-system-running; systemctl --failed
 for d in 00:02.0 2c:00.0 2d:00.0; do echo "$d $(basename "$(readlink /sys/bus/pci/devices/0000:$d/driver)")"; done
@@ -152,7 +170,7 @@ sudo dmesg | grep -iE 'firmware' | grep -iE 'fail|missing|direct'   # expect not
 findmnt -t btrfs,vfat; swapon --show
 ```
 
-Expect `xe` on `00:02.0` and `igc` on both NICs. `lspci` is not installed;
+Expect `xe` on `00:02.0` and `igc` on both NICs (network interface cards). `lspci` is not installed;
 `nix-shell -p pciutils --run 'lspci -k'` gives the full listing. Then the
 network checks in [network.md](network.md).
 
@@ -165,7 +183,10 @@ see more:
 
 1. Reboot (Ctrl+Alt+Del), and at the systemd-boot menu press an arrow key, then
    `e`. Add ` rd.systemd.debug_shell` to the end of the line and press Enter.
-   This lasts one boot.
+   This lasts one boot, and covers the initrd (early boot environment), where
+   the disk is unlocked and mounted: the failure of 2026-10-18 was there. A
+   failure after the switch to the installed system, such as a mount under
+   `/srv`, needs ` systemd.debug_shell` instead; adding both is harmless.
 2. When emergency mode comes up, press Ctrl+Alt+F9 for a root shell.
 3. `systemctl --failed --no-pager` and
    `journalctl -b -p warning --no-pager | tail -40`.
@@ -174,8 +195,9 @@ see more:
 the typed passphrase is not the one the disk was formatted with. With the
 passphrase file gone, nothing reads the disk; reinstall from step 3.
 
-The boot menu editor that step 1 uses is open to anyone at the keyboard; #47
-turns it off along with Secure Boot.
+The boot menu editor that step 1 and the host key check use is open to anyone
+at the keyboard; #47 turns it off along with Secure Boot, after which the live
+USB is the only way to a shell at the console.
 
 ## Record
 
@@ -184,9 +206,9 @@ turns it off along with Secure Boot.
 | Installed from | `main` at `8e9f070`, NixOS `26.05.20260907.93108a5`, kernel 7.2.3 |
 | nixos-anywhere | 1.13.0 |
 | Live USB | NixOS 26.05, kernel 7.2.3 |
-| Disk | Seagate FireCuda 530, 931.5 GiB: 1 GiB ESP (56 MiB used, one generation), 930.5 GiB LUKS2 (AES-XTS (the standard disk-encryption cipher), Argon2id) |
+| Disk | Seagate FireCuda 530, 931.5 GiB: 1 GiB ESP (56 MiB used, one generation), 930.5 GiB LUKS2 (AES (Advanced Encryption Standard) in XTS mode, Argon2id) |
 | TPM unlock | PCR 7, `f18e3c69…eedcc9` with Secure Boot off; unattended boot back on SSH in about 30 s |
-| Drivers | `xe` (GuC 70.72.1, HuC 10.3.3, GSC 105.0.2.1397, DMC v2.36), `igc` on both I226s, `intel_vpu` on the NPU |
-| `dmesg` errors | none for the GPU, NICs or firmware; Bluetooth `gp1 mailbox interrupt` and SoundWire bus clashes, as in the survey |
+| Drivers | `xe` with its graphics microcontroller firmware (GuC 70.72.1, HuC 10.3.3, GSC 105.0.2.1397, DMC v2.36), `igc` on both I226s, `intel_vpu` on the NPU (neural processing unit) |
+| `dmesg` errors | none for the GPU (graphics processor), NICs or firmware; Bluetooth `gp1 mailbox interrupt` and SoundWire bus clashes, as in the survey |
 | NVMe health after the install | SMART (Self-Monitoring, Analysis and Reporting Technology) passed, 0 % used, no media errors. Error log 43 entries (13 at the survey), all `Invalid Field in Command` on the admin queue: the host asking for features the drive does not support, not data errors. Unsafe shutdowns 9 (8 at the survey), most likely the emergency-mode boot |
 | Firewall from the LAN | IPv4: nmap, only 22 open. IPv6, the ULA (unique local address) from the router: a scan from Windows, only 22 open. Negative control: a listener on 8080 shows as filtered on both, then open on both after `nixos-firewall-tool open tcp 8080`, then filtered again after `reset` |

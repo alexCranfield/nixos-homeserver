@@ -247,12 +247,14 @@ Yes. The ops key logs in as `ops`, who has sudo without a password, and as root
 on the live USB, so whoever holds the file holds the server. Without a
 passphrase, a copy taken from a backup, or by malware on Windows (which can read
 the WSL home directory through `\\wsl$`), works straight away. With one, a copy
-is useless until the passphrase is guessed, and OpenSSH derives the file's
-encryption key with bcrypt, which slows each guess down.
+is useless until the passphrase is guessed. OpenSSH derives the file's
+encryption key with bcrypt_pbkdf, 16 rounds by default (`ssh-keygen -a` raises
+it): a modest slowdown per guess, far less than LUKS's Argon2id, so the
+passphrase itself has to be decent.
 
 It costs little: `ssh-keygen -p -f ~/.ssh/id_nuc` re-encrypts only the private
-file, so the public key, `keys/ops.pub`, stays the same. The agent asks once
-per session, and `ssh-add -t 2h` drops the key from the agent afterwards.
+file, so the public key, `keys/ops.pub`, stays the same. `ssh-add` asks for it
+once per session when it loads the key into the agent, and `ssh-add -t 2h` drops the key from the agent afterwards.
 
 </details>
 
@@ -284,7 +286,8 @@ typed only after a firmware update or a TPM failure. So it should be strong and
 stored (a password manager and an offline copy), not remembered.
 
 Two practical points decide between a random string and a passphrase of six
-random words (about 77 bits, also enough with Argon2id):
+random words from the 7,776-word Diceware list (about 77 bits, also enough
+with Argon2id):
 
 - The prompt at boot uses a US keyboard layout. Symbols such as `@ " # \ |`
   can come out differently on another layout, and characters outside ASCII
