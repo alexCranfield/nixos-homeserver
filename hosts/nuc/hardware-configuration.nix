@@ -13,10 +13,13 @@
 #    plugged in. usbhid is not, as no keyboard was. The keyboard still works
 #    at the disk passphrase prompt: NixOS's default initrd (early boot
 #    environment) modules include usbhid and hid_generic.
-#  - The NPU (neural processing unit) line adds the NPU's firmware, its
-#    user-space driver and the Level Zero tools, and turns on
-#    hardware.graphics, which the iGPU (integrated graphics) trial, ticket
-#    5.4, would want later. The kernel driver, ivpu, is part of the kernel.
+#  - The command also wrote `hardware.cpu.intel.npu.enable = true;`, left out
+#    here. The NPU (neural processing unit) works without it: its kernel
+#    driver, intel_vpu, is part of the kernel, and its firmware comes with
+#    linux-firmware. The line adds the user-space driver, Level Zero and
+#    hardware.graphics (0.9 GiB), which nothing uses yet, and an older copy of
+#    the firmware that replaces linux-firmware's. The NPU and iGPU (integrated
+#    graphics) trials, tickets 5.4 (#37) and 5.5 (#38), decide whether to add it.
 #  - nixpkgs.hostPlatform and the microcode line repeat default.nix, at a lower
 #    priority (mkDefault).
 {
@@ -40,6 +43,5 @@
   boot.extraModulePackages = [ ];
 
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
-  hardware.cpu.intel.npu.enable = true;
   hardware.cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
 }
