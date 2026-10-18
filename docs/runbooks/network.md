@@ -11,11 +11,13 @@ is `hosts/nuc/network.nix` and `modules/base/firewall.nix`.
 | Intel I226-V | `enp45s0`, renamed `lan0` | `9c:6b:00:5c:46:52` | the server's LAN port |
 | Intel I226-LM | `enp44s0` | `9c:6b:00:5c:46:51` | held down, and kept unplugged |
 
-The cable goes in the I226-V's port. Which physical socket that is was not
-recorded in the hardware survey (#8), and both sockets got an address then.
-Check it on the live USB, before the install (#13): once installed, the nuc
-holds the I226-LM down, so a cable in the wrong socket leaves it off the
-network with no screen to say why. Plug the cable into one socket and run:
+The cable goes in the I226-V's port. The hardware survey (#8) did not record
+which physical socket that is. On 2026-10-18 the router saw the I226-LM's
+address with the cable in one socket, and the I226-V's after it moved to the
+other, so the cable is now in the right one. Keep it there: once installed,
+the nuc holds the I226-LM down, so a cable in the wrong socket leaves it off
+the network with no screen to say why. To check again on the live USB, with
+the cable in one socket:
 
 ```bash
 ip -br link    # enp45s0 (the I226-V) should show UP; if enp44s0 does, swap
@@ -44,7 +46,8 @@ name. Menu names below are from the UniFi Network application and may move
 between versions.
 
 1. **Check the LAN's domain.** Settings, then Networks, then the LAN network:
-   the domain name field should read `home.arpa`. With it set, UniFi is
+   the domain name field should read `home.arpa` (it read `localdomain`, the
+   default, until 2026-10-18). With it set, UniFi is
    expected to answer DNS (Domain Name System) queries for
    `<client hostname>.home.arpa` from the names DHCP clients send; another
    machine already reachable as `<name>.home.arpa` is a quick check.
@@ -66,8 +69,29 @@ ping -c 3 nuc.home.arpa
 
 | Setting | Value |
 |---|---|
-| Reserved address | not yet set |
-| Local DNS record | not yet set |
+| Reserved address | `192.168.1.131`, set 2026-10-18 |
+| Local DNS record | `nuc.home.arpa`, set 2026-10-18 |
+
+**The LAN's DNS server is not the router.** DHCP hands out a Pi-hole on the
+LAN as the DNS server, so clients ask it, not the router, and it did not know
+the router's names: `nuc.home.arpa` resolved when asking the router directly
+but not from the workstation. Pi-hole's reverse server setting (Settings, then
+DNS, in expert mode; "conditional forwarding" before Pi-hole v6) now sends
+`home.arpa` to the router:
+
+```
+true,192.168.1.0/24,192.168.1.1,home.arpa
+```
+
+The fourth field is what forwards names; without it only reverse lookups
+(address to name) go to the router. Pi-hole still answers its own local
+records first. If the Pi-hole is down, every name lookup on the LAN fails,
+the nuc's own included. To tell the two apart:
+
+```bash
+nslookup nuc.home.arpa 192.168.1.1    # the router: the reserved address
+nslookup nuc.home.arpa                # the LAN's DNS server: the same
+```
 
 ## The firewall
 
