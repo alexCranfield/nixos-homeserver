@@ -122,8 +122,10 @@ Phase 0 (workstation and repo foundations) is done apart from the machine user
 (Architecture Decision Records) 0001 to 0007 and 0009 are written. The hardware
 arrived on 2026-10-01 and was assembled and surveyed on 2026-10-04 (#8). The
 disk layout is declared, with LUKS2 (Linux Unified Key Setup) encryption and a
-TPM (Trusted Platform Module) unlock tested in a VM (#9, ADR 0009); the install
-(#13) waits on networking (#11). See the
+TPM (Trusted Platform Module) unlock tested in a VM (#9, ADR 0009). The nuc was
+installed on 2026-10-18 (#13): it boots NixOS 26.05 from its encrypted disk and
+unlocks with the TPM, unattended. Next it joins the tailnet and gets its own
+secrets (#14). See the
 [milestones](https://github.com/alexCranfield/nixos-homeserver/milestones).
 
 ## License

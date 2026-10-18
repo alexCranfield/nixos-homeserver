@@ -130,8 +130,10 @@ nmap -Pn -p- -T4 nuc.home.arpa    # expect 22/tcp open, everything else filtered
 ```
 
 The firewall covers IPv6 as well (the `inet` table holds both). If the router
-advertises an IPv6 prefix, `lan0` takes a global IPv6 address too, so scan
-that as well. Find it with `ip -6 -br addr show lan0` on the nuc, then:
+advertises an IPv6 prefix, `lan0` takes an IPv6 address from it too, so scan
+that as well. The UniFi router advertises a ULA (unique local address) prefix,
+`fd…/64`, reachable on the LAN only; on 2026-10-18 `lan0` had two addresses in
+it. Find it with `ip -6 -br addr show lan0` on the nuc, then:
 
 ```bash
 nmap -6 -Pn -p- -T4 <the nuc's global IPv6 address>   # expect the same: 22 only
@@ -140,7 +142,12 @@ nmap -6 -Pn -p- -T4 <the nuc's global IPv6 address>   # expect the same: 22 only
 Run it from a machine with an IPv6 route to the LAN, and check that first
 with `ping -6 -c 3 <address>`: a scan that cannot reach the nuc looks the same
 as a clean one. The workstation's WSL (Windows Subsystem for Linux), in its
-default NAT (network address translation) mode, has no such route.
+default NAT (network address translation) mode, has no such route; Windows
+itself does, but has no nmap. On 2026-10-18 the IPv6 scan ran from Windows
+PowerShell instead, as a TCP connect to every port with a 1.5 second wait
+(`System.Net.Sockets.TcpClient.ConnectAsync`, 2,000 ports at a time). A
+dropped probe never connects, so only ports that complete the handshake count
+as open.
 
 Docker publishes container ports around this firewall (ADR 0006), so the scan
 is worth re-running once stacks arrive.

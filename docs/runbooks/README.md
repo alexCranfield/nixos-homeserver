@@ -9,6 +9,7 @@ Operational procedures, written as tickets are completed.
 - [ci.md](ci.md) — what CI runs, why, and what to do when it is red (ticket 0.4)
 - [network.md](network.md) — the LAN port, the router's reservation and name, the firewall (ticket 1.4)
 - [tailscale.md](tailscale.md) — the tailnet, the auth key, joining devices, SSH over Tailscale (ticket 1.5)
+- [install.md](install.md) — installing the nuc with nixos-anywhere, the disk passphrase, the TPM key (ticket 1.6)
 - [hardware.md](hardware.md) — the live USB, assembly, BIOS settings and the hardware survey (ticket 1.1; the record fills in when it closes)
 
 ## Planned

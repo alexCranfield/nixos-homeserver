@@ -154,6 +154,15 @@ What goes with the decision:
   the offline backup. After the first boot, ops runs
   `systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7` on the LUKS partition.
   The reinstall runbook (#15) records both steps.
+
+  Amended at the install (2026-10-18): the passphrase is typed twice at the
+  nuc's own console into `/tmp/disk.key` on the live USB, and
+  `--disk-encryption-keys` is not used. A passphrase typed once into a file on
+  the workstation did not match the one intended, and the first install could
+  not be unlocked; why it differed is not known, and a typo is the likeliest
+  cause. The console also has the same keyboard layout as the boot prompt,
+  which a file written on the workstation may not. The decision is
+  unchanged; see `docs/runbooks/install.md`.
 - **Layout (#9).** The btrfs subvolumes go inside one LUKS2 container. The ESP
   (EFI System Partition) stays unencrypted, as it must. Discards (TRIM) are
   allowed for the SSD's sake, which reveals which blocks are in use but nothing
