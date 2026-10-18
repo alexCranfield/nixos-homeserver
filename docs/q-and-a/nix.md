@@ -172,6 +172,11 @@ Note the command itself has changed since older tutorials were written: nixpkgs
 26.05 ships the rewrite, `nixos-rebuild-ng`, which replaced `--use-remote-sudo`
 with `--elevate sudo`.
 
+Correction, 2026-10-18: wrong. The `nixos-rebuild` pinned here has no
+`--elevate` option; its `--help` lists `--sudo` (and `--ask-sudo-password`),
+and the first real deploy (#14) used `--sudo`. `just deploy` carried the wrong
+flag until then, because nothing had run it.
+
 </details>
 
 ### Is `just vm` a real virtual machine, and is Nix or Docker running it?

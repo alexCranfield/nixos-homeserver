@@ -8,8 +8,10 @@
 # a real secret even if it leaks.
 #
 # Everything lives under `virtualisation.vmVariant`, so importing this module
-# into a real host changes nothing about that host: its `system.build.toplevel`
-# declares no secret and carries no power-off unit.
+# into a real host changes nothing about that host: it adds no secret and no
+# power-off unit to its `system.build.toplevel`. (The nuc itself declares the
+# test secret since #14, in hosts/nuc/secrets.nix; that is the host's, not
+# this module's.)
 { lib, ... }:
 {
   options.vmSecrets.keyDir = lib.mkOption {

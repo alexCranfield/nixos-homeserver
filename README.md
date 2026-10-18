@@ -74,7 +74,7 @@ by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
 | `just iso` | build the live USB image, print its store path ([hardware.md](docs/runbooks/hardware.md)) |
 | `just vm` | boot the nuc config in a local VM; log in as below; quit with ctrl-a then x |
 | `just vm-secrets` | prove sops-nix decrypts in a VM; exits non-zero on failure |
-| `just deploy` | emergency manual deploy; normally comin pulls `main` itself |
+| `just deploy` | manual deploy of the current checkout to the nuc; comin will pull `main` itself (#16) |
 | `just secrets-edit <file>` | edit an encrypted secret, re-encrypting on save |
 | `just secrets-show <file>` | print a secret without opening an editor |
 | `just secrets-rekey <file>` | re-encrypt after changing recipients in `.sops.yaml` |
