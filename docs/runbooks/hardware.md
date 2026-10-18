@@ -73,9 +73,12 @@ Photograph every screen you change.
       survey shows it is Intel's firmware TPM.
 - [ ] Secure Boot: **off**. Record whether custom keys can be enrolled, for
       #47 later.
-- [ ] Boot order: USB, then NVMe, for now. After the install (#13), put NVMe
-      first: a stick left in after a power cut would otherwise boot the live
-      system, which also accepts the ops key, instead of the server.
+- [x] Boot order: USB, then NVMe, until the install; since the install (#13,
+      2026-10-18), NVMe first: a stick left in after a power cut would
+      otherwise boot the live system, which also accepts the ops key, instead
+      of the server. The firmware lists a newly inserted stick first again, so
+      check `efibootmgr` after booting the live USB (see
+      [install.md](install.md), step 5).
 - [ ] Fan profile suitable for running 24/7.
 
 ## Survey

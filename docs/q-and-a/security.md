@@ -233,3 +233,68 @@ Update 2026-10-11: done in #56. The key file is encrypted with a passphrase,
 and gpg-agent caches the passphrase in memory; see `docs/runbooks/secrets.md`.
 
 </details>
+
+### Should the SSH key that reaches the server have a passphrase?
+
+*2026-10-18*
+
+> Should I add a passphrase to the key?
+
+<details>
+<summary>Answer</summary>
+
+Yes. The ops key logs in as `ops`, who has sudo without a password, and as root
+on the live USB, so whoever holds the file holds the server. Without a
+passphrase, a copy taken from a backup, or by malware on Windows (which can read
+the WSL home directory through `\\wsl$`), works straight away. With one, a copy
+is useless until the passphrase is guessed, and OpenSSH derives the file's
+encryption key with bcrypt, which slows each guess down.
+
+It costs little: `ssh-keygen -p -f ~/.ssh/id_nuc` re-encrypts only the private
+file, so the public key, `keys/ops.pub`, stays the same. The agent asks once
+per session, and `ssh-add -t 2h` drops the key from the agent afterwards.
+
+</details>
+
+### How strong does the disk passphrase need to be, and is a random one better than a memorable one?
+
+*2026-10-18*
+
+> For this passphrase, would a 17 char alphanumeric string with special
+> characters be sufficient? And would it be better than a smaller memorable
+> password?
+
+<details>
+<summary>Answer</summary>
+
+Seventeen characters is plenty, if a generator picked them. Drawn at random
+from the roughly 94 printable keyboard characters, each carries about 6.5 bits,
+so seventeen give about 111 bits: out of reach of brute force. LUKS2 (Linux
+Unified Key Setup) also runs every guess through Argon2id, a hash built to be
+slow and memory-hungry (by default, about two seconds and up to a gigabyte
+per guess on the machine that formatted the disk), which stops graphics cards
+scaling the attack. A string a person makes up is much
+weaker than its length suggests, because people follow patterns.
+
+A short memorable password is the wrong trade here. The passphrase protects
+the disk against someone who has the disk, who can guess offline for as long as
+they like, with no lockout. Memorability buys little, because the TPM (Trusted
+Platform Module) unlocks every normal boot; the passphrase is the recovery key,
+typed only after a firmware update or a TPM failure. So it should be strong and
+stored (a password manager and an offline copy), not remembered.
+
+Two practical points decide between a random string and a passphrase of six
+random words (about 77 bits, also enough with Argon2id):
+
+- The prompt at boot uses a US keyboard layout. Symbols such as `@ " # \ |`
+  can come out differently on another layout, and characters outside ASCII
+  (the plain US keyboard set) may not be typeable at all.
+- It is typed blind, rarely, often after something has gone wrong. Words are
+  easier to get right.
+
+On 2026-10-18 the install showed the bigger risk was neither: a passphrase
+typed once, unseen, into a file did not match the one intended. Typing it
+twice, at the machine's own console, now guards against both that and the
+layout (`docs/runbooks/install.md`).
+
+</details>
