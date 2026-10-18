@@ -52,8 +52,9 @@ Once, before #14. Menu names are from the admin console at
 `login.tailscale.com` and may move.
 
 1. **MagicDNS.** On the DNS page, check MagicDNS is on (it is by default for
-   new tailnets). Devices then answer to their hostname, so the nuc is `nuc`,
-   or `nuc.<tailnet name>.ts.net` in full.
+   new tailnets). Devices then answer to their hostname, so from a device on
+   the tailnet the nuc is `nuc.<tailnet name>.ts.net`, or `nuc` where nothing
+   else claims that name (on the LAN, the router does; see below).
 2. **The access policy.** In the access controls file, give the
    `tag:server` tag an owner (a key cannot carry a tag without one), and
    replace the default rule, which lets every device reach every other on
@@ -98,7 +99,7 @@ Once, before #14. Menu names are from the admin console at
    - **tagged `tag:server`**;
    - not ephemeral: an ephemeral device is removed when it goes offline.
 
-   The key goes straight into sops (`just secrets-edit`, see
+   The key goes straight into sops (`just secrets-edit tailscale.yaml`, see
    [secrets.md](secrets.md)), never into a file or a chat.
 
 ## Joining the workstation and the phone
@@ -119,8 +120,10 @@ Use the full MagicDNS name, or the 100.x address from `tailscale status` on
 Windows. On the LAN, plain `nuc` resolves through the router's `home.arpa`
 search domain to the LAN address (`192.168.1.131`), so `ssh ops@nuc` there
 goes over the LAN, and proves nothing about the tailnet. `SSH_CONNECTION`
-shows which: its third field is the address the nuc was reached on. Running Tailscale inside WSL instead is possible, but needs systemd in
-WSL and is a second device on the tailnet.
+shows which: its third field is the address the nuc was reached on.
+
+Running Tailscale inside WSL instead is possible, but needs systemd in WSL and
+is a second device on the tailnet.
 
 ## Checking it (at #14)
 
@@ -147,10 +150,27 @@ These are #12's acceptance criteria, which need the real nuc on the tailnet:
 
 ## Reinstalling
 
-A reinstall gives the nuc a new identity, and the single-use key is spent.
-Remove the old `nuc` from the Machines page, generate a new key as above,
-replace it in sops, and rebuild. If the new machine shows up as `nuc-1`, the
-old entry was still there.
+A reinstall gives the nuc a new identity, and the single-use key is spent. In
+this order:
+
+1. Remove the old `nuc` from the Machines page. If the new machine shows up as
+   `nuc-1`, the old entry was still there.
+2. The new host key means a new age recipient: read its fingerprint at the
+   console, convert it, and re-encrypt every secret to it, removing the old
+   one ([secrets.md](secrets.md), "The nuc's key"). With SSH closed on the LAN,
+   the console (or carrying the old host key over) is the only way to read the
+   new key.
+3. Generate a new auth key as above and replace it with
+   `just secrets-edit tailscale.yaml`.
+4. Deploy. `tailscaled-autoconnect` logs in with the new key.
+
+If `tailscaled`'s state is ever lost without a reinstall, autoconnect sends
+the spent key, `tailscale up` refuses it, and the nuc stays logged out until
+step 3 and a deploy.
+
+Never run `tailscale down` on the nuc over the tailnet: it ends the session,
+and with no SSH on the LAN the way back is the console. A reboot brings it up
+again (autoconnect sees `Stopped` and runs `tailscale up`).
 
 ## Tested in a VM
 
