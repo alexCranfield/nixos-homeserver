@@ -188,3 +188,5 @@ turns it off along with Secure Boot.
 | TPM unlock | PCR 7, `f18e3c69…eedcc9` with Secure Boot off; unattended boot back on SSH in about 30 s |
 | Drivers | `xe` (GuC 70.72.1, HuC 10.3.3, GSC 105.0.2.1397, DMC v2.36), `igc` on both I226s, `intel_vpu` on the NPU |
 | `dmesg` errors | none for the GPU, NICs or firmware; Bluetooth `gp1 mailbox interrupt` and SoundWire bus clashes, as in the survey |
+| NVMe health after the install | SMART (Self-Monitoring, Analysis and Reporting Technology) passed, 0 % used, no media errors. Error log 43 entries (13 at the survey), all `Invalid Field in Command` on the admin queue: the host asking for features the drive does not support, not data errors. Unsafe shutdowns 9 (8 at the survey), most likely the emergency-mode boot |
+| Firewall from the LAN | IPv4: nmap, only 22 open. IPv6, the ULA (unique local address) from the router: a scan from Windows, only 22 open. Negative control: a listener on 8080 shows as filtered on both, then open on both after `nixos-firewall-tool open tcp 8080`, then filtered again after `reset` |
