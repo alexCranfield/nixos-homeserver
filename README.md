@@ -25,7 +25,7 @@ flake.lock                         pinned revisions; commit every change
 hosts/nuc/default.nix              the host: imports disko, hardware + base; encrypted-boot settings
 hosts/nuc/disko.nix                the disk: ESP (EFI System Partition), btrfs in LUKS2 (Linux Unified Key Setup), swapfile
 hosts/nuc/network.nix              the LAN port by MAC address, DHCP, SSH open on the LAN until #14
-hosts/nuc/hardware-configuration.nix   kernel modules: PLACEHOLDER until the first install (#13)
+hosts/nuc/hardware-configuration.nix   kernel modules and the NPU, detected on the nuc (#13)
 hosts/installer/default.nix        live USB: latest kernel, survey tools, ops key
 keys/ops.pub                       the admin SSH public key (private half on the workstation)
 modules/base/default.nix           config applied to every host; imports the files below
