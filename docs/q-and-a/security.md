@@ -254,7 +254,8 @@ passphrase itself has to be decent.
 
 It costs little: `ssh-keygen -p -f ~/.ssh/id_nuc` re-encrypts only the private
 file, so the public key, `keys/ops.pub`, stays the same. `ssh-add` asks for it
-once per session when it loads the key into the agent, and `ssh-add -t 2h` drops the key from the agent afterwards.
+once per session when it loads the key into the agent, and `ssh-add -t 2h`
+drops the key from the agent afterwards.
 
 </details>
 
