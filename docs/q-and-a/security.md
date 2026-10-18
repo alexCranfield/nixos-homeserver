@@ -254,7 +254,8 @@ passphrase itself has to be decent.
 
 It costs little: `ssh-keygen -p -f ~/.ssh/id_nuc` re-encrypts only the private
 file, so the public key, `keys/ops.pub`, stays the same. `ssh-add` asks for it
-once per session when it loads the key into the agent, and `ssh-add -t 2h` drops the key from the agent afterwards.
+once per session when it loads the key into the agent, and `ssh-add -t 2h`
+drops the key from the agent afterwards.
 
 </details>
 
@@ -299,5 +300,46 @@ On 2026-10-18 the install showed the bigger risk was neither: a passphrase
 typed once, unseen, into a file did not match the one intended. Typing it
 twice, at the machine's own console, now guards against both that and the
 layout (`docs/runbooks/install.md`).
+
+</details>
+
+### Why check a server's SSH host key at its console?
+
+*2026-10-18*
+
+> The fingerprint matched, remind me why we had to do that manually, is it
+> because via ssh someone could intercept/inject?
+
+<details>
+<summary>Answer</summary>
+
+Yes. The host key is how SSH proves the machine answering is the one you
+meant. Whatever arrives over the network can be faked by whoever sits on its
+path, so the first time a key is seen, nothing over that network can vouch for
+it. On a LAN (local area network) the path is short but not closed: ARP
+(Address Resolution Protocol) spoofing, a compromised router, or a bad DNS
+(Domain Name System) answer from the Pi-hole would each let another machine
+answer as `nuc.home.arpa` with its own key.
+
+Every network check repeats the weakness. `ssh-keyscan` and the first login
+agreeing shows only that the same answer came twice. Asking the server for its
+own fingerprint over SSH is circular: an impersonator replies with its own. The
+console is a different channel: a screen attached to the machine, which no one
+on the network can intercept. That is what "out of band" means.
+
+What an impersonator gets, and what it does not:
+
+- *Not the ops key.* Key login signs data bound to that one session, so the
+  signature cannot be replayed to the real server, and the private key never
+  leaves the workstation.
+- *Anything typed into the session.* The TPM (Trusted Platform Module)
+  enrolment asked for the disk passphrase over SSH.
+- *Future secrets.* Ticket 1.7 (#14) derives the server's age identity from
+  this host key and encrypts secrets to it. A wrong key would mean encrypting
+  them for the impersonator.
+
+A reinstall makes this worse, not better: the "host key changed" warning is
+expected, so it gets accepted by habit, which is the moment an attack would
+also produce it.
 
 </details>

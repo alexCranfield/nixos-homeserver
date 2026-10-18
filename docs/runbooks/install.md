@@ -118,15 +118,17 @@ efibootmgr
 - `efibootmgr` lists a "Linux Boot Manager" entry on the new ESP (EFI System
   Partition). The firmware put it **after** the USB stick both times, so put it
   first: `efibootmgr -o <its number>,<the USB's>`, which also drops any entry
-  not listed from the boot order (list any other to keep). A reinstall leaves the old
-  install's entries behind, pointing at a partition that no longer exists
-  (compare the GUID (globally unique identifier) in each entry with
+  not listed from the boot order (list any other to keep). A reinstall leaves
+  the old install's entries behind, pointing at a partition that no longer
+  exists (compare the GUID (globally unique identifier) in each entry with
   `lsblk -no PARTUUID /dev/disk/by-partlabel/disk-main-ESP`); delete those with
   `efibootmgr -b <number> -B`.
 - `shred -u /tmp/disk.key`.
 
-Then pull the USB stick and reboot. At the prompt on the nuc's screen, type the
-passphrase.
+Then pull the USB stick and reboot. To check the host key on this boot (step 6),
+press an arrow key at the systemd-boot menu to stop its 5-second countdown,
+then `e`, and add ` systemd.debug_shell` to the end of the line. At the prompt
+on the nuc's screen, type the passphrase.
 
 ## 6. After the first boot
 
@@ -140,12 +142,18 @@ ssh-keygen -R nuc.home.arpa; ssh-keygen -R 192.168.1.131
 Check the new host key out of band before trusting it. Asking the server for
 its own key over SSH proves nothing, and two fetches over the LAN (local area
 network) agreeing is only trust on first use. The console has no login (ops
-has no password and root is locked), but the boot menu gives a root shell: at
-the systemd-boot menu press `e`, add ` systemd.debug_shell` to the line, boot,
-type the passphrase, then press Ctrl+Alt+F9 and run
-`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`. Compare it with what the
-first `ssh ops@nuc.home.arpa` shows. The shell lasts that one boot. On
-2026-10-18 this was not done; the key was accepted on the two LAN fetches.
+has no password and root is locked), but the boot menu gives a root shell:
+with ` systemd.debug_shell` added at the menu (step 5, or any later reboot),
+press Ctrl+Alt+F9 once the system is up and run
+
+```bash
+/run/current-system/sw/bin/ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+The full path is needed: the debug shell's `PATH` holds only systemd's own
+tools. Compare the fingerprint with what the first `ssh ops@nuc.home.arpa`
+shows. The shell restarts if closed and stays on tty9 for the rest of that
+boot, so reboot once the check is done.
 
 Enrol the TPM key. It asks for the passphrase, so run it in a terminal of your
 own:
@@ -170,8 +178,9 @@ sudo dmesg | grep -iE 'firmware' | grep -iE 'fail|missing|direct'   # expect not
 findmnt -t btrfs,vfat; swapon --show
 ```
 
-Expect `xe` on `00:02.0` and `igc` on both NICs (network interface cards). `lspci` is not installed;
-`nix-shell -p pciutils --run 'lspci -k'` gives the full listing. Then the
+Expect `xe` on `00:02.0` and `igc` on both NICs (network interface cards).
+`lspci` is not installed; `nix-shell -p pciutils --run 'lspci -k'` gives the
+full listing. Then the
 network checks in [network.md](network.md).
 
 ## If the first boot stops
@@ -195,9 +204,9 @@ see more:
 the typed passphrase is not the one the disk was formatted with. With the
 passphrase file gone, nothing reads the disk; reinstall from step 3.
 
-The boot menu editor that step 1 and the host key check use is open to anyone
-at the keyboard; #47 turns it off along with Secure Boot, after which the live
-USB is the only way to a shell at the console.
+The boot menu editor that step 1 above and the host key check use is open to
+anyone at the keyboard; #47 turns it off along with Secure Boot, after which
+the live USB is the only way to a shell at the console.
 
 ## Record
 
