@@ -235,13 +235,18 @@ To prove the nuc can decrypt a file without its secret leaving the machine:
 
 ```bash
 sudo cat /run/secrets/test     # as deployed
-# or any file, decrypted on the nuc with its own key, which is never printed:
-sudo sh -c 'SOPS_AGE_KEY=$(ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key) sops -d secrets/test.yaml'
+# or any file: copy it over first (nothing keeps a checkout on the nuc),
+# then decrypt it there with the nuc's own key, which is never printed:
+scp secrets/test.yaml ops@nuc.home.arpa:/tmp/
+sudo sh -c 'SOPS_AGE_KEY=$(ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key) sops -d /tmp/test.yaml'
 ```
 
-`sops` cannot read the SSH key directly here (`SOPS_AGE_SSH_PRIVATE_KEY_FILE`
-failed on 2026-10-18 with sops 3.13.3), hence `ssh-to-age`. Neither tool is
-installed on the nuc; `nix-shell -p sops ssh-to-age` provides them.
+Pointing sops at the SSH key itself (`SOPS_AGE_SSH_PRIVATE_KEY_FILE`) fails
+with `Failed to get the data key`, although sops 3.13.3 supports it: an SSH
+identity only opens files encrypted to an `ssh-ed25519` recipient, and
+`.sops.yaml` lists the converted `age1…` recipient instead, as sops-nix
+expects. So the private key is converted with `ssh-to-age` as well. Neither
+tool is installed on the nuc; `nix-shell -p sops ssh-to-age` provides them.
 
 The general pattern is `^secrets/[^/]+\.yaml$`, which deliberately excludes
 `.yml`, subdirectories, and the `stacks/<name>/.env.sops` shape that ticket 3.2
