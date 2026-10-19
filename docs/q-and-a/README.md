@@ -12,6 +12,7 @@ yourself, then expand to check. Entries are dated so the progression is visible.
 - [security.md](security.md) — secrets, keys, and what to do about a disclosure
 - [containers.md](containers.md) — Docker, Podman, and container isolation
 - [hardware.md](hardware.md) — firmware, boot media, checksums and the TPM
+- [networking.md](networking.md) — the LAN, Tailscale and DNS
 - [self-assessment.md](self-assessment.md) — questions put to Alex, his answers, and the feedback
 
 Questions about project state, or about what to do next, are not logged here.

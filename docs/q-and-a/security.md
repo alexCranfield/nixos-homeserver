@@ -343,3 +343,58 @@ expected, so it gets accepted by habit, which is the moment an attack would
 also produce it.
 
 </details>
+
+### What is the nuc's age identity, and does it need a passphrase?
+
+*2026-10-18*
+
+> What will this identity be used for? If it's temporary I might set a simple
+> passphrase
+
+<details>
+<summary>Answer</summary>
+
+Neither identity in that step asked for a new passphrase.
+
+- *The nuc's identity* (`age15ms6…`) is permanent and has no passphrase. It is
+  derived from the nuc's SSH host key, whose private half stays on the nuc, and
+  sops-nix uses it unattended at every boot to decrypt the server's secrets.
+  Re-keying only adds its public half as a recipient.
+- *The workstation identity* is what a prompt during `sops updatekeys` is for:
+  to re-encrypt a file, sops first decrypts it with the workstation key, which
+  has been passphrase-protected since #56. That prompt wants the existing
+  passphrase.
+
+A passphrase on the nuc's key would defeat its purpose: nobody is there to type
+it at boot. Its protection is the encrypted disk (ADR 0009) and the TPM
+(Trusted Platform Module) unlock instead.
+
+</details>
+
+### Is it a problem that the nuc's console asks for a login nobody set up?
+
+*2026-10-18*
+
+> Before we do so, when I use the keyboard and monitor to check the nuc, it
+> asks for a login and a password, I'm not sure we ever set one up other than
+> the ssh access, is that a problem?
+
+<details>
+<summary>Answer</summary>
+
+No, it is deliberate. Both accounts are locked (`passwd -S` shows `L`): `ops`
+has only its SSH key, and root has nothing, so no name and password work at the
+console. That gives one way in, with the hardest credential to steal; no
+password hash on disk, in the repo or in sops; and it is what makes `ops`'s
+passwordless sudo reasonable.
+
+The trade-off is that the console cannot rescue a broken network. The ways in
+then are the boot menu (edit the line, add `systemd.debug_shell`, Ctrl+Alt+F9
+for a root shell), until #47 turns the editor off; the live USB; and choosing an
+earlier generation at the boot menu.
+
+`users.mutableUsers` is still `true`, so someone with root could add a password
+that survives rebuilds; setting it `false` is noted on the security review,
+#45.
+
+</details>
