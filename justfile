@@ -25,7 +25,7 @@ check:
     # but not multiples of it.
     editorconfig-checker -disable-indent-size
 
-# Run one VM test under software emulation, no KVM: slower, but immune to #80.
+# Run one VM test under software emulation, no KVM: slower, but avoids #80.
 vm-test-tcg test:
     #!/usr/bin/env bash
     set -euo pipefail

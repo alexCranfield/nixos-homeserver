@@ -1,6 +1,6 @@
 # Workstation setup (WSL)
 
-The workstation is Ubuntu 24.04 under WSL2 on Windows. It builds and checks every
+The workstation is Ubuntu 24.04 under WSL2 (Windows Subsystem for Linux) on Windows. It builds and checks every
 change before the server sees it, so it needs Nix with flakes and direnv.
 
 Completed 2026-09-07 (ticket 0.1). Versions installed: Determinate Nix 3.22.3
@@ -113,9 +113,9 @@ direnv exec . bash -c 'echo $TICKET_0_1_SHELL; hello'   # loaded / Hello, world!
 
 ## Hardware acceleration for VMs
 
-`/dev/kvm` exists in WSL, but it is `root:kvm` mode 0660, so QEMU falls back to
-TCG (QEMU's software emulator), which is many times slower. Two different users
-need access:
+`/dev/kvm` exists in WSL, but it is `root:kvm` mode 0660, so QEMU (Quick
+Emulator) falls back to TCG (Tiny Code Generator), QEMU's software emulator,
+which is many times slower. Two different users need access:
 
 - **You**, for `just vm` and `just vm-secrets`, which run QEMU directly.
 - **Nix's build users**, for VM tests run as flake checks (`tests/`), which run
@@ -135,13 +135,15 @@ ls -l /dev/kvm   # expect crw-rw-rw-
 Check it worked: a VM test's log no longer says `falling back to tcg`, and its
 guests report a real CPU (central processing unit) rather than `QEMU TCG CPU`.
 
-**KVM here is nested and not fully reliable.** WSL2 is itself a Hyper-V virtual
-machine, so these VMs run inside it. With WSL 2.4.11 (kernel 5.15.167) on this
-AMD processor, firmware that uses SMM (System Management Mode) or a TPM (Trusted
-Platform Module) crashes or hangs at random, so `disk-tpm` fails locally about
-half the time (#80). `docs/runbooks/ci.md` explains how to recognise these
-failures and rerun the test without KVM (`just vm-test-tcg disk-tpm`). The other
-VM tests boot their kernels directly, skip the firmware, and have not shown it.
+**KVM (Kernel-based Virtual Machine) here is nested and not fully reliable.**
+WSL2 is itself a Hyper-V virtual machine, so these VMs run inside it. With WSL
+2.4.11 (kernel 5.15.167) on this AMD processor, firmware that uses SMM (System
+Management Mode) or a TPM (Trusted Platform Module) crashes or hangs at random,
+so `disk-tpm` failed locally about half the time on 2026-10-18 (#80).
+`docs/runbooks/ci.md` explains how to recognise these failures and rerun the
+test without KVM (`just vm-test-tcg disk-tpm`). The other VM tests boot their
+kernels directly and skip the firmware; none failed this way in their runs of
+2026-10-17 to 19.
 
 ## Logging in to `just vm`
 

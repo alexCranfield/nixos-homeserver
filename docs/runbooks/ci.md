@@ -55,20 +55,30 @@ On the workstation, `disk-tpm` often fails before the kernel prints anything
 
 The test then fails with `neither a prompt nor a boot` or a timeout, in
 whichever subtest booted the VM. **This is the workstation, not the change
-under test.** Rerun that one test under software emulation:
+under test.** Rerun that one test without KVM (Kernel-based Virtual Machine),
+under TCG (Tiny Code Generator), QEMU's (Quick Emulator's) software emulation:
 
 ```sh
 just vm-test-tcg disk-tpm
 ```
 
-It takes about ten minutes instead of three, and its result counts. CI has not
-hit this failure.
+It takes about ten minutes instead of three. A pass there is a real pass; a
+failure there is a real failure to investigate. CI has not hit this failure: none
+of the repo's 92 runs up to 2026-10-19 shows a firmware exception, and none has
+failed since 2026-10-04, while the test was first being written (#9).
 
-**The cause.** The workstation's KVM is nested: it runs inside WSL2's own
-virtual machine on Hyper-V, with WSL kernel 5.15.167 and an AMD processor
-(`kvm_amd`). Firmware run on it crashes or hangs at random, and most often when
-the firmware uses SMM (System Management Mode) and talks to a TPM (Trusted
-Platform Module). `disk-tpm` exists to test exactly those two things.
+**The cause, as far as it is known.** The failure needs KVM on this
+workstation. That KVM is nested: it runs inside the virtual machine of WSL2
+(Windows Subsystem for Linux), on Hyper-V. WSL is 2.4.11, its kernel is
+5.15.167, and the processor is AMD, so the module is `kvm_amd`. Under it,
+firmware crashes or hangs at random, most often when the firmware uses SMM
+(System Management Mode) and talks to a TPM (Trusted Platform Module).
+`disk-tpm` exists to test exactly those two things. The nesting, the old
+kernel and the CPU vendor are the suspects, but none was tested on its own.
+GitHub's runners are Azure virtual machines, so their KVM is nested under
+Hyper-V too, and they do not fail. No upstream report of this exact failure was
+found.
+
 `scripts/firmware-boot-loop.sh` boots the test's firmware, with no disk, over
 and over. Healthy firmware reaches its shell in about three seconds. Twenty
 boots per row, 2026-10-18 and 19:
@@ -82,10 +92,12 @@ boots per row, 2026-10-18 and 19:
 | KVM, SMM, TPM, `-machine kernel-irqchip=split` | 5 (crashed) |
 | KVM, no SMM, TPM, `kernel-irqchip=split` | 1 (crashed) |
 | KVM, no SMM, no TPM | 0 |
-| **As the test runs it, but TCG (software emulation) instead of KVM** | **0** |
+| **As the test runs it, but TCG instead of KVM** | **0** |
 
-The same firmware and devices are clean once KVM is out of the path, so neither
-OVMF, swtpm nor the NixOS configuration is at fault. None of the QEMU options
+The same firmware and devices are clean once KVM is out of the path, and the
+failures come before Linux starts, so the NixOS configuration under test plays
+no part. A firmware bug that only KVM's timing exposes cannot be ruled out, but
+CI runs the same firmware under KVM without failing. None of the QEMU options
 above makes KVM reliable, and turning off SMM or the TPM would remove what the
 test checks, so the test is left as it is. The full test under TCG passed all
 ten subtests in 618 seconds.
@@ -140,8 +152,8 @@ require the `kvm` system feature. `install-nix-action` provides it on GitHub's
 Linux runners (`enable_kvm`, on by default; the job log shows "Enabled KVM"),
 and with it the test takes about 25 seconds; the first run, on #71, finished in
 under two minutes in all. If the build instead stops because no machine has the
-`kvm` and `nixos-test` features, the runner lost KVM (Kernel-based Virtual
-Machine) access; the test itself is not at fault. Locally, without KVM access,
+`kvm` and `nixos-test` features, the runner lost KVM
+access; the test itself is not at fault. Locally, without KVM access,
 the test falls back to software emulation and takes about four minutes;
 `docs/runbooks/workstation.md` has the udev rule that fixes that.
 

@@ -10,25 +10,30 @@
 # Extensible Firmware Interface) shell in a few seconds. A boot counts as:
 #   ok     the shell, or "No bootable option", appeared on the serial console
 #   crash  the firmware printed an "X64 Exception Type" line
-#   hang   neither, before the timeout
+#   died   QEMU exited by itself mid-boot (its error is shown)
+#   hang   none of these before the timeout
 #
 # Usage: scripts/firmware-boot-loop.sh [runs] [kvm|tcg] [extra QEMU args...]
 #   runs  boots to attempt (default 20)
 #   kvm   hardware virtualisation, as the test uses it (default)
-#   tcg   QEMU's software emulation, the control: no KVM involved
-# Run from the repo root, with Nix on PATH. Exits non-zero if any boot failed.
+#   tcg   TCG (Tiny Code Generator), QEMU's software emulation: the control,
+#         with no KVM involved
+# FWLOOP_TIMEOUT sets the seconds before a boot counts as hung (default 40;
+# a healthy boot takes about 3, under TCG too).
+# Run from the repo root, with Nix on PATH. Exit status: 0 if every boot was
+# ok, 1 if any failed, 2 if the run itself could not be set up.
 set -euo pipefail
 
 runs=${1:-20}
 accel=${2:-kvm}
 shift $(($# < 2 ? $# : 2))
-timeout_s=40
+timeout_s=${FWLOOP_TIMEOUT:-40}
 
 # One named output each: a bare package name can print several store paths.
 pkg() { nix build --no-link --print-out-paths --inputs-from . "nixpkgs#$1"; }
-qemu=$(pkg 'qemu^out')/bin/qemu-system-x86_64
-swtpm=$(pkg 'swtpm^out')/bin/swtpm
-fv=$(pkg 'OVMFFull^fd')/FV
+qemu=$(pkg 'qemu^out' || exit 2)/bin/qemu-system-x86_64
+swtpm=$(pkg 'swtpm^out' || exit 2)/bin/swtpm
+fv=$(pkg 'OVMFFull^fd' || exit 2)/FV
 for f in "$qemu" "$swtpm" "$fv/OVMF_CODE.fd" "$fv/OVMF_VARS.fd"; do
   [ -e "$f" ] || {
     echo "missing: $f" >&2
@@ -38,9 +43,10 @@ done
 
 # Short, because swtpm's control socket path must be under 108 bytes.
 work=$(mktemp -d /tmp/fwloop.XXXXXX)
-trap 'rm -rf "$work"' EXIT
+# Stop any QEMU and swtpm still running, however the script ends.
+trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$work"' EXIT
 
-ok=0 crash=0 hang=0
+ok=0 crash=0 died=0 hang=0
 for i in $(seq 1 "$runs"); do
   run=$work/$i
   mkdir -p "$run/tpm"
@@ -71,7 +77,7 @@ for i in $(seq 1 "$runs"); do
     "$@" 2>"$run/qemu.err" &
   qemu_pid=$!
 
-  result=hang
+  result=hang polls=0
   for _ in $(seq $((timeout_s * 4))); do
     if grep -aq 'Exception Type' "$run/serial.log"; then
       result=crash
@@ -81,7 +87,14 @@ for i in $(seq 1 "$runs"); do
       result=ok
       break
     fi
-    kill -0 "$qemu_pid" 2>/dev/null || break
+    if ! kill -0 "$qemu_pid" 2>/dev/null; then
+      # timeout(1) exits 124 when it stopped QEMU itself: that is a hang.
+      qemu_rc=0
+      wait "$qemu_pid" 2>/dev/null || qemu_rc=$?
+      [ "$qemu_rc" -eq 124 ] || result=died
+      break
+    fi
+    polls=$((polls + 1))
     sleep 0.25
   done
   kill "$qemu_pid" "$tpm_pid" 2>/dev/null || true
@@ -92,21 +105,26 @@ for i in $(seq 1 "$runs"); do
   ok) ok=$((ok + 1)) ;;
   crash)
     crash=$((crash + 1))
-    detail=$(grep -ao 'Exception Type - [0-9A-F]*([^)]*)' "$run/serial.log" | head -1)
+    detail=$(grep -ao 'Exception Type - [0-9A-F]*([^)]*)' "$run/serial.log" | head -1 || true)
     ;;
-  hang)
-    hang=$((hang + 1))
-    # A QEMU that refused to start is a broken run, not a hang.
-    if [ -s "$run/qemu.err" ] && ! grep -q 'terminating on signal' "$run/qemu.err"; then
+  died)
+    # Gone within a second, with nothing on the console, is QEMU refusing
+    # its arguments: a broken run, not a measurement.
+    if [ "$polls" -lt 4 ] && [ ! -s "$run/serial.log" ]; then
       echo "QEMU failed to start:" >&2
       cat "$run/qemu.err" >&2
       exit 2
     fi
+    died=$((died + 1))
+    detail=$(head -c 200 "$run/qemu.err" | tr '\n' ' ')
+    ;;
+  hang)
+    hang=$((hang + 1))
     detail="$(wc -c <"$run/serial.log") bytes of console output"
     ;;
   esac
   echo "boot $i: $result${detail:+ ($detail)}"
 done
 
-echo "$accel: $ok ok, $crash crashed, $hang hung, of $runs"
-[ $((crash + hang)) -eq 0 ]
+echo "$accel: $ok ok, $crash crashed, $died died, $hang hung, of $runs"
+[ $((crash + died + hang)) -eq 0 ]
