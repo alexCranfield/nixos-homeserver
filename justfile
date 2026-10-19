@@ -63,9 +63,9 @@ vm-secrets:
         exit 1
     fi
 
-# Manual deploy to the nuc, from the current checkout (comin will pull main itself, #16).
+# Manual deploy to the nuc over the tailnet; `nuc` is a workstation ~/.ssh/config alias (comin will pull main, #16).
 deploy:
-    nixos-rebuild switch --flake '.#nuc' --target-host ops@nuc.home.arpa --sudo
+    nixos-rebuild switch --flake '.#nuc' --target-host ops@nuc --sudo
 
 # Edit an encrypted secret in $EDITOR, re-encrypting on save.
 secrets-edit file:

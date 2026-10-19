@@ -132,6 +132,14 @@ on the nuc's screen, type the passphrase.
 
 ## 6. After the first boot
 
+**Since #14 this step needs a way in.** The installed system opens SSH on
+`tailscale0` only, and a new install has a new host key, so it cannot decrypt
+its Tailscale auth key and stays off the tailnet. The commands below were run
+on 2026-10-18, before #14 closed the LAN. For a reinstall, the reinstall
+runbook (#15) decides how the first login happens: carrying the old host key
+over, re-encrypting the secrets to the new one first, or opening the LAN for
+that one boot.
+
 The installed system has new SSH host keys, so clear the live USB's from the
 workstation first:
 

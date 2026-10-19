@@ -24,7 +24,7 @@ flake.nix                          inputs, nixosConfigurations.nuc, formatter, c
 flake.lock                         pinned revisions; commit every change
 hosts/nuc/default.nix              the host: imports disko, hardware + base; encrypted-boot settings
 hosts/nuc/disko.nix                the disk: ESP (EFI System Partition), btrfs in LUKS2 (Linux Unified Key Setup), swapfile
-hosts/nuc/network.nix              the LAN port by MAC address, DHCP, SSH open on the LAN until #14
+hosts/nuc/network.nix              the LAN port by MAC address, DHCP, nothing open on the LAN
 hosts/nuc/hardware-configuration.nix   kernel modules, detected on the nuc (#13)
 hosts/installer/default.nix        live USB: latest kernel, survey tools, ops key
 keys/ops.pub                       the admin SSH public key (private half on the workstation)
@@ -39,7 +39,7 @@ modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
 tests/disk-tpm.nix                 VM test: the real layout boots, then unlocks from an emulated TPM (Trusted Platform Module)
 tests/disk-tpm.py                  its test script, in Python; disk-tpm.nix passes in the values only Nix knows
-tests/network.nix                  VM test: reserved address on lan0, nuc.home.arpa, a LAN scan finds only SSH
+tests/network.nix                  VM test: reserved address on lan0, nuc.home.arpa, a LAN scan finds nothing open
 tests/network.py                   its test script
 tests/tailscale.nix                VM test: ops logs in over the tailnet from another network, which sees only SSH
 tests/tailscale.py                 its test script

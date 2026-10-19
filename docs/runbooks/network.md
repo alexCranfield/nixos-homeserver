@@ -100,7 +100,6 @@ Default deny, on nftables. Nothing is open on any interface except:
 | Port | Interface | Why | Until |
 |---|---|---|---|
 | TCP 22 (SSH) | `tailscale0` | admin access over the tailnet; see [tailscale.md](tailscale.md) | |
-| TCP 22 (SSH) | `lan0` | admin access until the nuc joins the tailnet by itself | ticket 1.7 (#14) |
 | TCP 22 (SSH) | `eth0`, `just vm` only | the 127.0.0.1:2222 forward into the VM (virtual machine) | |
 
 NixOS's firewall also lets in, on any interface:
@@ -121,13 +120,21 @@ nuc:
 sudo nft list chain inet nixos-fw input-allow
 ```
 
-Check from the LAN with a full scan. It takes a few minutes, because a
-default-deny firewall drops probes rather than refusing them, so nmap waits on
-each port:
+Check from the LAN with a full scan. A default-deny firewall drops probes
+rather than refusing them, so nmap gets no answer on any port and keeps
+slowing itself down; a fixed minimum rate keeps it to about two minutes. nmap
+reports no open ports both for a clean result and for a scan it gave up on, so
+read the "Not shown" line too:
 
 ```bash
-nmap -Pn -p- -T4 nuc.home.arpa    # expect 22/tcp open, everything else filtered
+nmap -Pn -p- --min-rate 3000 --max-retries 1 nuc.home.arpa
+# expect "Not shown: 65535 filtered tcp ports", 22 included
 ```
+
+At that rate the scan still found a single port opened for the purpose
+(2026-10-18, twice). Over the tailnet it did not: the same rate missed
+`tailscaled`'s peer API port, which `tailscaled` answers itself, so scan the
+tailnet address without `--min-rate`.
 
 The firewall covers IPv6 as well (the `inet` table holds both). If the router
 advertises an IPv6 prefix, `lan0` takes an IPv6 address from it too, so scan
@@ -136,7 +143,7 @@ that as well. The UniFi router advertises a ULA (unique local address) prefix,
 it. Find it with `ip -6 -br addr show lan0` on the nuc, then:
 
 ```bash
-nmap -6 -Pn -p- -T4 <the nuc's global IPv6 address>   # expect the same: 22 only
+nmap -6 -Pn -p- -T4 <the nuc's global IPv6 address>   # expect the same: nothing open
 ```
 
 Run it from a machine with an IPv6 route to the LAN, and check that first
@@ -161,8 +168,8 @@ ports beside a stand-in router running dnsmasq, and checks that:
   address;
 - the second port stays down with no address;
 - `nuc.home.arpa` resolves on the router from the hostname the nuc sends;
-- a full TCP scan from the LAN finds only 22, while a test service listens on
-  8080 behind the firewall;
+- a full TCP scan from the LAN finds nothing open, SSH included, while sshd
+  and a test service on 8080 listen behind the firewall;
 - as a negative control, opening 8080 in the firewall makes the scan report
   it, so the scan can see an open port when there is one;
 - the only UDP rule is NixOS's DHCPv6 client rule, and `temp-ports` is empty.

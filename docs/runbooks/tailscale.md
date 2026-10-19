@@ -40,8 +40,8 @@ between your own devices (ADR (Architecture Decision Record) 0005). Ticket 1.5
 - **The nuc joins by itself** (ticket 1.7, #14): `hosts/nuc/tailscale.nix`
   points `authKeyFile` at the sops secret `tailscale-authkey` in
   `secrets/tailscale.yaml`, and `tailscaled-autoconnect` logs in with it when
-  the nuc is logged out. SSH also stays open on the LAN until #14 has shown the
-  tailnet login works; then it closes. After that, if the tailnet is down,
+  the nuc is logged out. SSH is closed on the LAN since #14, once the tailnet
+  login had been shown to work from another network. If the tailnet is down,
   there is no console login to fall back on (ops has no password): the way in
   is the boot menu's debug shell or the live USB
   ([install.md](install.md)).
@@ -118,9 +118,11 @@ ssh ops@nuc.<tailnet name>.ts.net 'echo $SSH_CONNECTION'   # third field: the nu
 
 Use the full MagicDNS name, or the 100.x address from `tailscale status` on
 Windows. On the LAN, plain `nuc` resolves through the router's `home.arpa`
-search domain to the LAN address (`192.168.1.131`), so `ssh ops@nuc` there
-goes over the LAN, and proves nothing about the tailnet. `SSH_CONNECTION`
-shows which: its third field is the address the nuc was reached on.
+search domain to the LAN address (`192.168.1.131`), where SSH is closed. The
+workstation's `~/.ssh/config` alias makes `ssh nuc` use the MagicDNS name
+instead ([workstation.md](workstation.md), "Reaching the nuc").
+`SSH_CONNECTION` shows which path a login took: its third field is the address
+the nuc was reached on.
 
 Running Tailscale inside WSL instead is possible, but needs systemd in WSL and
 is a second device on the tailnet.
@@ -196,7 +198,7 @@ control server, on both. It checks that:
   as it did before the policy), and the nuc can no longer ping the client,
   as it could before the policy;
 - Tailscale SSH is off;
-- 22 is open on `lan0` and `tailscale0` only, and still answers on the LAN.
+- 22 is open on `tailscale0` only, and filtered from the LAN.
 
 The real tailnet, Tailscale's own policy engine and the tag's key expiry are
 not covered: they live in Tailscale's service, and are checked at #14.

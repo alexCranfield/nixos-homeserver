@@ -1,6 +1,6 @@
 # Acceptance test for ticket 1.4 (#11): the nuc takes its reserved address on
-# the right port, answers to nuc.home.arpa, and shows only SSH to the LAN
-# (local area network).
+# the right port, answers to nuc.home.arpa, and shows nothing open to the LAN
+# (local area network); SSH closed there in ticket 1.7 (#14).
 #
 # Two VMs (virtual machines). `nuc` runs the real host configuration with two
 # network ports, standing in for the I226-V and the I226-LM. `router` stands in

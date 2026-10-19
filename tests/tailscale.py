@@ -187,7 +187,7 @@ with subtest("past the policy, the peer API still checks each request"):
     assert " ".join(out.split()) == "denied; no debug access 403", out
     assert " ".join(out.split()) == PEERAPI_BEFORE_POLICY, PEERAPI_BEFORE_POLICY
 
-with subtest("SSH is open on lan0 and tailscale0 only"):
+with subtest("SSH is open on tailscale0 only"):
     rules = nuc.succeed("nft list chain inet nixos-fw input-allow")
     print(rules)
     # Also catches 22 inside a set, `tcp dport { 22, 80 }`, which NixOS
@@ -197,11 +197,8 @@ with subtest("SSH is open on lan0 and tailscale0 only"):
         for line in rules.split("\n")
         if re.search(r"dport (22\b|\{[^}]*\b22\b)", line)
     )
-    assert ssh_rules == [
-        'iifname "lan0" tcp dport 22 accept',
-        'iifname "tailscale0" tcp dport 22 accept',
-    ], ssh_rules
-    # The LAN fallback, until #14 removes it: still reachable from the LAN.
+    assert ssh_rules == ['iifname "tailscale0" tcp dport 22 accept'], ssh_rules
+    # No LAN fallback since #14: sshd listens, but the LAN cannot reach it.
     out = headscale.succeed(f"nmap -Pn -p 22 {LAN_IP}")
     print(out)
-    assert open_ports(out) == [22], open_ports(out)
+    assert re.search(r"^22/tcp\s+filtered\b", out, re.M), out

@@ -119,7 +119,7 @@
         };
 
         # Ticket 1.4 (#11): reserved address on the right port, the name, and a
-        # LAN scan that finds only SSH.
+        # LAN scan that finds nothing open (SSH closed there in 1.7, #14).
         network = import ./tests/network.nix {
           inherit pkgs inputs;
           inherit (nixpkgs) lib;

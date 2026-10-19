@@ -8,8 +8,8 @@
 # Linux workstation is the LAN and under WSL2 includes the Windows host.
 #
 # The forwarded connection arrives on the VM's eth0, QEMU's user-mode network.
-# The host opens SSH only on its own LAN port (ticket 1.4, #11) and on
-# tailscale0 (1.5, #12), neither of which the VM has, so eth0 gets port 22
+# The host opens SSH only on tailscale0 (ticket 1.5, #12; its LAN port closed
+# in 1.7, #14), which the VM does not have, so eth0 gets port 22
 # and a DHCP (Dynamic Host Configuration Protocol) address here. Without them
 # the forward connects to nothing.
 {

@@ -144,6 +144,26 @@ full command). If QEMU exits with
 else holds port 2222, often a second VM: `just vm` and `just vm-secrets` both
 use it, so run one at a time. `ss -ltnp | grep 2222` shows the holder.
 
+## Reaching the nuc
+
+SSH to the nuc goes over the tailnet only: nothing is open on its LAN port
+(ticket 1.7, #14). `just deploy` and the runbooks call it `nuc`, which an
+entry in `~/.ssh/config` on the workstation points at its tailnet name. The
+entry stays out of this repository, because the tailnet's name is private:
+
+```
+Host nuc
+  HostName nuc.<tailnet name>.ts.net
+  User ops
+  IdentityFile ~/.ssh/id_nuc
+  IdentitiesOnly yes
+```
+
+Without it, `nuc` resolves through the router's `home.arpa` search domain to
+the LAN address, where SSH is closed. Check with
+`ssh nuc 'echo $SSH_CONNECTION'`: the third field should be the nuc's 100.x
+tailnet address. The tailnet name is on the admin console's DNS page.
+
 ## Uninstall
 
 ```bash
