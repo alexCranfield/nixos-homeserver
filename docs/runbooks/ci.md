@@ -54,12 +54,16 @@ On the workstation, `disk-tpm` often fails before the kernel prints anything
 - the systemd-boot menu, then nothing.
 
 The test then fails with `neither a prompt nor a boot` or a timeout, in
-whichever subtest booted the VM. If the very first boot hangs, nothing times
-out until the test's one-hour limit: `ps` shows a single QEMU process, never
-restarted, using a whole core. Stopping the `nix flake check` client cancels
-it; the QEMU process belongs to a Nix build user and cannot be killed directly. **This is the workstation, not the change
-under test.** Rerun that one test without KVM (Kernel-based Virtual Machine),
-under TCG (Tiny Code Generator), QEMU's (Quick Emulator's) software emulation:
+whichever subtest booted the VM. Each boot is bounded at ten minutes. A
+hung boot shows as a single QEMU (Quick Emulator) process using a whole core.
+To give up sooner, stop the `nix flake check` client, which cancels the build;
+the QEMU process belongs to a Nix build user, so your own account cannot kill
+it directly. (Before #80 the first boot was unbounded and held the test for its
+one-hour limit.)
+
+**This is the workstation, not the change under test.** Rerun that one test
+without KVM (Kernel-based Virtual Machine), under TCG (Tiny Code Generator),
+QEMU's software emulation:
 
 ```sh
 just vm-test-tcg disk-tpm
@@ -67,7 +71,7 @@ just vm-test-tcg disk-tpm
 
 It takes about ten minutes instead of three. A pass there is a real pass; a
 failure there is a real failure to investigate. CI has not hit this failure: none
-of the repo's 92 runs up to 2026-10-19 shows a firmware exception, and none has
+of the repo's 92 runs up to 2026-10-18 shows a firmware exception, and none has
 failed since 2026-10-04, while the test was first being written (#9).
 
 **The cause, as far as it is known.** The failure needs KVM on this
@@ -78,13 +82,13 @@ firmware crashes or hangs at random, most often when the firmware uses SMM
 (System Management Mode) and talks to a TPM (Trusted Platform Module).
 `disk-tpm` exists to test exactly those two things. The nesting, the old
 kernel and the CPU vendor are the suspects, but none was tested on its own.
-GitHub's runners are Azure virtual machines, so their KVM is nested under
-Hyper-V too, and they do not fail. No upstream report of this exact failure was
+GitHub's hosted runners are themselves virtual machines (on Azure, so most
+likely Hyper-V too), and they do not fail. No upstream report of this exact failure was
 found.
 
 `scripts/firmware-boot-loop.sh` boots the test's firmware, with no disk, over
 and over. Healthy firmware reaches its shell in about three seconds. Twenty
-boots per row, 2026-10-18 and 19, with QEMU 10.2.4's full build:
+boots per row, 2026-10-18, with QEMU 10.2.4's full build:
 
 | Setup | Failed |
 |---|---|
@@ -98,7 +102,7 @@ boots per row, 2026-10-18 and 19, with QEMU 10.2.4's full build:
 | **As the test runs it, but TCG instead of KVM** | **0** |
 
 `nix flake check` runs VM tests with a smaller build of the same QEMU,
-`qemu_test`, which the script uses. Re-measured with it on 2026-10-19: 12 of 20
+`qemu_test`, which the script uses. Re-measured with it the same day: 12 of 20
 boots failed under KVM (9 hung, 3 crashed) and none of 10 under TCG.
 
 The same firmware and devices are clean once KVM is out of the path, and the
@@ -116,7 +120,11 @@ scripts/firmware-boot-loop.sh 20 kvm    # exits non-zero if any boot failed
 scripts/firmware-boot-loop.sh 20 tcg    # the control
 ```
 
-The rate varies from day to day: about one run in three failed on 2026-10-17
+A full `disk-tpm` run boots the firmware four times, so the loop's rate would
+predict nearly every run failing. In fact about half failed on 2026-10-18. Why
+the two differ is not known: the test's boots have a disk and a boot loader,
+and the rate itself moves within a day. The full test's rate also varies from
+day to day: about one run in three failed on 2026-10-17
 and about half on 2026-10-18, with the same code.
 
 ## Decisions and why

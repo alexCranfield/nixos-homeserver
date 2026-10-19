@@ -143,7 +143,7 @@ so `disk-tpm` failed locally about half the time on 2026-10-18 (#80).
 `docs/runbooks/ci.md` explains how to recognise these failures and rerun the
 test without KVM (`just vm-test-tcg disk-tpm`). The other VM tests boot their
 kernels directly and skip the firmware; none failed this way in their runs of
-2026-10-17 to 19.
+2026-10-17 and 18.
 
 ## Logging in to `just vm`
 

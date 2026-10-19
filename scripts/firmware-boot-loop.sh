@@ -19,7 +19,7 @@
 #   tcg   TCG (Tiny Code Generator), QEMU's software emulation: the control,
 #         with no KVM involved
 # FWLOOP_TIMEOUT sets the seconds before a boot counts as hung (default 40;
-# a healthy boot takes about 3, under TCG too).
+# a healthy boot takes about 3, under KVM or TCG).
 # Run from the repo root, with Nix on PATH. Exit status: 0 if every boot was
 # ok, 1 if any failed, 2 if the run itself could not be set up.
 set -euo pipefail
@@ -65,7 +65,7 @@ for i in $(seq 1 "$runs"); do
 
   # The flags the NixOS test VM uses that matter here; see the nuc VM's
   # run-nuc-vm script for the full set.
-  timeout "$timeout_s" "$qemu" \
+  timeout -k 5 "$timeout_s" "$qemu" \
     -machine q35,smm=on,accel="$accel" -cpu max -m 2048 -smp 1 \
     -object memory-backend-memfd,id=mem0,size=2048M,share=on \
     -machine memory-backend=mem0 \
@@ -109,9 +109,11 @@ for i in $(seq 1 "$runs"); do
     detail=$(grep -ao 'Exception Type - [0-9A-F]*([^)]*)' "$run/serial.log" | head -1 || true)
     ;;
   died)
-    # Gone within a second, with nothing on the console, is QEMU refusing
-    # its arguments: a broken run, not a measurement.
-    if [ "$polls" -lt 4 ] && [ ! -s "$run/serial.log" ]; then
+    # Gone within a second, with nothing on the console and no complaint
+    # from KVM, is QEMU refusing its arguments: a broken run, not a
+    # measurement. A KVM error that early still counts as a failed boot.
+    if [ "$polls" -lt 4 ] && [ ! -s "$run/serial.log" ] &&
+      ! grep -qi kvm "$run/qemu.err"; then
       echo "QEMU failed to start:" >&2
       cat "$run/qemu.err" >&2
       exit 2
