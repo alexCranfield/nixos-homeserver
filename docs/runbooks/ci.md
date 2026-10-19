@@ -54,7 +54,10 @@ On the workstation, `disk-tpm` often fails before the kernel prints anything
 - the systemd-boot menu, then nothing.
 
 The test then fails with `neither a prompt nor a boot` or a timeout, in
-whichever subtest booted the VM. **This is the workstation, not the change
+whichever subtest booted the VM. If the very first boot hangs, nothing times
+out until the test's one-hour limit: `ps` shows a single QEMU process, never
+restarted, using a whole core. Stopping the `nix flake check` client cancels
+it; the QEMU process belongs to a Nix build user and cannot be killed directly. **This is the workstation, not the change
 under test.** Rerun that one test without KVM (Kernel-based Virtual Machine),
 under TCG (Tiny Code Generator), QEMU's (Quick Emulator's) software emulation:
 
@@ -81,7 +84,7 @@ found.
 
 `scripts/firmware-boot-loop.sh` boots the test's firmware, with no disk, over
 and over. Healthy firmware reaches its shell in about three seconds. Twenty
-boots per row, 2026-10-18 and 19:
+boots per row, 2026-10-18 and 19, with QEMU 10.2.4's full build:
 
 | Setup | Failed |
 |---|---|
@@ -93,6 +96,10 @@ boots per row, 2026-10-18 and 19:
 | KVM, no SMM, TPM, `kernel-irqchip=split` | 1 (crashed) |
 | KVM, no SMM, no TPM | 0 |
 | **As the test runs it, but TCG instead of KVM** | **0** |
+
+`nix flake check` runs VM tests with a smaller build of the same QEMU,
+`qemu_test`, which the script uses. Re-measured with it on 2026-10-19: 12 of 20
+boots failed under KVM (9 hung, 3 crashed) and none of 10 under TCG.
 
 The same firmware and devices are clean once KVM is out of the path, and the
 failures come before Linux starts, so the NixOS configuration under test plays

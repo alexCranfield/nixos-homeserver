@@ -31,7 +31,8 @@ timeout_s=${FWLOOP_TIMEOUT:-40}
 
 # One named output each: a bare package name can print several store paths.
 pkg() { nix build --no-link --print-out-paths --inputs-from . "nixpkgs#$1"; }
-qemu=$(pkg 'qemu^out' || exit 2)/bin/qemu-system-x86_64
+# qemu_test is the build `nix flake check` runs VM tests with.
+qemu=$(pkg 'qemu_test^out' || exit 2)/bin/qemu-system-x86_64
 swtpm=$(pkg 'swtpm^out' || exit 2)/bin/swtpm
 fv=$(pkg 'OVMFFull^fd' || exit 2)/FV
 for f in "$qemu" "$swtpm" "$fv/OVMF_CODE.fd" "$fv/OVMF_VARS.fd"; do
