@@ -162,6 +162,7 @@ login is checked against it rather than trusted on first use:
 ```bash
 host=$(ssh -G nuc | awk '/^hostname /{print $2}')
 ssh-keygen -R "$host"
+ssh-keygen -R nuc.home.arpa; ssh-keygen -R 192.168.1.131   # left by the first install; SSH is closed there now
 printf '%s %s\n' "$host" "$(cut -d' ' -f1,2 "$hk/etc/ssh/ssh_host_ed25519_key.pub")" >> ~/.ssh/known_hosts
 ```
 
@@ -211,12 +212,6 @@ step 6. A prompt here, or `REMOTE HOST IDENTIFICATION HAS CHANGED`, means the
 nuc is not presenting the key made in step 1. Stop and find out why before
 answering it.
 
-Now delete the workstation's copy of the key:
-
-```bash
-rm -rf "$hk"; unset hk
-```
-
 If the nuc never joins, the console is the only way in: add
 ` systemd.debug_shell` at the boot menu (install.md, "If the first boot
 stops"), then
@@ -224,6 +219,12 @@ stops"), then
 sops-nix decrypts during `initrd-nixos-activation`, because the initrd runs
 systemd; a key it cannot use shows there. Keep `$hk` until the cause is found:
 if it was a stale checkout, the same key can be installed again from step 7.
+
+Only once `ssh nuc` has logged in, delete the workstation's copy of the key:
+
+```bash
+rm -rf "$hk"; unset hk
+```
 
 ## 10. The TPM key
 
@@ -270,9 +271,9 @@ nmap -Pn -p- --min-rate 3000 --max-retries 1 nuc.home.arpa
 ```
 
 A scan that gives up also reports no open ports, so the "Not shown" line,
-counting every port, is the check. Scan the nuc's IPv6 address too, by
-network.md's method; WSL has no IPv6 route to the LAN, so that scan runs from
-Windows.
+counting every port, is the check. Scan the nuc's IPv6 address too
+(`ssh nuc ip -6 -br addr show lan0`), expecting nothing open. WSL has no IPv6
+route to the LAN, so that scan runs from Windows, by network.md's method.
 
 Note the end time here.
 
@@ -293,14 +294,13 @@ here is a real one. Expect it to take a while: on the workstation the
 If WSL restarts, or `/dev/shm` is cleared, between step 1 and step 9, the key
 is gone but `.sops.yaml` and every secret already name its recipient.
 
-- **Before step 7:** make a new key (step 1), and redo step 2's first, second,
-  fourth and fifth parts with it. The auth key can stay: the nuc has not used
-  it yet.
-- **After step 7:** the installed nuc has the key, so nothing is lost. Make the
-  `known_hosts` entry (step 6) from the nuc's copy instead, read on the live USB
-  before rebooting:
-  `ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@nuc.home.arpa cat /mnt/etc/ssh/ssh_host_ed25519_key.pub`.
-  Check its fingerprint against the one noted in step 1.
+- **Before step 7:** make a new key (step 1), redo step 2's first, second,
+  fourth and fifth parts with it, and step 6 if it was already done. The auth
+  key can stay: the nuc has not used it yet.
+- **After step 7:** the installed nuc has the key, so nothing is lost; only
+  the workstation's copy, which was to be deleted anyway, is gone. If step 6
+  was not done, the first `ssh nuc` asks to trust the key: accept it only if
+  the fingerprint it shows matches the one noted in step 1.
 
 ## Record
 
