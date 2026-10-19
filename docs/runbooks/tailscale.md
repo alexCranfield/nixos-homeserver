@@ -152,19 +152,16 @@ These are #12's acceptance criteria, which need the real nuc on the tailnet:
 
 ## Reinstalling
 
-A reinstall gives the nuc a new identity, and the single-use key is spent. In
-this order:
+A reinstall gives the nuc a new identity, and the single-use key is spent.
+[reinstall.md](reinstall.md) does the whole thing in order. The Tailscale parts:
 
-1. Remove the old `nuc` from the Machines page. If the new machine shows up as
-   `nuc-1`, the old entry was still there.
-2. The new host key means a new age recipient: read its fingerprint at the
-   console, convert it, and re-encrypt every secret to it, removing the old
-   one ([secrets.md](secrets.md), "The nuc's key"). With SSH closed on the LAN,
-   the console (or carrying the old host key over) is the only way to read the
-   new key.
-3. Generate a new auth key as above and replace it with
-   `just secrets-edit tailscale.yaml`.
-4. Deploy. `tailscaled-autoconnect` logs in with the new key.
+1. A new auth key, generated as above, goes into `secrets/tailscale.yaml`
+   along with the re-encryption to the new host key (reinstall.md, step 2).
+2. Remove the old `nuc` from the Machines page before the new one boots
+   (step 5). If the new machine shows up as `nuc-1`, the old entry was still
+   there.
+3. The first boot decrypts the key and `tailscaled-autoconnect` logs in with
+   it; no deploy is needed (step 9).
 
 If `tailscaled`'s state is ever lost without a reinstall, autoconnect sends
 the spent key, `tailscale up` refuses it, and the nuc stays logged out until
