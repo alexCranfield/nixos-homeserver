@@ -137,3 +137,40 @@ loader, and the machine would still boot from what is already there. Actual
 usage is measured after the install (#13).
 
 </details>
+
+### Does the generated hardware configuration turn on the NPU, and should it?
+
+*2026-10-18*
+
+> Are we adding NPU support with this change?
+
+> What is the risk of keeping it? Seems like we'll need to enable it at some
+> point, but I do wonder if we want to save it for a later change if we're
+> changing iGPU items here too
+
+<details>
+<summary>Answer</summary>
+
+Partly. The NPU (neural processing unit) already works at the kernel level
+without any configuration: its driver, `intel_vpu`, is part of the kernel, and
+its firmware ships in linux-firmware, which `enableRedistributableFirmware`
+includes. On the live USB it bound and loaded `vpu_50xx_v1.bin`.
+
+`nixos-generate-config` nevertheless writes
+`hardware.cpu.intel.npu.enable = true;` whenever it sees an NPU. That adds the
+program-side pieces (Intel's user-space driver, Level Zero, validation tools),
+turns on `hardware.graphics`, and puts a second copy of the NPU firmware in the
+system. Two measured costs decided against keeping it for now:
+
+- *A firmware downgrade.* In the built system, the driver package's copy
+  (November 2025) replaced linux-firmware's newer one (June 2026).
+- *0.9 GiB more,* 2.1 GiB to 3.0 GiB, for software nothing uses yet.
+
+The change did not otherwise touch the iGPU (integrated graphics): `xe` and its
+firmware were already in the base configuration, and `hardware.graphics` only
+arrived as a side effect of the NPU line. So leaving the line out kept the
+install's change to "what the hardware detector found", minus one deliberate
+omission. The iGPU and NPU trials (#37, #38) decide whether to add it, and
+should pick which firmware copy wins when they do.
+
+</details>
