@@ -153,7 +153,7 @@ What goes with the decision:
   points at that path, and the local file is deleted once the passphrase is in
   the offline backup. After the first boot, ops runs
   `systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7` on the LUKS partition.
-  The reinstall runbook (#15) records both steps.
+  The install and reinstall runbooks (#13, #15) record both steps.
 
   Amended at the install (2026-10-18): the passphrase is typed twice at the
   nuc's own console into `/tmp/disk.key` on the live USB, and

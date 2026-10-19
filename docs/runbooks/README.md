@@ -9,6 +9,7 @@ Operational procedures, written as tickets are completed.
 - [ci.md](ci.md) — what CI runs, why, and what to do when it is red (ticket 0.4)
 - [network.md](network.md) — the LAN port, the router's reservation and name, the firewall (ticket 1.4)
 - [tailscale.md](tailscale.md) — the tailnet, the auth key, joining devices, SSH over Tailscale (ticket 1.5)
+- [reinstall.md](reinstall.md) — any install since 1.7: the host key made on the workstation, the smoke tests (ticket 1.8)
 - [install.md](install.md) — installing the nuc with nixos-anywhere, the disk passphrase, the TPM key (ticket 1.6)
 - [hardware.md](hardware.md) — the live USB, assembly, BIOS settings and the hardware survey (ticket 1.1; the record fills in when it closes)
 
@@ -16,7 +17,6 @@ Operational procedures, written as tickets are completed.
 
 Not yet written. Each arrives with the ticket named.
 
-- `reinstall.md` (ticket 1.8) — wipe and rebuild from the flake
 - `updates.md` (ticket 2.3) — how updates flow, pausing comin, rollback
 - `data-layout.md` (ticket 3.3) — `/srv/data` conventions and ownership
 - `game-ops.md` (ticket 4.4) — broadcasts, restarts, restoring a world
