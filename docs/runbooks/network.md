@@ -120,13 +120,21 @@ nuc:
 sudo nft list chain inet nixos-fw input-allow
 ```
 
-Check from the LAN with a full scan. It takes a few minutes, because a
-default-deny firewall drops probes rather than refusing them, so nmap waits on
-each port:
+Check from the LAN with a full scan. A default-deny firewall drops probes
+rather than refusing them, so nmap gets no answer on any port and keeps
+slowing itself down; a fixed minimum rate keeps it to about two minutes. nmap
+reports no open ports both for a clean result and for a scan it gave up on, so
+read the "Not shown" line too:
 
 ```bash
-nmap -Pn -p- -T4 nuc.home.arpa    # expect every port filtered, 22 included
+nmap -Pn -p- --min-rate 3000 --max-retries 1 nuc.home.arpa
+# expect "Not shown: 65535 filtered tcp ports", 22 included
 ```
+
+At that rate the scan still found a single port opened for the purpose
+(2026-10-18, twice). Over the tailnet it did not: the same rate missed
+`tailscaled`'s peer API port, which `tailscaled` answers itself, so scan the
+tailnet address without `--min-rate`.
 
 The firewall covers IPv6 as well (the `inet` table holds both). If the router
 advertises an IPv6 prefix, `lan0` takes an IPv6 address from it too, so scan

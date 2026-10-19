@@ -51,8 +51,14 @@ with subtest("the firewall hides a listening port"):
 with subtest("a full TCP scan from the LAN finds nothing open, SSH included"):
     # sshd is listening (control): only the firewall keeps it from the LAN.
     nuc.wait_for_open_port(22)
-    out = router.succeed(f"nmap -Pn -p- -T4 --max-retries 1 {RESERVED_IP}")
+    # A fixed minimum rate: with every port dropped, nmap otherwise slows itself
+    # down and took 21 minutes here. And nmap reports no open port both for a
+    # clean result and for a scan it gave up on, so check it covered all 65535.
+    out = router.succeed(
+        f"nmap -Pn -p- --min-rate 1000 --max-retries 1 {RESERVED_IP}"
+    )
     print(out)
+    assert "Not shown: 65535 filtered tcp ports" in out, out
     assert open_ports(out) == [], open_ports(out)
 
 with subtest("negative control: the scan does see a port the firewall allows"):
