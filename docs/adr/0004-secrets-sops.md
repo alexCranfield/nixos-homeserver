@@ -37,7 +37,8 @@ Encrypt secrets with sops using age. Recipients are the workstation key and each
   at each install, not on the host. Its recipient goes into `.sops.yaml` and
   the secrets are re-encrypted before the install, nixos-anywhere hands the
   key to the new system with `--extra-files`, and the workstation's copy,
-  held in memory only, is deleted once the key has arrived. The host key is
+  held in memory (`/dev/shm`, with WSL's swap off), is deleted once the new
+  system has joined the tailnet with it. The host key is
   not backed up: every secret is also encrypted to the workstation key, so
   losing it costs a reinstall, not a secret. This is what lets a host whose
   SSH is reachable over the tailnet only (#14) join the tailnet on its first

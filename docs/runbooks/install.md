@@ -164,7 +164,8 @@ shows. The shell restarts if closed and stays on tty9 for the rest of that
 boot, so reboot once the check is done.
 
 Enrol the TPM key. It asks for the passphrase, so run it in a terminal of your
-own:
+own. Since #14 this goes over the tailnet instead: use the commands in
+[reinstall.md](reinstall.md), step 10. As run on 2026-10-18:
 
 ```bash
 ssh -t ops@nuc.home.arpa sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=7 /dev/disk/by-partlabel/disk-main-luks
