@@ -135,6 +135,14 @@ ls -l /dev/kvm   # expect crw-rw-rw-
 Check it worked: a VM test's log no longer says `falling back to tcg`, and its
 guests report a real CPU (central processing unit) rather than `QEMU TCG CPU`.
 
+**KVM here is nested and not fully reliable.** WSL2 is itself a Hyper-V virtual
+machine, so these VMs run inside it. With WSL 2.4.11 (kernel 5.15.167) on this
+AMD processor, firmware that uses SMM (System Management Mode) or a TPM (Trusted
+Platform Module) crashes or hangs at random, so `disk-tpm` fails locally about
+half the time (#80). `docs/runbooks/ci.md` explains how to recognise these
+failures and rerun the test without KVM (`just vm-test-tcg disk-tpm`). The other
+VM tests boot their kernels directly, skip the firmware, and have not shown it.
+
 ## Logging in to `just vm`
 
 The VM forwards 127.0.0.1:2222 on the workstation to its sshd, so

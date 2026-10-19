@@ -24,6 +24,10 @@
 #    the nuc's console (docs/runbooks/install.md).
 #  - QEMU's TPM is emulated, so the NUC's firmware TPM and its real PCR 7 value
 #    are first exercised on the hardware.
+#
+# On the workstation the firmware often crashes or hangs under its nested KVM
+# (#80), so a local failure before Linux starts says nothing about the change.
+# docs/runbooks/ci.md has how to recognise one, and `just vm-test-tcg disk-tpm`.
 {
   pkgs,
   inputs,

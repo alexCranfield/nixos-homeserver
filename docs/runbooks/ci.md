@@ -43,6 +43,63 @@ If it passes locally but fails in CI, the difference is almost always one of:
   server's version. `nix develop -c just check` matches CI exactly.
 - **Formatting.** `just fmt`, commit, push.
 
+### A VM test that fails before Linux starts, on the workstation
+
+On the workstation, `disk-tpm` often fails before the kernel prints anything
+(#80). The VM's console shows one of three forms after `starting vm`:
+
+- an exception from the firmware: `!!!! X64 Exception Type - 0E(#PF -
+  Page-Fault)`, or `0D(#GP …)` or `06(#UD …)`;
+- no output at all;
+- the systemd-boot menu, then nothing.
+
+The test then fails with `neither a prompt nor a boot` or a timeout, in
+whichever subtest booted the VM. **This is the workstation, not the change
+under test.** Rerun that one test under software emulation:
+
+```sh
+just vm-test-tcg disk-tpm
+```
+
+It takes about ten minutes instead of three, and its result counts. CI has not
+hit this failure.
+
+**The cause.** The workstation's KVM is nested: it runs inside WSL2's own
+virtual machine on Hyper-V, with WSL kernel 5.15.167 and an AMD processor
+(`kvm_amd`). Firmware run on it crashes or hangs at random, and most often when
+the firmware uses SMM (System Management Mode) and talks to a TPM (Trusted
+Platform Module). `disk-tpm` exists to test exactly those two things.
+`scripts/firmware-boot-loop.sh` boots the test's firmware, with no disk, over
+and over. Healthy firmware reaches its shell in about three seconds. Twenty
+boots per row, 2026-10-18 and 19:
+
+| Setup | Failed |
+|---|---|
+| As the test runs it: KVM, OVMF (Open Virtual Machine Firmware) with SMM, TPM | 14 (11 hung, 3 crashed) |
+| Same, `-cpu host` instead of `-cpu max` | 13 |
+| KVM, SMM, no TPM | 4 (crashed) |
+| KVM, no SMM, TPM | 3 (hung) |
+| KVM, SMM, TPM, `-machine kernel-irqchip=split` | 5 (crashed) |
+| KVM, no SMM, TPM, `kernel-irqchip=split` | 1 (crashed) |
+| KVM, no SMM, no TPM | 0 |
+| **As the test runs it, but TCG (software emulation) instead of KVM** | **0** |
+
+The same firmware and devices are clean once KVM is out of the path, so neither
+OVMF, swtpm nor the NixOS configuration is at fault. None of the QEMU options
+above makes KVM reliable, and turning off SMM or the TPM would remove what the
+test checks, so the test is left as it is. The full test under TCG passed all
+ten subtests in 618 seconds.
+
+To measure the rate again, for example after a WSL update:
+
+```sh
+scripts/firmware-boot-loop.sh 20 kvm    # exits non-zero if any boot failed
+scripts/firmware-boot-loop.sh 20 tcg    # the control
+```
+
+The rate varies from day to day: about one run in three failed on 2026-10-17
+and about half on 2026-10-18, with the same code.
+
 ## Decisions and why
 
 **The checks run with the server's Nix.** The dev shell includes `pkgs.nix`,
