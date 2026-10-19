@@ -15,7 +15,7 @@ so an encrypted file still diffs sensibly in a pull request.
 |---|---|---|---|
 | Workstation | sops default path, encrypted with a passphrase | off-machine, the same encrypted file; see password manager | everything |
 | VM test | beside it, `vm-test.txt` | no, throwaway | `secrets/test.yaml` only |
-| `nuc` host | derived from its SSH host key, `/etc/ssh/ssh_host_ed25519_key` on the nuc | n/a, regenerated on reinstall | everything, since ticket 1.7 (#14) |
+| `nuc` host | derived from its SSH host key, `/etc/ssh/ssh_host_ed25519_key` on the nuc | no: made on the workstation at each install, then deleted there ([reinstall.md](reinstall.md)) | everything, since ticket 1.7 (#14) |
 
 Recovery details, including where the workstation key is backed up, live in the
 password manager rather than in this public repository. They are deliberately
@@ -226,13 +226,13 @@ over the network is only as good as that check. Then add the recipient to both
 rules and re-encrypt each file with `just secrets-rekey <file>`; that step
 decrypts with the workstation key, so it asks for its passphrase.
 
-**A reinstall makes a new host key**, unless the old one is carried over. With
-SSH closed on the LAN (#14), a freshly installed nuc that cannot decrypt its
-Tailscale key cannot be reached over either path; the reinstall runbook (#15)
-settles the order. The
-old recipient then decrypts nothing on the new machine, and every secret must
-be re-encrypted to the new one before the first deploy that needs it. Remove
-the old recipient in the same change.
+**A reinstall makes a new host key on the workstation**, before the install
+([reinstall.md](reinstall.md), steps 1 and 2). Its recipient replaces the old
+one in `.sops.yaml`, every secret is re-encrypted to it, and nixos-anywhere
+hands the key to the new system, so the first boot can decrypt its Tailscale
+key and join the tailnet. `sops updatekeys` both adds the new recipient and
+drops the old one: tested with throwaway keys on 2026-10-18, the old key could
+no longer decrypt the file afterwards.
 
 To prove the nuc can decrypt a file without its secret leaving the machine:
 

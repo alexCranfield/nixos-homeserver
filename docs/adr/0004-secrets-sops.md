@@ -33,6 +33,16 @@ Encrypt secrets with sops using age. Recipients are the workstation key and each
 - A host that declares a secret it cannot decrypt fails the rebuild, but not the
   boot: at boot the secret is simply absent and the unit that needs it starts
   anyway. Services must check for their secret rather than assume it arrived.
+- A host's SSH host key, and so its age identity, is made on the workstation
+  at each install, not on the host. Its recipient goes into `.sops.yaml` and
+  the secrets are re-encrypted before the install, nixos-anywhere hands the
+  key to the new system with `--extra-files`, and the workstation's copy,
+  held in memory only, is deleted once the key has arrived. The host key is
+  not backed up: every secret is also encrypted to the workstation key, so
+  losing it costs a reinstall, not a secret. This is what lets a host whose
+  SSH is reachable over the tailnet only (#14) join the tailnet on its first
+  boot. Carrying the old key over, or opening the LAN (local area network)
+  for one boot, were the alternatives (#15). Note added 2026-10-18.
 - Rotation means issuing a new value, not re-encrypting the old one. Every
   ciphertext pushed to a public repository can be archived by anyone, so
   re-encryption leaves the old material in the wild.

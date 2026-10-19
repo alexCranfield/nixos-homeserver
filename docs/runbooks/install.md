@@ -2,8 +2,9 @@
 
 Installing the nuc from this repo with nixos-anywhere and disko, from the live
 USB. Ticket 1.6 (#13); first done on 2026-10-18. The install wipes the system
-drive. The reinstall runbook (ticket 1.8, #15) builds on this one and adds
-restoring the data.
+drive. **Since ticket 1.7 (#14), follow [reinstall.md](reinstall.md) for any
+install**, first or not: it makes the host key on the workstation so the new
+system can join the tailnet, and refers back here for the steps in between.
 
 The disk is LUKS2 (Linux Unified Key Setup) encrypted (ADR (Architecture
 Decision Record) 0009). Every boot after the install unlocks it with a key
@@ -132,13 +133,12 @@ on the nuc's screen, type the passphrase.
 
 ## 6. After the first boot
 
-**Since #14 this step needs a way in.** The installed system opens SSH on
-`tailscale0` only, and a new install has a new host key, so it cannot decrypt
-its Tailscale auth key and stays off the tailnet. The commands below were run
-on 2026-10-18, before #14 closed the LAN. For a reinstall, the reinstall
-runbook (#15) decides how the first login happens: carrying the old host key
-over, re-encrypting the secrets to the new one first, or opening the LAN for
-that one boot.
+**Since #14 this step runs over the tailnet**, and the host key check below is
+no longer needed: [reinstall.md](reinstall.md) makes the key on the workstation,
+so its fingerprint is known before the first boot. The commands below were run
+on 2026-10-18, before #14 closed the LAN, and are kept as the record of the
+first install and for reading a host key at the console if that is ever
+needed.
 
 The installed system has new SSH host keys, so clear the live USB's from the
 workstation first:

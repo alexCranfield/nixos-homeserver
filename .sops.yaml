@@ -17,8 +17,9 @@ keys:
   - &vm-test age12fy2yazfa0z7e43crk0umnrkv467k9rzgpdtwu9ajcl35sut29vsrgcpyd
   # The nuc, ticket 1.7 (#14): `ssh-to-age` of its ed25519 SSH host public key,
   # fingerprint SHA256:p4Hi3jhhXSt5SbbEOxkk6VJvfqurXyOSFQ7HeMSLX7I, checked at
-  # its console on 2026-10-18. A reinstall makes a new host key, so this line
-  # and every secret's recipients change with it (docs/runbooks/secrets.md).
+  # its console on 2026-10-18. A reinstall makes a new host key on the
+  # workstation, so this line and every secret's recipients change with it
+  # (docs/runbooks/reinstall.md).
   - &nuc age15ms6jjcxqamemjhf8f90napt8sfle0rxcl8y5dvg3l4ntu333gkquw49ru
 
 creation_rules:
