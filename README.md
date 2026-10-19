@@ -124,8 +124,8 @@ arrived on 2026-10-01 and was assembled and surveyed on 2026-10-04 (#8). The
 disk layout is declared, with LUKS2 (Linux Unified Key Setup) encryption and a
 TPM (Trusted Platform Module) unlock tested in a VM (#9, ADR 0009). The nuc was
 installed on 2026-10-18 (#13): it boots NixOS 26.05 from its encrypted disk and
-unlocks with the TPM, unattended. Next it joins the tailnet and gets its own
-secrets (#14). See the
+unlocks with the TPM, unattended. It decrypts its own secrets and joins the
+tailnet by itself, and SSH is reachable over the tailnet only (#14). See the
 [milestones](https://github.com/alexCranfield/nixos-homeserver/milestones).
 
 ## License
