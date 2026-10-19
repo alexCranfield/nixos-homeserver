@@ -25,6 +25,19 @@ check:
     # but not multiples of it.
     editorconfig-checker -disable-indent-size
 
+# Run one VM test under software emulation, no KVM: slower, but avoids #80.
+vm-test-tcg test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    driver=$(nix build --no-link --print-out-paths '.#checks.x86_64-linux.{{ test }}.driver')
+    work=$(mktemp -d)
+    trap 'rm -rf "$work"' EXIT
+    mkdir "$work/out"
+    cd "$work"
+    # QEMU applies the last -machine accel= it is given, and the test's VM
+    # scripts append QEMU_OPTS after their own `accel=kvm:tcg`.
+    QEMU_OPTS="-machine accel=tcg" "$driver/bin/nixos-test-driver" -o "$work/out"
+
 # Build the nuc system closure and print its store path.
 build:
     nix build --print-out-paths '.#nixosConfigurations.nuc.config.system.build.toplevel'

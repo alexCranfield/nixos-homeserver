@@ -52,7 +52,9 @@ def reboot(expect_prompt):
 
 
 with subtest("disko formats and mounts the blank disk"):
-    nuc.wait_for_unit("multi-user.target")
+    # Bounded like every later boot: the firmware can hang on the first one
+    # too (#80), and an unbounded wait would hold the test for its full hour.
+    boot(expect_prompt=False)
     nuc.succeed(f"printf %s {QUOTED} > /tmp/disk.key")
     nuc.succeed(FORMAT_MOUNT)
     nuc.succeed(UNMOUNT)
