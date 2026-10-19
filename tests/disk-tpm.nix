@@ -47,6 +47,11 @@ pkgs.testers.runNixOSTest {
     in
     {
       imports = [ ../hosts/nuc ];
+      # The host's Tailscale key is a sops secret no test VM can decrypt, so
+      # leave Tailscale logged out, as it was before #14: without this,
+      # tailscaled-autoconnect runs `tailscale up` with an empty key and holds up
+      # multi-user.target until it times out. tests/tailscale.nix tests the join.
+      services.tailscale.authKeyFile = lib.mkForce null;
 
       virtualisation = {
         useBootLoader = true;

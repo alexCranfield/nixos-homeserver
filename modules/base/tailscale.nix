@@ -5,11 +5,9 @@
 # Tailscale SSH is not turned on, so a login still needs the ops key even from
 # a device already on the tailnet.
 #
-# The join itself, `services.tailscale.authKeyFile`, is set by the host from its
-# sops secret in ticket 1.7 (#14), once the host can decrypt one: a host that
-# declares a secret it cannot decrypt fails the rebuild (see default.nix). Until
-# then the daemon runs logged out, and SSH on the LAN (local area network) is
-# the way in; #14 removes it.
+# The join itself, `services.tailscale.authKeyFile`, is set by each host from
+# its own sops secret (hosts/nuc/tailscale.nix, ticket 1.7, #14), since the key
+# is per machine. A host that sets none runs the daemon logged out.
 {
   services.tailscale = {
     enable = true;
@@ -22,6 +20,12 @@
     # by its MagicDNS name. Applied by `tailscale up`, so only once a host sets
     # authKeyFile.
     extraUpFlags = [ "--accept-dns=false" ];
+    # Refuse incoming Taildrop files (Alex's choice, 2026-10-18). On a tagged
+    # device Taildrop is already off unless the access policy grants
+    # `https://tailscale.com/cap/file-send` (tailscale's
+    # feature/taildrop/peerapi.go); this keeps it off even then. It does not
+    # close the peer API's port, which stays reachable (below).
+    disableTaildrop = true;
   };
 
   # SSH only, rather than `trustedInterfaces = [ "tailscale0" ]`, which would

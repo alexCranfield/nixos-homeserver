@@ -15,8 +15,8 @@
 # The real tailnet cannot be used: the build sandbox has no internet, and a
 # test must not hold a real auth key. What differs from the real thing: the
 # login server (`--login-server`), and the auth key, which the test writes to a
-# file where #14 will point `authKeyFile` at a sops secret. Tags (`tag:server`)
-# live in the real tailnet's access rules and are not tested here.
+# file in place of the sops secret the real host reads. The access policy is
+# Headscale's form of the real one (tests/tailscale.py).
 {
   pkgs,
   inputs,
@@ -71,8 +71,9 @@ pkgs.testers.runNixOSTest {
         address = [ "${lanIp}/24" ];
       };
 
-      # Where #14 puts the sops secret's path. The test writes the key here.
-      services.tailscale.authKeyFile = "/run/ts-authkey";
+      # The host points this at its sops secret (hosts/nuc/tailscale.nix), which
+      # a test VM cannot decrypt. The test writes a Headscale key here instead.
+      services.tailscale.authKeyFile = lib.mkForce "/run/ts-authkey";
       services.tailscale.extraUpFlags = [ "--login-server=https://headscale" ];
 
       users.users.ops.openssh.authorizedKeys.keys = [ keys.snakeOilPublicKey ];

@@ -7,7 +7,8 @@
 #
 # Only the bootstrap test secret lives here: it proves the machine can decrypt,
 # and holds nothing sensitive. Real secrets are declared beside the service
-# that needs them (modules/base/default.nix).
+# that needs them (modules/base/default.nix), such as the Tailscale auth key in
+# hosts/nuc/tailscale.nix.
 {
   sops.secrets.test.sopsFile = ../../secrets/test.yaml;
 }
