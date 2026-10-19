@@ -215,7 +215,7 @@ its ed25519 SSH host key; nothing is copied to it by hand. Its public half, the
 `&nuc` recipient in `.sops.yaml`, comes from the host's public key:
 
 ```bash
-ssh ops@nuc.home.arpa cat /etc/ssh/ssh_host_ed25519_key.pub > nuc.pub
+ssh nuc cat /etc/ssh/ssh_host_ed25519_key.pub > nuc.pub    # over the tailnet
 ssh-keygen -lf nuc.pub        # must match the fingerprint read at the console
 ssh-to-age -i nuc.pub         # the recipient
 ```
@@ -226,7 +226,10 @@ over the network is only as good as that check. Then add the recipient to both
 rules and re-encrypt each file with `just secrets-rekey <file>`; that step
 decrypts with the workstation key, so it asks for its passphrase.
 
-**A reinstall makes a new host key**, unless the old one is carried over. The
+**A reinstall makes a new host key**, unless the old one is carried over. With
+SSH closed on the LAN (#14), a freshly installed nuc that cannot decrypt its
+Tailscale key cannot be reached over either path; the reinstall runbook (#15)
+settles the order. The
 old recipient then decrypts nothing on the new machine, and every secret must
 be re-encrypted to the new one before the first deploy that needs it. Remove
 the old recipient in the same change.
@@ -237,7 +240,7 @@ To prove the nuc can decrypt a file without its secret leaving the machine:
 sudo cat /run/secrets/test     # as deployed
 # or any file: copy it over first (nothing keeps a checkout on the nuc),
 # then decrypt it there with the nuc's own key, which is never printed:
-scp secrets/test.yaml ops@nuc.home.arpa:/tmp/
+scp secrets/test.yaml nuc:/tmp/
 sudo sh -c 'SOPS_AGE_KEY=$(ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key) sops -d /tmp/test.yaml'
 ```
 

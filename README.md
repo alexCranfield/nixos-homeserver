@@ -39,7 +39,7 @@ modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
 tests/disk-tpm.nix                 VM test: the real layout boots, then unlocks from an emulated TPM (Trusted Platform Module)
 tests/disk-tpm.py                  its test script, in Python; disk-tpm.nix passes in the values only Nix knows
-tests/network.nix                  VM test: reserved address on lan0, nuc.home.arpa, a LAN scan finds only SSH
+tests/network.nix                  VM test: reserved address on lan0, nuc.home.arpa, a LAN scan finds nothing open
 tests/network.py                   its test script
 tests/tailscale.nix                VM test: ops logs in over the tailnet from another network, which sees only SSH
 tests/tailscale.py                 its test script
