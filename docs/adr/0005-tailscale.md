@@ -28,7 +28,9 @@ Join the server to a Tailscale tailnet. SSH, Grafana, Open WebUI and any future 
   nuc can decrypt its auth key and join the tailnet unattended, and is then
   removed: no permanent LAN fallback for SSH. So if the tailnet is down,
   getting in means a monitor and keyboard on the nuc. The nuc joins with a
-  single-use auth key tagged `tag:server`.
+  single-use auth key tagged `tag:server`. Done 2026-10-18 (#14). The console
+  has no login (ops has no password), so "monitor and keyboard" means the boot
+  menu's debug shell or the live USB (docs/runbooks/install.md).
 - Note, 2026-10-17 (ticket 1.5, #12): the NixOS firewall does not cover
   everything on the tailnet. `tailscaled` answers its peer API (application
   programming interface) port, and Tailscale SSH and Serve ports when enabled,

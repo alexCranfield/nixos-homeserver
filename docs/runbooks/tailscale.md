@@ -40,8 +40,8 @@ between your own devices (ADR (Architecture Decision Record) 0005). Ticket 1.5
 - **The nuc joins by itself** (ticket 1.7, #14): `hosts/nuc/tailscale.nix`
   points `authKeyFile` at the sops secret `tailscale-authkey` in
   `secrets/tailscale.yaml`, and `tailscaled-autoconnect` logs in with it when
-  the nuc is logged out. SSH also stays open on the LAN until #14 has shown the
-  tailnet login works; then it closes. After that, if the tailnet is down,
+  the nuc is logged out. SSH is closed on the LAN since #14, once the tailnet
+  login had been shown to work from another network. If the tailnet is down,
   there is no console login to fall back on (ops has no password): the way in
   is the boot menu's debug shell or the live USB
   ([install.md](install.md)).

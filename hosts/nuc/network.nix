@@ -54,8 +54,7 @@ in
     };
   };
 
-  # SSH from the LAN as well as the tailnet (modules/base/tailscale.nix), until
-  # the nuc joins the tailnet by itself: its auth key is a secret it can only
-  # decrypt from ticket 1.7 (#14), which removes this. ADR 0005.
-  networking.firewall.interfaces.lan0.allowedTCPPorts = [ 22 ];
+  # Nothing is open on lan0, SSH included: admin access is over the tailnet
+  # only (modules/base/tailscale.nix, ADR 0005). Port 22 was open here until
+  # the nuc could join the tailnet by itself, ticket 1.7 (#14).
 }

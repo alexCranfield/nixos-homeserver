@@ -48,16 +48,18 @@ with subtest("the firewall hides a listening port"):
     # The listener is really there, seen from the nuc itself.
     nuc.wait_for_open_port(8080)
 
-with subtest("a full TCP scan from the LAN finds only SSH"):
+with subtest("a full TCP scan from the LAN finds nothing open, SSH included"):
+    # sshd is listening (control): only the firewall keeps it from the LAN.
+    nuc.wait_for_open_port(22)
     out = router.succeed(f"nmap -Pn -p- -T4 --max-retries 1 {RESERVED_IP}")
     print(out)
-    assert open_ports(out) == [22], open_ports(out)
+    assert open_ports(out) == [], open_ports(out)
 
 with subtest("negative control: the scan does see a port the firewall allows"):
     nuc.succeed("nft add rule inet nixos-fw input-allow tcp dport 8080 accept")
     out = router.succeed(f"nmap -Pn -p 22,8080 {RESERVED_IP}")
     print(out)
-    assert open_ports(out) == [22, 8080], open_ports(out)
+    assert open_ports(out) == [8080], open_ports(out)
 
 with subtest("no UDP port is allowed in, beyond the DHCPv6 client"):
     rules = nuc.succeed("nft list chain inet nixos-fw input-allow")
