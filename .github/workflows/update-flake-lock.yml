@@ -70,8 +70,9 @@ jobs:
           # Or when last run's pull request, still open, moved them: this run
           # replaces it, and would otherwise drop them until next month. A
           # closed one is a rejection, and is not carried.
-          # The token goes to gh alone, not to the Nix programs below. A failed
-          # lookup prints nothing, and `-gt` on nothing is false: not carried.
+          # A failed lookup prints nothing, and `-gt` on nothing is false: not
+          # carried. (GITHUB_TOKEN, read-only, is in this step's environment
+          # for the script, which removes it before starting any Nix program.)
           elif [ "$(GH_TOKEN="$GITHUB_TOKEN" gh pr list --head update/flake-lock --state open --json number --jq length)" -gt 0 ] &&
             git fetch --depth=1 origin update/flake-lock; then
             git show FETCH_HEAD:flake.lock > "$RUNNER_TEMP/pr.lock"
