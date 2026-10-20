@@ -48,7 +48,7 @@
     {
       nixosConfigurations.nuc = nixpkgs.lib.nixosSystem {
         # Makes `inputs` available to every module, for the disko, sops-nix and
-        # comin modules imported in later tickets.
+        # comin modules.
         specialArgs = { inherit inputs; };
         modules = [ ./hosts/nuc ];
       };
@@ -128,6 +128,13 @@
         # Ticket 1.5 (#12): ops logs in over the tailnet from another network,
         # and the tailnet sees only SSH.
         tailscale = import ./tests/tailscale.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
+        # Ticket 2.1 (#16): comin runs, follows `main`, and ignores a
+        # `testing-nuc` branch, which would bypass review.
+        comin = import ./tests/comin.nix {
           inherit pkgs inputs;
           inherit (nixpkgs) lib;
         };

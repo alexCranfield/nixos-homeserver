@@ -11,6 +11,7 @@ Operational procedures, written as tickets are completed.
 - [tailscale.md](tailscale.md) — the tailnet, the auth key, joining devices, SSH over Tailscale (ticket 1.5)
 - [reinstall.md](reinstall.md) — any install since 1.7: the host key made on the workstation, the smoke tests (ticket 1.8)
 - [install.md](install.md) — installing the nuc with nixos-anywhere, the disk passphrase, the TPM key (ticket 1.6)
+- [deploy.md](deploy.md) — comin pulling `main`, checking it, the manual deploy (ticket 2.1)
 - [hardware.md](hardware.md) — the live USB, assembly, BIOS settings and the hardware survey (ticket 1.1; the record fills in when it closes)
 
 ## Planned

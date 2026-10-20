@@ -76,7 +76,7 @@ vm-secrets:
         exit 1
     fi
 
-# Manual deploy to the nuc over the tailnet; `nuc` is a workstation ~/.ssh/config alias (comin will pull main, #16).
+# Emergency deploy of this checkout over the tailnet; comin replaces it at the next merge (docs/runbooks/deploy.md).
 deploy:
     nixos-rebuild switch --flake '.#nuc' --target-host ops@nuc --sudo
 

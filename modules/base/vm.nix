@@ -12,6 +12,11 @@
 # in 1.7, #14), which the VM does not have, so eth0 gets port 22
 # and a DHCP (Dynamic Host Configuration Protocol) address here. Without them
 # the forward connects to nothing.
+#
+# comin is off in the VM: `just vm` has internet through QEMU, so comin would
+# otherwise pull `main` and switch the VM to the real host's configuration,
+# which is not a VM build.
+{ lib, ... }:
 {
   virtualisation.vmVariant = {
     virtualisation.forwardPorts = [
@@ -24,5 +29,6 @@
     ];
     networking.interfaces.eth0.useDHCP = true;
     networking.firewall.interfaces.eth0.allowedTCPPorts = [ 22 ];
+    services.comin.enable = lib.mkForce false;
   };
 }

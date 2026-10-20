@@ -98,9 +98,10 @@ gone, see "If the host key is lost" below.
 
 ## 2. Re-encrypt to the new key, with a new auth key
 
-Do this shortly before the install. Once comin pulls `main` (#16), a merged
-re-key will reach the old nuc, which can no longer decrypt; until then the old
-nuc keeps running on the secrets it decrypted at its last boot.
+Do this shortly before the install. comin pulls `main` ([deploy.md](deploy.md)),
+so the merged re-key reaches the old nuc within minutes. The old nuc cannot
+decrypt it, so that deploy is expected to fail and leave the old nuc running on
+the secrets it decrypted at its last boot. It is wiped in step 3, so leave it.
 
 1. In `.sops.yaml`, replace the `&nuc` recipient with the new one. Update its
    comment: the fingerprint, the date, and "made on the workstation at
@@ -272,6 +273,11 @@ ssh nuc 'sudo systemd-cryptenroll /dev/disk/by-partlabel/disk-main-luks; journal
 
 # Nothing failed.
 ssh nuc 'systemctl is-system-running; systemctl --failed --no-legend'
+
+# comin is running and has deployed main: the commit in its deployment
+# matches the remote's (deploy.md).
+ssh nuc 'systemctl is-active comin; comin status'
+git ls-remote origin main
 ```
 
 **The firewall is closed on the LAN**, as [network.md](network.md) checks it:
