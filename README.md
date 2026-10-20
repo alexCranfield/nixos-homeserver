@@ -49,8 +49,10 @@ tests/tailscale.py                 its test script
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
 scripts/tickets.py                 ticket definitions; file_issues.py files them
+scripts/flake_update.py            the weekly flake.lock update: cooldown, report, checks on the new lock
 scripts/firmware-boot-loop.sh      measures whether local KVM (Kernel-based Virtual Machine) boots the disk-tpm firmware reliably (#80)
 .github/workflows/ci.yml           CI (continuous integration): runs just check on every pull request and push to main
+.github/workflows/update-flake-lock.yml   weekly pull request updating flake.lock (docs/runbooks/updates.md)
 .github/                           issue and pull request templates, CODEOWNERS
 .editorconfig                      whitespace and indentation for editors
 ```
@@ -73,7 +75,7 @@ by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
 |---|---|
 | `just` | list the targets |
 | `just fmt` | format every file in place |
-| `just check` | everything CI runs: `nix flake check`, build the closure, check formatting and `.editorconfig` |
+| `just check` | everything CI runs: `nix flake check`, build the closure, check formatting and `.editorconfig`, lint the workflows |
 | `just build` | build the nuc closure, print its store path |
 | `just iso` | build the live USB image, print its store path ([hardware.md](docs/runbooks/hardware.md)) |
 | `just vm` | boot the nuc config in a local VM; log in as below; quit with ctrl-a then x |
