@@ -222,7 +222,7 @@ decrypt everything the key ever protected. Recovery means reissuing every
 credential it ever encrypted.
 
 On this workstation the file's mode of `0600` is a Linux control, and WSL
-exposes the Linux home directory to Windows through `\\wsl$`. So the key is as
+(Windows Subsystem for Linux) exposes the Linux home directory to Windows through `\\wsl$`. So the key is as
 well protected as the Windows account, not as well as its mode suggests.
 
 Keep it off anything that syncs, treat every copy as an event worth noticing,
@@ -272,8 +272,7 @@ drops the key from the agent afterwards.
 
 Seventeen characters is plenty, if a generator picked them. Drawn at random
 from the roughly 94 printable keyboard characters, each carries about 6.5 bits,
-so seventeen give about 111 bits: out of reach of brute force. LUKS2 (Linux
-Unified Key Setup) also runs every guess through Argon2id, a hash built to be
+so seventeen give about 111 bits: out of reach of brute force. LUKS2 also runs every guess through Argon2id, a hash built to be
 slow and memory-hungry (by default, about two seconds and up to a gigabyte
 per guess on the machine that formatted the disk), which stops graphics cards
 scaling the attack. A string a person makes up is much
@@ -411,12 +410,15 @@ that survives rebuilds; setting it `false` is noted on the security review,
 The old one is fine. A passphrase needs changing for a reason, and a reinstall
 is not one:
 
-- It has only ever been typed at the nuc's console. The one that went through a
-  file on the workstation was the failed first attempt of 2026-10-18, and it was
-  wiped.
-- The wipe does not expose it. disko writes a new LUKS header, with a new
-  volume key, so nothing left on the disk from the old install can be opened
-  with it.
+- It was never stored on the workstation by the install that worked: it was
+  typed at the nuc's console, and kept in the password manager and the offline
+  backup. The failed first attempt of 2026-10-18 went through a file in WSL; if
+  that was the same passphrase, a trace of it may remain in WSL's disk image,
+  and that would be a reason to change it.
+- The disk does not give it away. LUKS never stores the passphrase, only key
+  slots derived from it with Argon2id, and the reinstall writes a new header
+  with a new volume key, so through the drive's normal interface nothing left
+  from the old install can be opened with it.
 - It is already in the password manager and the offline backup. A new one
   means updating both before the install: one more step, with room for a
   mismatch.
