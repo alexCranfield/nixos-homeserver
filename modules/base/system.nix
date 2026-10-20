@@ -13,10 +13,10 @@
 
   # Shown at every login. comin replaces the running system at each merge to
   # `main` (comin.nix), so a change made by hand on the host does not last.
-  # Also the change that proved comin deploys a merge by itself (#16).
+  # Also the change that shows comin deploying a merge by itself (#16).
   users.motd = ''
     Managed from github.com/alexCranfield/nixos-homeserver, branch main.
-    comin deploys each merge; changes made here are lost at the next one.
+    comin deploys each merge; system changes made here are lost at the next one.
   '';
 
   programs.git.enable = true;
