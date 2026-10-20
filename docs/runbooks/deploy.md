@@ -54,7 +54,14 @@ git ls-remote origin main   # the commit comin should report as deployed
 ```
 
 `comin status` shows when the remote was last fetched, the generation it built
-and the deployment, with its commit. `journalctl -u comin` on the nuc has the
+and the deployment, with its commit. comin creates
+`/nix/var/nix/profiles/system-profiles` with no permission bits, so listing it,
+or `/boot/loader/entries`, needs sudo:
+
+```bash
+ssh nuc 'sudo ls -l /nix/var/nix/profiles/system-profiles; sudo bootctl list --no-pager'
+```
+ `journalctl -u comin` on the nuc has the
 detail, including a failed evaluation or build.
 
 A failed evaluation or build changes nothing on the nuc. A failed
@@ -90,5 +97,6 @@ deletion") before doing it, and note the steps here when it is.
 |---|---|
 | comin | 0.14.0, from the comin flake input (`ffeadf34`) |
 | First deploy | 2026-10-20: `just deploy` of `main` (`e6d25b7`) installed comin at 14:56:43 UTC (Coordinated Universal Time); comin fetched `main` at 14:57:44, one poll period later, found the system already built (`jaj4lsqv…`) and switched to it at 14:57:52, as generation 1 of comin's profile (`system-profiles/comin-1-link`). `comin status` works as ops without sudo. |
-| Merge to running, `users.motd` | to be filled in after the merge |
-| `comin` active after a reboot | to be filled in after the merge |
+| Merge to running, `users.motd` | 53 s, with no SSH or manual deploy: #102 merged at 15:27:55; comin fetched `733d39d` at 15:28:43, built it by 15:28:47 and finished switching at 15:28:48 (`9dlhzrir…`). The banner then appeared in `/etc/pam.d/sshd` and `/etc/pam.d/login` |
+| `comin` active after a reboot | yes. Rebooted at 15:36:58; the TPM (Trusted Platform Module) unlocked the disk unattended, SSH answered 47 s later, comin was active from 15:37:20, the system `running` with no failed units. The boot loader's current entry was `nixos-comin-generation-2.conf`, the default comin set. At its first fetch (15:38:22) comin found `733d39d` already running and skipped the deploy |
+| Boot menu after two comin deploys | four entries, `nixos-generation-{1,2}` (manual) and `nixos-comin-generation-{1,2}`, comin's newest the default; the ESP (EFI System Partition) at 56 MiB of 1022 MiB, since all four share one kernel |
