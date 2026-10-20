@@ -147,11 +147,12 @@ it. Find it with `ip -6 -br addr show lan0` on the nuc, then:
 nmap -6 -Pn -p- -T4 <ULA address of the nuc>   # from a machine with nmap: expect nothing open
 ```
 
-That needs a machine with nmap and an IPv6 route to the LAN. The workstation's WSL, in
-its default NAT (network address translation) mode, has none; Windows itself
-does, but has no nmap. So the scan runs from Windows PowerShell 5.1 instead (in
-PowerShell 7, `Test-Connection` shows `Latency` rather than `ResponseTime`), as a
-TCP connect to every port, 2,000 at a time, with a 1.5 second wait. A dropped
+That needs a machine with nmap and an IPv6 route to the LAN. The workstation's
+WSL, in its default NAT (network address translation) mode, has none; Windows
+itself does, but has no nmap. So the scan runs from Windows PowerShell 5.1
+instead (in PowerShell 7, `Test-Connection` shows `Latency` rather than
+`ResponseTime`), as a TCP connect to every port, 2,000 at a time, with a 1.5
+second wait. A dropped
 probe never connects, so only ports that complete the handshake count as open:
 
 ```powershell
@@ -177,9 +178,8 @@ ssh nuc 'nstat -az Ip6InReceives Icmp6InEchos Icmp6OutEchoReplies'
 
 The counters run from the nuc's last boot. On 2026-10-19, with one scan and
 three pings since the boot, they read 131,104 IPv6 packets received, about two
-per port (presumably Windows resending each unanswered SYN within the 1.5 s
-wait), and 3 echo requests
-answered.
+per port (presumably Windows resending each unanswered connection request
+within the 1.5 s wait), and 3 echo requests answered.
 
 Docker publishes container ports around this firewall (ADR 0006), so the scan
 is worth re-running once stacks arrive.
