@@ -222,8 +222,9 @@ decrypt everything the key ever protected. Recovery means reissuing every
 credential it ever encrypted.
 
 On this workstation the file's mode of `0600` is a Linux control, and WSL
-(Windows Subsystem for Linux) exposes the Linux home directory to Windows through `\\wsl$`. So the key is as
-well protected as the Windows account, not as well as its mode suggests.
+(Windows Subsystem for Linux) exposes the Linux home directory to Windows
+through `\\wsl$`. So the key is as well protected as the Windows account, not
+as well as its mode suggests.
 
 Keep it off anything that syncs, treat every copy as an event worth noticing,
 and passphrase-protect it before the first real secret arrives (#56). The
@@ -272,11 +273,12 @@ drops the key from the agent afterwards.
 
 Seventeen characters is plenty, if a generator picked them. Drawn at random
 from the roughly 94 printable keyboard characters, each carries about 6.5 bits,
-so seventeen give about 111 bits: out of reach of brute force. LUKS2 also runs every guess through Argon2id, a hash built to be
-slow and memory-hungry (by default, about two seconds and up to a gigabyte
-per guess on the machine that formatted the disk), which stops graphics cards
-scaling the attack. A string a person makes up is much
-weaker than its length suggests, because people follow patterns.
+so seventeen give about 111 bits: out of reach of brute force. LUKS2 also runs
+every guess through Argon2id, a hash built to be slow and memory-hungry (by
+default, about two seconds and up to a gigabyte per guess on the machine that
+formatted the disk), which stops graphics cards scaling the attack.
+A string a person makes up is much weaker than its length suggests, because
+people follow patterns.
 
 A short memorable password is the wrong trade here. The passphrase protects
 the disk against someone who has the disk, who can guess offline for as long as
@@ -331,8 +333,8 @@ What an impersonator gets, and what it does not:
 - *Not the ops key.* Key login signs data bound to that one session, so the
   signature cannot be replayed to the real server, and the private key never
   leaves the workstation.
-- *Anything typed into the session.* The TPM (Trusted Platform Module)
-  enrolment asked for the disk passphrase over SSH.
+- *Anything typed into the session.* The TPM enrolment asked for the disk
+  passphrase over SSH.
 - *Future secrets.* Ticket 1.7 (#14) derives the server's age identity from
   this host key and encrypts secrets to it. A wrong key would mean encrypting
   them for the impersonator.
@@ -410,15 +412,16 @@ that survives rebuilds; setting it `false` is noted on the security review,
 The old one is fine. A passphrase needs changing for a reason, and a reinstall
 is not one:
 
-- It was never stored on the workstation by the install that worked: it was
-  typed at the nuc's console, and kept in the password manager and the offline
-  backup. The failed first attempt of 2026-10-18 went through a file in WSL; if
-  that was the same passphrase, a trace of it may remain in WSL's disk image,
-  and that would be a reason to change it.
+- It was never stored on the workstation by the 2026-10-18 install that
+  worked: it was typed at the nuc's console, and kept in the password manager
+  and the offline backup. The failed first attempt of 2026-10-18 went through
+  a file in WSL; if that was the same passphrase, a trace of it may remain in
+  WSL's disk image, and that would be a reason to change it.
 - The disk does not give it away. LUKS never stores the passphrase, only key
-  slots derived from it with Argon2id, and the reinstall writes a new header
-  with a new volume key, so through the drive's normal interface nothing left
-  from the old install can be opened with it.
+  slots holding the volume key encrypted under a key derived from it with
+  Argon2id, and the reinstall writes a new header with a new volume key, so
+  through the drive's normal interface nothing left from the old install can
+  be opened with it.
 - It is already in the password manager and the offline backup. A new one
   means updating both before the install: one more step, with room for a
   mismatch.

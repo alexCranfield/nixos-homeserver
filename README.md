@@ -129,8 +129,8 @@ installed on 2026-10-18 (#13): it boots NixOS 26.05 from its encrypted disk and
 unlocks with the TPM, unattended. It decrypts its own secrets and joins the
 tailnet by itself, and SSH is reachable over the tailnet only (#14). On
 2026-10-19 it was wiped and reinstalled following
-[docs/runbooks/reinstall.md](docs/runbooks/reinstall.md) (#15), the last phase
-1 ticket; follow-ups #75 and #95 remain open. See the
+[docs/runbooks/reinstall.md](docs/runbooks/reinstall.md) (#15), the last
+planned phase 1 ticket; follow-ups #75 and #95 remain open. See the
 [milestones](https://github.com/alexCranfield/nixos-homeserver/milestones).
 
 ## License
