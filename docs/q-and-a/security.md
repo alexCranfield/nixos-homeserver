@@ -479,18 +479,19 @@ Actions by commit, which is what defeats the September attack.
 
 **What #17 does about it.** nixpkgs updates weekly; the other inputs monthly,
 and only to commits at least seven days old, since compromised releases have
-usually been caught within days. The job that runs Nix and the new inputs has
-a read-only token; the job that opens the pull request runs no third-party
-code and refuses a lock that adds inputs or points one at another repository.
-Each pull request lists every input's source diff, the package changes (`nix
-store diff-closures`) and the change in CVEs (Common Vulnerabilities and
-Exposures) reported by vulnix. The CVE list informs rather than blocks: vulnix
-matches package names against the NVD (National Vulnerability Database) and
-does not know which fixes nixpkgs has patched in, so on 2026-10-20 it reported
-100 CVE ids against 21 packages in the nuc's runtime closure. The update of
-that day would have taken it to 43, adding none, mostly through new openssl,
-curl, libxml2, pcre2 and unbound releases. Nothing merges by itself, and GitHub's email for each new pull request carries the summary.
-Alerts on a phone are ticket 2.5 (#20). See `docs/runbooks/updates.md`.
+usually been caught within days. The job that runs Nix and the new inputs has a
+read-only token; the job that opens the pull request runs no third-party code
+and refuses a lock that adds inputs or points one at another repository. Each
+pull request lists every input's source diff, the package changes (`nix store
+diff-closures`) and the change in CVEs (Common Vulnerabilities and Exposures)
+reported by vulnix. The CVE list informs rather than blocks: vulnix matches
+package names against the NVD (National Vulnerability Database) and does not
+know which fixes nixpkgs has patched in, so on 2026-10-20 it reported 100 CVE
+ids against 21 packages in the nuc's runtime closure. The update of that day
+would have taken it to 43, adding none, mostly through new openssl, curl,
+libxml2, pcre2 and unbound releases. Nothing merges by itself, and GitHub's
+email for each new pull request carries the summary. Alerts on a phone are
+ticket 2.5 (#20). See `docs/runbooks/updates.md`.
 
 </details>
 
