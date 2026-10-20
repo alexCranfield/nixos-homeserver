@@ -431,3 +431,97 @@ by someone, or used elsewhere. Either way, it is typed twice at the console
 (install.md step 3).
 
 </details>
+
+### Does a weekly lock update expose the server to supply-chain attacks like Shai-Hulud?
+
+*2026-10-20*
+
+> Let's move to 17, walk me through what will update. Are we considering
+> payload attacks like the recent Shai hulud incidents? Are we pinning versions
+> that are confirmed safe? Should we be performing scans/checks on CVEs before
+> updating locks with monitoring emails?.
+
+<details>
+<summary>Answer</summary>
+
+**What updates.** `flake.lock` pins each input to a commit and a content hash
+(`narHash`). On 2026-10-20 an update would have moved nixpkgs (the
+`nixos-26.05` channel) by 2,963 commits, six weeks' worth, taking the kernel
+from 7.2.3 to 7.3, systemd from 260.2 to 260.5 and Nix from 2.34.8 to 2.34.9.
+It would also have moved sops-nix, comin, disko and home-manager. Six weeks of
+missed security fixes is itself the larger risk.
+
+**What Shai-Hulud did.** The npm worm of 2025 and its 2026 waves spread through
+install scripts that ran with developers' credentials, through hijacked
+maintainer accounts (keyv, August 2026), through poisoned CI (continuous
+integration) caches and publishing tokens (May 2026), and through GitHub
+Actions referenced by tag, which ran the malware again when two compromised
+action repositories came back online (September 2026).
+
+**What Nix already blocks.** Nothing an input contains runs on the
+workstation at install time with your credentials. A pin is a commit plus a
+hash, so a moved tag or a republished version cannot change what arrives.
+nixpkgs' channel only advances after Hydra, NixOS's build farm, has built and
+tested it, and the binaries come signed by cache.nixos.org's key. CI pins its
+Actions by commit, which is what defeats the September attack.
+
+**What is still exposed.**
+
+- Inputs other than nixpkgs are small repositories with one or a few
+  maintainers, and their code runs as root on the nuc: comin deploys, sops-nix
+  decrypts at boot. A hijacked maintainer account becomes root on the nuc at
+  the next update. On 2026-10-20 disko's newest commit was hours old.
+- The update workflow needs a token that can open pull requests, and `main`'s
+  ruleset needs a green check but no approval, so anything holding that token
+  could open and merge a malicious update, which comin would deploy.
+- "Confirmed safe" is not something anyone issues. A pin guarantees you get
+  what was reviewed, not that it was good.
+
+**What #17 does about it.** nixpkgs updates weekly; the other inputs monthly,
+and only to commits at least seven days old, since compromised releases have
+usually been caught within days. The job that runs Nix and the new inputs has
+a read-only token; the job that opens the pull request runs no third-party
+code and refuses a lock that adds inputs or points one at another repository.
+Each pull request lists every input's source diff, the package changes (`nix
+store diff-closures`) and the change in CVEs (Common Vulnerabilities and
+Exposures) reported by vulnix. The CVE list informs rather than blocks: vulnix
+matches package names against the NVD (National Vulnerability Database) and
+does not know which fixes nixpkgs has patched in, so on 2026-10-20 it reported
+100 CVE ids against 21 packages in the nuc's runtime closure. The update of
+that day would have taken it to 43, adding none, mostly through new openssl,
+curl, libxml2, pcre2 and unbound releases. Nothing merges by itself, and GitHub's email for each new pull request carries the summary.
+Alerts on a phone are ticket 2.5 (#20). See `docs/runbooks/updates.md`.
+
+</details>
+
+### What does Determinate Systems' update-flake-lock action offer over our own?
+
+*2026-10-20*
+
+> What's the benefit of the determinate systems package compared to a home
+> brewed solution?
+
+<details>
+<summary>Answer</summary>
+
+Read at its release v29 (2026-09-09), the action is a compiled Node.js bundle
+that runs `nix flake update` and commits, plus five more third-party actions
+(GPG key import, two file read and write helpers, a template renderer and
+`peter-evans/create-pull-request`), each pinned by commit.
+
+**For it:** it is mature and maintained; it keeps one pull request and updates
+it each week; its pull request lists each input's old and new revision; it can
+sign commits; and maintaining it means bumping one pin.
+
+**Against it, here:** all six run in one job that holds the token able to open,
+and with our ruleset merge, pull requests, and GitHub cannot give steps of one
+job different permissions. The bundle is built JavaScript, so a version bump is
+hard to review. It always takes each input's newest commit, so it cannot apply
+a monthly cooldown, and it reports neither package nor CVE changes.
+
+**Our own** is under 300 lines of Python and a workflow that we maintain. The
+job with the write token runs only GitHub's checkout and artifact actions, git,
+`gh` and that script. The action suits a repository whose merges have a strong
+gate; ours needs only a green check.
+
+</details>

@@ -1,0 +1,121 @@
+# Weekly flake.lock update pull request, ticket 2.2 (#17). See
+# docs/runbooks/updates.md and ADR (Architecture Decision Record) 0003.
+#
+# Two jobs, so the token that can open pull requests never runs anyone else's
+# code. `update` installs Nix and runs it, which fetches and evaluates the new
+# inputs, with a read-only token. `pr` holds the write token and runs only
+# GitHub's own checkout and artifact actions, git, `gh` and this repo's
+# scripts/flake_update.py, on the runner's own Python. It refuses a lock that
+# adds inputs or moves one to a different repository.
+#
+# nixpkgs moves to the head of its channel every week. The other inputs move
+# monthly, on the first run of each month, and only to commits at least seven
+# days old: compromised releases have usually been caught within days.
+#
+# A pull request opened with GITHUB_TOKEN does not start other workflows, so CI
+# (continuous integration) does not run on it until someone closes and reopens
+# it. That is deliberate for now; a machine account (#61) would remove it.
+name: Update flake.lock
+
+on:
+  schedule:
+    # Mondays 06:00 UTC (Coordinated Universal Time). GitHub may start it late.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      others:
+        description: Also update inputs other than nixpkgs (seven-day cooldown)
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: update-flake-lock
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.update.outputs.changed }}
+    steps:
+      # Pinned by commit, as in ci.yml; the comment records the tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+
+      - name: Update the lock and write the report
+        id: update
+        env:
+          # Read-only; raises the GitHub API rate limit for the cooldown lookups.
+          GITHUB_TOKEN: ${{ github.token }}
+          OTHERS: ${{ github.event_name == 'workflow_dispatch' && inputs.others }}
+        run: |
+          set -euo pipefail
+          args=(--out "$RUNNER_TEMP/out")
+          # Monthly: the first scheduled run of the month, or on request.
+          if [ "$OTHERS" = true ] || { [ "$GITHUB_EVENT_NAME" = schedule ] && [ "$(date -u +%-d)" -le 7 ]; }; then
+            args+=(--others)
+          fi
+          nix develop --command python3 -I scripts/flake_update.py update "${args[@]}"
+          echo "changed=$(cat "$RUNNER_TEMP/out/changed")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.update.outputs.changed == 'true'
+        with:
+          name: flake-lock
+          path: |
+            ${{ runner.temp }}/out/flake.lock
+            ${{ runner.temp }}/out/report.md
+          retention-days: 7
+
+  pr:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      BRANCH: update/flake-lock
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: flake-lock
+          path: ${{ runner.temp }}/in
+
+      - name: Check the new lock and write the pull request body
+        run: |
+          python3 -I scripts/flake_update.py check \
+            --old flake.lock --new "$RUNNER_TEMP/in/flake.lock" \
+            --report "$RUNNER_TEMP/in/report.md" --body "$RUNNER_TEMP/body.md"
+
+      - name: Push the branch and open or update the pull request
+        run: |
+          set -euo pipefail
+          today=$(date -u +%Y-%m-%d)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          cp "$RUNNER_TEMP/in/flake.lock" flake.lock
+          git add flake.lock
+          git commit -m "Update flake.lock ($today)" -m "Refs #17"
+          git push --force origin "$BRANCH"
+          title="Update flake.lock ($today)"
+          pr=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --base main --head "$BRANCH" --title "$title" \
+              --body-file "$RUNNER_TEMP/body.md" --label dependencies
+          fi

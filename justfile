@@ -24,6 +24,10 @@ check:
     # Public License) text and aligned Python continuation lines are correct
     # but not multiples of it.
     editorconfig-checker -disable-indent-size
+    # Workflow syntax, expressions and permissions, and shellcheck on every
+    # `run:` script. Fails if shellcheck is missing rather than skipping it.
+    command -v shellcheck >/dev/null
+    actionlint
 
 # Run one VM test under software emulation, no KVM: slower, but avoids #80.
 vm-test-tcg test:

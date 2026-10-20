@@ -88,6 +88,8 @@
           ssh-to-age # host SSH key -> age recipient, needed by ticket 1.7 (#14)
           nixfmt-tree # the formatter, also reachable as `nix fmt`
           editorconfig-checker # enforces .editorconfig in `just check`
+          actionlint # lints .github/workflows in `just check`
+          shellcheck # actionlint runs it on each workflow's `run:` scripts
           nixos-anywhere # bare-metal install, ticket 1.6 (#13)
           nixos-rebuild # manual deploy escape hatch, `just deploy`
         ];
