@@ -57,9 +57,12 @@ Everything in install.md's "Before" section, and:
 
 - The Tailscale admin console is open in a browser.
 - The workstation key's passphrase is to hand: re-encrypting asks for it.
-- `nmap` is installed in WSL (Windows Subsystem for Linux), for step 11; the
-  dev shell does not provide it.
-- WSL's swap is off, so the host key cannot be written to disk:
+- If the ops key is in an agent with a lifetime (`ssh-add -t`), the lifetime
+  covers the whole procedure. On 2026-10-19 a two-hour lifetime ran out twice,
+  and each time the next `ssh` failed with `Permission denied` until the key
+  was added again. `ssh-add -l` shows whether it is still there.
+- Swap is off in WSL (Windows Subsystem for Linux), so the host key cannot be
+  written to disk:
 
   ```bash
   sudo swapoff -a; cat /proc/swaps   # expect only the header line
@@ -194,14 +197,14 @@ ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no root@nuc.home.ar
 ```
 
 Expect the private key `-rw------- root root`, and the fingerprint noted in
-step 1. Pull the USB stick and reboot. At the prompt on the nuc's screen, type
+step 1. Reboot (`reboot` at the console, or `systemctl reboot` over the same
+SSH), and pull the USB stick. At the prompt on the nuc's screen, type
 the passphrase.
 
 ## 9. On the tailnet by itself
 
-Shortly after the passphrase (time it; the record wants the number), the nuc
-appears on the Machines page as `nuc`, tagged `tag:server`, with key expiry
-disabled. Then, from WSL:
+Shortly after the passphrase, the nuc appears on the Machines page as `nuc`,
+tagged `tag:server`, with key expiry disabled. Then, from WSL:
 
 ```bash
 ssh nuc 'echo $SSH_CONNECTION'   # third field: the nuc's new 100.x address
@@ -211,6 +214,14 @@ It logs in with no host key prompt: `known_hosts` already holds the key from
 step 6. A prompt here, or `REMOTE HOST IDENTIFICATION HAS CHANGED`, means the
 nuc is not presenting the key made in step 1. Stop and find out why before
 answering it.
+
+The time from passphrase to tailnet, for the record, is in the boot's own
+journal, in seconds since the kernel started: from the disk unlocking to
+`tailscaled-autoconnect` finishing.
+
+```bash
+ssh nuc 'journalctl -b -o short-monotonic -u systemd-cryptsetup@cryptroot -u tailscaled-autoconnect --no-pager | grep -E "Finished|Deactivated"'
+```
 
 If the nuc never joins, the console is the only way in: add
 ` systemd.debug_shell` at the boot menu (install.md, "If the first boot
@@ -266,14 +277,16 @@ ssh nuc 'systemctl is-system-running; systemctl --failed --no-legend'
 **The firewall is closed on the LAN**, as [network.md](network.md) checks it:
 
 ```bash
-nmap -Pn -p- --min-rate 3000 --max-retries 1 nuc.home.arpa
+nix shell nixpkgs#nmap -c nmap -Pn -p- --min-rate 3000 --max-retries 1 nuc.home.arpa
 # expect "Not shown: 65535 filtered tcp ports"
 ```
 
 A scan that gives up also reports no open ports, so the "Not shown" line,
 counting every port, is the check. Scan the nuc's IPv6 address too
-(`ssh nuc ip -6 -br addr show lan0`), expecting nothing open. WSL has no IPv6
-route to the LAN, so that scan runs from Windows, by network.md's method.
+(`ssh nuc ip -6 -br addr show lan0`, the address with `ff:fe` in it),
+expecting nothing open. WSL has no IPv6 route to the LAN and Windows has no
+nmap, so that scan is network.md's PowerShell sweep, with its check that the
+probes arrived.
 
 Note the end time here.
 
@@ -286,8 +299,8 @@ ssh nuc "nix flake check github:alexCranfield/nixos-homeserver/$rev"
 
 This runs the VM tests on the nuc's own KVM (Kernel-based Virtual Machine),
 which, unlike the workstation's, is not nested (#80), so a `disk-tpm` failure
-here is a real one. Expect it to take a while: on the workstation the
-`network` test alone takes about twenty minutes.
+here is a real one. On 2026-10-19 the whole check took about five minutes
+there; on the workstation the `network` test alone takes about twenty.
 
 ## If the host key is lost
 
@@ -306,13 +319,14 @@ is gone but `.sops.yaml` and every secret already name its recipient.
 
 Add a column for each reinstall.
 
-| | |
+| | 2026-10-19 |
 |---|---|
-| Date | |
-| Installed from | `main` at |
-| Time, step 1 to the end of the smoke tests | |
-| Passphrase to on the tailnet (step 9) | |
-| Host key fingerprint | |
-| Smoke tests | |
-| `nix flake check` on the nuc | |
-| Surprises | |
+| Date | 2026-10-19; times are MDT (Mountain Daylight Time) |
+| Installed from | `main` at `c981f8e`, NixOS `26.05.20260907.93108a5`, kernel 7.2.3; nixos-anywhere 1.13.0 |
+| Time, step 1 to the end of the smoke tests | 4 h 18 min elapsed (17:55 to 22:13), of which about 73 min was work: 17:55 to 18:28 (steps 1 to 8, the install itself 73 s), then a break of three hours with the live USB waiting at step 8, then 21:33 to 22:13. Over the one-hour goal even so. About 16 min of it passed between the reboot (21:46) and the passphrase (about 22:03); without that wait, about 57 min |
+| Passphrase to on the tailnet (step 9) | about 17 s: the disk unlocked 24.3 s after the kernel started, `tailscaled-autoconnect` finished at 41.1 s |
+| Host key fingerprint | `SHA256:7MWBj+G4Zswf1M7p3G14ZuzfWQYrd13fXf4Sfzu6ad4`, as in `.sops.yaml`; no host key prompt at the first `ssh nuc` |
+| TPM unlock (step 10) | slots `password` and `tpm2`; the unattended boot unlocked the disk 2.0 s after the kernel started (0.47 s for the unlock itself) and was back on SSH 33 s after the reboot command; PCR (Platform Configuration Register) 7 on the live USB `f18e3c69…eedcc9`, unchanged from 2026-10-18 |
+| Smoke tests | all passed. SSH from a tailnet address; the test secret read back and the auth key present; kernel 7.2.3 from `uname`, the flake and `linuxPackages_latest`; `running`, no failed units; LAN IPv4: 65,535 filtered; LAN IPv6, the ULA (unique local address): `open: none` from Windows, with 131,104 IPv6 packets and 3 pings counted on the nuc |
+| `nix flake check` on the nuc | all checks passed, about 5 min, `disk-tpm` included |
+| Surprises | The agent's two-hour key lifetime ran out twice (see "Before"). The firmware again put the new boot entry after the USB stick, and left the first install's two entries pointing at the wiped ESP (EFI System Partition); both deleted, as install.md step 5 says. nmap is in neither WSL nor Windows, which this runbook had wrong. The tailnet address changed (the old entry was removed), which `ssh nuc` does not notice, since it goes by name. Issue #15 had closed itself when the runbook's PR merged, before this run; it was reopened |
