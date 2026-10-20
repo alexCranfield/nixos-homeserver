@@ -249,8 +249,8 @@ passphrase, a copy taken from a backup, or by malware on Windows (which can read
 the WSL home directory through `\\wsl$`), works straight away. With one, a copy
 is useless until the passphrase is guessed. OpenSSH derives the file's
 encryption key with bcrypt_pbkdf, 16 rounds by default (`ssh-keygen -a` raises
-it): a modest slowdown per guess, far less than LUKS's Argon2id, so the
-passphrase itself has to be decent.
+it): a modest slowdown per guess, far less than the Argon2id of LUKS (Linux
+Unified Key Setup), so the passphrase itself has to be decent.
 
 It costs little: `ssh-keygen -p -f ~/.ssh/id_nuc` re-encrypts only the private
 file, so the public key, `keys/ops.pub`, stays the same. `ssh-add` asks for it
@@ -396,5 +396,33 @@ earlier generation at the boot menu.
 `users.mutableUsers` is still `true`, so someone with root could add a password
 that survives rebuilds; setting it `false` is noted on the security review,
 #45.
+
+</details>
+
+### Does a reinstall need a new disk passphrase?
+
+*2026-10-19*
+
+> For step 4 should I use a new passphrase or is the old one okay?
+
+<details>
+<summary>Answer</summary>
+
+The old one is fine. A passphrase needs changing for a reason, and a reinstall
+is not one:
+
+- It has only ever been typed at the nuc's console. The one that went through a
+  file on the workstation was the failed first attempt of 2026-10-18, and it was
+  wiped.
+- The wipe does not expose it. disko writes a new LUKS header, with a new
+  volume key, so nothing left on the disk from the old install can be opened
+  with it.
+- It is already in the password manager and the offline backup. A new one
+  means updating both before the install: one more step, with room for a
+  mismatch.
+
+Change it if it might have been exposed: written down somewhere untrusted, seen
+by someone, or used elsewhere. Either way, it is typed twice at the console
+(install.md step 3).
 
 </details>
