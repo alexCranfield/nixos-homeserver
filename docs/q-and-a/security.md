@@ -367,8 +367,8 @@ Neither identity in that step asked for a new passphrase.
   passphrase.
 
 A passphrase on the nuc's key would defeat its purpose: nobody is there to type
-it at boot. Its protection is the encrypted disk (ADR 0009) and the TPM
-(Trusted Platform Module) unlock instead.
+it at boot. Its protection is the encrypted disk (ADR 0009) and the TPM unlock
+instead.
 
 </details>
 
