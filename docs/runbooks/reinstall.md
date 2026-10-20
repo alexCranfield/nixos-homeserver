@@ -323,7 +323,7 @@ Add a column for each reinstall.
 |---|---|
 | Date | 2026-10-19; times are MDT (Mountain Daylight Time) |
 | Installed from | `main` at `c981f8e`, NixOS `26.05.20260907.93108a5`, kernel 7.2.3; nixos-anywhere 1.13.0 |
-| Time, step 1 to the end of the smoke tests | 4 h 18 min elapsed (17:55 to 22:13), of which about 73 min was work: 17:55 to 18:28 (steps 1 to 8, the install itself 73 s), then a break of three hours with the live USB waiting at step 8, then 21:33 to 22:13. Over the one-hour goal even so. About 16 min of it passed between the reboot (21:46) and the passphrase (about 22:03); without that wait, about 57 min |
+| Time, step 1 to the end of the smoke tests | 4 h 18 min elapsed (17:55 to 22:13), of which about 73 min was work: 17:55 to 18:28 (steps 1 to 8, the install itself 73 s), then a break of three hours with the live USB waiting at step 8, then 21:33 to 22:13. Over the one-hour goal even so. About 17 min of it passed between the reboot (21:46) and the passphrase (about 22:03); without that wait, about 56 min |
 | Passphrase to on the tailnet (step 9) | about 17 s: the disk unlocked 24.3 s after the kernel started, `tailscaled-autoconnect` finished at 41.1 s |
 | Host key fingerprint | `SHA256:7MWBj+G4Zswf1M7p3G14ZuzfWQYrd13fXf4Sfzu6ad4`, as in `.sops.yaml`; no host key prompt at the first `ssh nuc` |
 | TPM unlock (step 10) | slots `password` and `tpm2`; the unattended boot unlocked the disk 2.0 s after the kernel started (0.47 s for the unlock itself) and was back on SSH 33 s after the reboot command; PCR (Platform Configuration Register) 7 on the live USB `f18e3c69…eedcc9`, unchanged from 2026-10-18 |

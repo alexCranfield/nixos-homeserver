@@ -144,17 +144,18 @@ that as well. The UniFi router advertises a ULA (unique local address) prefix,
 it. Find it with `ip -6 -br addr show lan0` on the nuc, then:
 
 ```bash
-nmap -6 -Pn -p- -T4 <the nuc's ULA address>   # expect the same: nothing open
+nmap -6 -Pn -p- -T4 <ULA address of the nuc>   # from a machine with nmap: expect nothing open
 ```
 
-That needs a machine with an IPv6 route to the LAN. The workstation's WSL, in
+That needs a machine with nmap and an IPv6 route to the LAN. The workstation's WSL, in
 its default NAT (network address translation) mode, has none; Windows itself
-does, but has no nmap. So the scan runs from Windows PowerShell instead, as a
+does, but has no nmap. So the scan runs from Windows PowerShell 5.1 instead (in
+PowerShell 7, `Test-Connection` shows `Latency` rather than `ResponseTime`), as a
 TCP connect to every port, 2,000 at a time, with a 1.5 second wait. A dropped
 probe never connects, so only ports that complete the handshake count as open:
 
 ```powershell
-$a = '<the nuc's ULA address>'
+$a = '<ULA address of the nuc>'
 Test-Connection -ComputerName $a -Count 3 | Select-Object Address, ResponseTime
 $open = @()
 for ($s = 1; $s -le 65535; $s += 2000) {
@@ -176,7 +177,8 @@ ssh nuc 'nstat -az Ip6InReceives Icmp6InEchos Icmp6OutEchoReplies'
 
 The counters run from the nuc's last boot. On 2026-10-19, with one scan and
 three pings since the boot, they read 131,104 IPv6 packets received, about two
-per port (Windows retries an unanswered connect), and 3 echo requests
+per port (presumably Windows resending each unanswered SYN within the 1.5 s
+wait), and 3 echo requests
 answered.
 
 Docker publishes container ports around this firewall (ADR 0006), so the scan
