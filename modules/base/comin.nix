@@ -12,17 +12,19 @@
 #  - No testing branch. By default comin also deploys `testing-<hostname>`,
 #    with `switch-to-configuration test`. Any push to that branch would reach
 #    the host without a pull request, review or CI (continuous integration),
-#    which is the gate the `main` ruleset exists to enforce. An empty name
-#    makes comin skip the branch.
+#    which is the gate the `main` ruleset exists to enforce. With an empty
+#    name comin never selects or deploys it (it still fetches every branch).
 #  - No commit signature check. Squash merges are committed by GitHub and
 #    signed with GitHub's own key, so trusting that key only proves a commit
 #    came through GitHub, which the ruleset already ensures for `main`.
 #    Requiring Alex's key instead would mean merging locally and pushing to
-#    `main`, which the ruleset forbids. See ADR 0003.
+#    `main`, which the ruleset forbids. Accepted: whoever controls the GitHub
+#    account can deploy as root. See ADR 0003.
 #  - Ten boot entries. comin keeps its deployments in its own profile,
 #    /nix/var/nix/profiles/system-profiles/comin, and deletes all but three
-#    of them by default, which would undercut the ten generations the boot menu
-#    is meant to offer (system.nix).
+#    of them by default. The boot menu's limit of ten (system.nix) applies to
+#    each profile, so ten here gives comin's deploys the same depth as manual
+#    ones. Weekly garbage collection still removes those over 14 days old.
 #  - The metrics exporter on loopback. The firewall already denies it from
 #    outside; binding it to 127.0.0.1 means a firewall mistake cannot expose it.
 #    Phase 3 (#25) may scrape it locally.

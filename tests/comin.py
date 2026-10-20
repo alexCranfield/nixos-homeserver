@@ -36,6 +36,13 @@ with subtest("the metrics exporter listens on loopback only"):
     print(out)
     addrs = [line.split()[3] for line in out.splitlines() if line.strip()]
     assert addrs == ["127.0.0.1:4243"], addrs
+    # And no other TCP port: comin's configuration still has an API server
+    # address, unused in 0.14, which a later version could start listening on.
+    pid = nuc.succeed("systemctl show -P MainPID comin").strip()
+    assert pid not in ("", "0"), pid
+    comin_tcp = nuc.succeed(f"ss -Htlnp | grep -F 'pid={pid},' || true")
+    print(comin_tcp)
+    assert len(comin_tcp.strip().splitlines()) == 1, comin_tcp
 
 with subtest("the real configuration pulls the public repository over HTTPS"):
     # The test VM's remote is local; this is the URL the nuc uses.

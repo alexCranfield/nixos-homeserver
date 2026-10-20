@@ -30,6 +30,14 @@ GitHub-hosted Actions run `nix flake check`, build the system closure and check 
   GitHub makes the squash merges and signs them with its own key, so trusting
   that key proves only that a commit came through GitHub, which the ruleset
   already ensures; requiring Alex's key would mean merging locally and
-  pushing to `main`, which the ruleset forbids. Revisit if `main` ever accepts
-  commits from anywhere but GitHub's merge button. See
-  `docs/runbooks/deploy.md`.
+  pushing to `main`, which the ruleset forbids. The risk accepted is that
+  whoever controls the GitHub account, or GitHub itself, can deploy to the nuc
+  as root; a check against Alex's key is what would have prevented that.
+  Revisit if direct pushes to `main` stop being rare: they have happened, with
+  the ruleset switched off for history rewrites, which comin refuses anyway as
+  not fast-forward, but an ordinary direct push would deploy unsigned.
+- Also as built: comin does not run `nixos-rebuild switch`. It runs
+  `switch-to-configuration` under its own profile,
+  `/nix/var/nix/profiles/system-profiles/comin`, so the `system` profile moves
+  only on a manual deploy, and `nixos-rebuild --rollback` does not undo a comin
+  deploy. Rollback is ticket 2.4 (#19). See `docs/runbooks/deploy.md`.

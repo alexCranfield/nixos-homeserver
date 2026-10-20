@@ -100,8 +100,9 @@ gone, see "If the host key is lost" below.
 
 Do this shortly before the install. comin pulls `main` ([deploy.md](deploy.md)),
 so the merged re-key reaches the old nuc within minutes. The old nuc cannot
-decrypt it, so that deploy is expected to fail and leave the old nuc running on
-the secrets it decrypted at its last boot. It is wiped in step 3, so leave it.
+decrypt it: the switch goes ahead with the secrets from its last successful
+activation, and comin records the deploy as failed ([deploy.md](deploy.md),
+"Is it working?"). It is wiped in step 3, so leave it.
 
 1. In `.sops.yaml`, replace the `&nuc` recipient with the new one. Update its
    comment: the fingerprint, the date, and "made on the workstation at
@@ -275,7 +276,9 @@ ssh nuc 'sudo systemd-cryptenroll /dev/disk/by-partlabel/disk-main-luks; journal
 ssh nuc 'systemctl is-system-running; systemctl --failed --no-legend'
 
 # comin is running and has deployed main: the commit in its deployment
-# matches the remote's (deploy.md).
+# matches the remote's (deploy.md). A fresh install has no comin state, so
+# comin first builds main on the nuc; until that finishes there is no
+# deployment to show, which is not a failure. Repeat after a few minutes.
 ssh nuc 'systemctl is-active comin; comin status'
 git ls-remote origin main
 ```
