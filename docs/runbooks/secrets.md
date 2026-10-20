@@ -310,6 +310,6 @@ grep -q 'SOPS-PROOF-OK: sops-nix bootstrap check' vm.log && echo PASS || echo FA
 
 A failed decrypt prints `SOPS-PROOF-FAILED` and the VM still powers off with
 exit status 0, so anything automating this, such as `just vm-secrets` in ticket
-0.7 (#16), must grep for the `OK` marker rather than trust the exit code.
+0.7 (#7), must grep for the `OK` marker rather than trust the exit code.
 
 The VM writes `nuc.qcow2` into the working directory, hence the `mktemp -d`.

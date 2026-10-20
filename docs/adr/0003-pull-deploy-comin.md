@@ -23,3 +23,21 @@ GitHub-hosted Actions run `nix flake check`, build the system closure and check 
   is a required status check on `main`, so a red pull request cannot merge.
   The weekly `flake.lock` pull request is ticket 2.2 and does not exist yet.
   See `docs/runbooks/ci.md`.
+- As built (ticket 2.1, #16, 2026-10-20): `modules/base/comin.nix` polls
+  `main` every 60 seconds over HTTPS. comin's testing branch is turned off,
+  since a push to `testing-nuc` would deploy without a pull request; the flake
+  check `comin` confirms it is ignored. Commit signatures are not checked.
+  GitHub makes the squash merges and signs them with its own key, so trusting
+  that key proves only that a commit came through GitHub, which the ruleset
+  already ensures; requiring Alex's key would mean merging locally and
+  pushing to `main`, which the ruleset forbids. The risk accepted is that
+  whoever controls the GitHub account, or GitHub itself, can deploy to the nuc
+  as root; a check against Alex's key is what would have prevented that.
+  Revisit if direct pushes to `main` stop being rare: they have happened, with
+  the ruleset switched off for history rewrites, which comin refuses anyway as
+  not fast-forward, but an ordinary direct push would deploy unsigned.
+- Also as built: comin does not run `nixos-rebuild switch`. It runs
+  `switch-to-configuration` under its own profile,
+  `/nix/var/nix/profiles/system-profiles/comin`, so the `system` profile moves
+  only on a manual deploy, and `nixos-rebuild --rollback` does not undo a comin
+  deploy. Rollback is ticket 2.4 (#19). See `docs/runbooks/deploy.md`.

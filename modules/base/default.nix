@@ -13,7 +13,8 @@
 # Split by concern: ssh.nix (the ops account and sshd), firewall.nix (default
 # deny), tailscale.nix (admin access over the tailnet), nix.nix (Nix settings
 # and garbage collection), system.nix (clock, bootloader retention, tools),
-# vm.nix (SSH into `just vm`, which changes nothing on a real host).
+# comin.nix (deploys itself from `main`), vm.nix (SSH into `just vm`, which
+# changes nothing on a real host).
 # Hardware-specific settings, such as the kernel series and CPU microcode,
 # belong to the host.
 { lib, inputs, ... }:
@@ -25,6 +26,7 @@
     ./tailscale.nix
     ./nix.nix
     ./system.nix
+    ./comin.nix
     ./vm.nix
   ];
 
