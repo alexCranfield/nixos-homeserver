@@ -42,17 +42,18 @@ GitHub-hosted Actions run `nix flake check`, build the system closure and check 
   only on a manual deploy, and `nixos-rebuild --rollback` does not undo a comin
   deploy. Rollback is ticket 2.4 (#19). See `docs/runbooks/deploy.md`.
 - As built (ticket 2.2, #17, 2026-10-20):
-  `.github/workflows/update-flake-lock.yml` opens the weekly pull request, written in this repo rather than taken from
-  Determinate Systems' `update-flake-lock` action. That action runs a compiled
-  bundle and five more third-party actions in the job holding the token that
-  opens pull requests, and since the ruleset needs no approval, that token can
-  also merge a green one, which comin then deploys as root. Here the job that
-  runs Nix and fetches the new inputs has a read-only token, and the job with
-  the write token runs no third-party code and refuses a lock that adds an
-  input or moves one to another repository. nixpkgs moves weekly; the other
-  inputs monthly, and only to commits at least seven days old. Nothing merges
-  by itself: auto-merge stays off until a month of these pull requests has
-  been seen, and is not planned for inputs other than nixpkgs. Pull requests
-  opened by the workflow do not start CI until someone closes and reopens
-  them; a machine account (#61) would change that. See
-  `docs/runbooks/updates.md`.
+  `.github/workflows/update-flake-lock.yml` opens the weekly pull request,
+  written in this repo rather than taken from Determinate Systems'
+  `update-flake-lock` action. That action runs a compiled bundle and five more
+  third-party actions in the job holding the token that opens pull requests, and
+  since the ruleset needs no approval, that token can also merge a green one,
+  which comin then deploys as root. Here the job that runs Nix and fetches the
+  new inputs has a read-only token, and the job with the write token runs no
+  third-party code and refuses a lock that changes anything but each input's
+  commit and hash, or whose new commits do not descend from the old ones on the
+  input's branch. nixpkgs moves weekly; the other inputs monthly, to what their
+  branch held at least seven days earlier by GitHub's push log. Nothing merges
+  by itself: auto-merge stays off until a month of these pull requests has been
+  seen, and is not planned for inputs other than nixpkgs. Pull requests opened
+  by the workflow do not start CI until someone closes and reopens them; a
+  machine account (#61) would change that. See `docs/runbooks/updates.md`.

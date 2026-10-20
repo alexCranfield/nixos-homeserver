@@ -6,11 +6,14 @@
 # inputs, with a read-only token. `pr` holds the write token and runs only
 # GitHub's own checkout and artifact actions, git, `gh` and this repo's
 # scripts/flake_update.py, on the runner's own Python. It refuses a lock that
-# adds inputs or moves one to a different repository.
+# differs from main's in anything but each node's commit and hash, or whose new
+# commits do not descend from the old ones on the branch each input follows.
 #
 # nixpkgs moves to the head of its channel every week. The other inputs move
-# monthly, on the first run of each month, and only to commits at least seven
-# days old: compromised releases have usually been caught within days.
+# monthly, on the first run of each month, and only to what their branch held
+# at least seven days ago by GitHub's push log, not by commit dates, which the
+# committer sets. The delay is a bet that a hijacked release is noticed and
+# reverted first; it is not a guarantee.
 #
 # A pull request opened with GITHUB_TOKEN does not start other workflows, so CI
 # (continuous integration) does not run on it until someone closes and reopens
@@ -62,6 +65,13 @@ jobs:
           # Monthly: the first scheduled run of the month, or on request.
           if [ "$OTHERS" = true ] || { [ "$GITHUB_EVENT_NAME" = schedule ] && [ "$(date -u +%-d)" -le 7 ]; }; then
             args+=(--others)
+          # Or when last run's pull request, still unmerged, moved them: this
+          # run replaces it, and would otherwise drop them until next month.
+          elif git fetch --depth=1 origin update/flake-lock; then
+            git show FETCH_HEAD:flake.lock > "$RUNNER_TEMP/pr.lock"
+            if python3 -I scripts/flake_update.py carry --main flake.lock --pr "$RUNNER_TEMP/pr.lock"; then
+              args+=(--others)
+            fi
           fi
           nix develop --command python3 -I scripts/flake_update.py update "${args[@]}"
           echo "changed=$(cat "$RUNNER_TEMP/out/changed")" >> "$GITHUB_OUTPUT"
@@ -77,7 +87,9 @@ jobs:
 
   pr:
     needs: update
-    if: needs.update.outputs.changed == 'true'
+    # From main only: run from another branch, the pull request would carry
+    # that branch's commits under a description that lists only the lock.
+    if: needs.update.outputs.changed == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -95,6 +107,9 @@ jobs:
           path: ${{ runner.temp }}/in
 
       - name: Check the new lock and write the pull request body
+        env:
+          # For the GitHub API comparisons that check each new commit.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python3 -I scripts/flake_update.py check \
             --old flake.lock --new "$RUNNER_TEMP/in/flake.lock" \

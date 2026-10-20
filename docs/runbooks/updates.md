@@ -16,16 +16,23 @@ a minute ([deploy.md](deploy.md)).
 - **nixpkgs, weekly.** It moves to the head of the `nixos-26.05` channel,
   which only advances once Hydra, NixOS's build farm, has built and tested it.
 - **The other inputs, monthly.** On the first Monday of the month (day 1 to 7)
-  sops-nix, comin, disko and home-manager each move to the newest commit on
-  their branch that is at least seven days old, never to a fresh one. Their
-  code runs as root on the nuc, and they are small projects where a hijacked
-  maintainer account is the likeliest attack; a compromised release has
-  usually been caught within days.
+  sops-nix, comin, disko and home-manager each move to what their branch held
+  at least seven days ago. The age comes from GitHub's activity log, which
+  records when each push arrived, not from commit dates, which the committer
+  sets and an attacker can backdate. Their code runs as root on the nuc, and
+  they are small projects where a hijacked maintainer account is the likeliest
+  attack. The delay is a bet that such a release is noticed and reverted
+  within a week; it is not a guarantee, so read the diffs anyway.
+- **Monthly updates are not dropped.** If last week's pull request, still
+  open, moved those inputs, this week's run moves them again rather than
+  replacing the pull request with a nixpkgs-only one.
 - **Nothing to do, nothing opened.** A week with no change opens no pull
   request.
 
 The workflow keeps one pull request, from the branch `update/flake-lock`, and
-replaces its commit and description at each run while it is open.
+replaces its commit and description at each run while it is open. It
+force-pushes that branch, so a commit added to it by hand is lost at the next
+run.
 
 ## Reviewing one
 
@@ -61,14 +68,22 @@ code (ADR 0003):
 - **`update`, read-only token.** Installs Nix and runs
   `scripts/flake_update.py update`: `nix flake update nixpkgs`, then, monthly,
   `nix flake lock --override-input <name> github:<owner>/<repo>/<commit>` per
-  input, with the commit picked from the GitHub API. It builds the old and the
-  new system to compare them and runs vulnix, then hands the lock and a report
-  to the next job as an artifact.
-- **`pr`, write token.** Runs only GitHub's checkout and artifact actions, git,
-  `gh` and `scripts/flake_update.py check` on the runner's own Python. `check`
-  refuses a lock that adds or removes inputs or moves any input, or input of
-  an input, to a different repository, and writes the description from the
-  old and new locks itself.
+  input, with the commit picked from the activity log and confirmed to descend
+  from the locked one on the input's branch. It builds the old and the new
+  system to compare them and runs vulnix, then hands the lock and a report to
+  the next job as an artifact.
+- **`pr`, write token, from `main` only.** Runs only GitHub's checkout and
+  artifact actions, git, `gh` and `scripts/flake_update.py check` on the
+  runner's own Python. `check` refuses a lock that differs from `main`'s in
+  anything but each node's `rev`, `narHash` and `lastModified`: no new,
+  removed or renamed node, no changed wiring between inputs, no other host,
+  owner or repository. Commit ids and hashes must be well formed, and every
+  moved commit must descend from the old one and still be on the branch the
+  input follows, which rules out a commit that exists only in a fork. It then
+  writes the description from the two locks itself.
+
+If an input's own lock gains or loses an input, `check` refuses that week's
+update; update it by hand in a reviewed pull request.
 
 `main`'s ruleset needs a green check but no approval, so anything holding a
 write token could merge a green pull request, and comin would deploy it. That

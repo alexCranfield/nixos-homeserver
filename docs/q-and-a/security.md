@@ -97,7 +97,8 @@ No. The instinct is right but the remedy costs more than it buys.
   credentials (ADR 0003). A private secrets repo means a deploy key on an
   unattended machine that rebuilds itself from the network.
 - **It breaks reproducibility.** The private repo becomes a flake input, so
-  public CI cannot evaluate the flake and nobody can build what they are reading.
+  public CI (continuous integration) cannot evaluate the flake and nobody can
+  build what they are reading.
 - **It defeats the reason for choosing sops**, whose whole premise is that
   encrypted values are safe beside the code.
 - **Two repos must move in lockstep.** A secret is declared in one and its
@@ -453,10 +454,17 @@ missed security fixes is itself the larger risk.
 
 **What Shai-Hulud did.** The npm worm of 2025 and its 2026 waves spread through
 install scripts that ran with developers' credentials, through hijacked
-maintainer accounts (keyv, August 2026), through poisoned CI (continuous
-integration) caches and publishing tokens (May 2026), and through GitHub
-Actions referenced by tag, which ran the malware again when two compromised
-action repositories came back online (September 2026).
+maintainer accounts (keyv, August 2026), through poisoned CI caches and
+publishing tokens (May 2026), and through GitHub Actions referenced by tag,
+which ran the malware again when two compromised action repositories came back
+online (September 2026). These dates and details come from security vendors'
+write-ups
+([Akamai](https://www.akamai.com/blog/security-research/mini-shai-hulud-worm-returns-goes-public),
+[Sygnia](https://www.sygnia.co/threat-reports-and-advisories/shai-hulud-returns-software-supply-chain-attack-npm-keyv/),
+[Singapore's CSA (Cyber Security
+Agency)](https://www.csa.gov.sg/alerts-and-advisories/advisories/ad-2026-009/),
+[Aviatrix](https://aviatrix.ai/threat-research-center/compromised-github-actions-mini-shai-hulud-malware-2026/)),
+not from npm's or GitHub's own reports.
 
 **What Nix already blocks.** Nothing an input contains runs on the
 workstation at install time with your credentials. A pin is a commit plus a
@@ -478,10 +486,14 @@ Actions by commit, which is what defeats the September attack.
   what was reviewed, not that it was good.
 
 **What #17 does about it.** nixpkgs updates weekly; the other inputs monthly,
-and only to commits at least seven days old, since compromised releases have
-usually been caught within days. The job that runs Nix and the new inputs has a
-read-only token; the job that opens the pull request runs no third-party code
-and refuses a lock that adds inputs or points one at another repository. Each
+and only to what their branch held at least seven days earlier, measured by
+GitHub's log of when each push arrived rather than by commit dates, which an
+attacker can backdate. The delay is a bet that a hijacked release is noticed and
+reverted within a week, not a guarantee. The job that runs Nix and the new
+inputs has a read-only token; the job that opens the pull request runs no
+third-party code and refuses a lock that changes anything but each input's
+commit and hash, or whose new commits are not descendants of the old ones on the
+input's branch, which also rules out a commit that exists only in a fork. Each
 pull request lists every input's source diff, the package changes (`nix store
 diff-closures`) and the change in CVEs (Common Vulnerabilities and Exposures)
 reported by vulnix. The CVE list informs rather than blocks: vulnix matches

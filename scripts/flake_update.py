@@ -4,14 +4,15 @@
 Two subcommands, one per job of .github/workflows/update-flake-lock.yml:
 
   update  Runs with a read-only token. Moves nixpkgs to the head of its
-          channel and, when asked, every other direct input to its newest
-          commit at least COOLDOWN days old. Writes the new lock and a report
-          (package changes and the CVE (Common Vulnerabilities and Exposures)
-          difference) to --out.
+          channel and, when asked, every other direct input to the newest
+          commit pushed to its branch at least COOLDOWN days ago. Writes the
+          new lock and a report (package changes and the CVE (Common
+          Vulnerabilities and Exposures) difference) to --out.
   check   Runs in the job that holds the write token, which runs no
-          third-party code. Refuses a lock from `update` that adds or removes
-          inputs or points one at a different repository, then writes the pull
-          request body from the old and new locks.
+          third-party code. Refuses a new lock that differs from the old one
+          in anything but each node's rev, narHash and lastModified, or whose
+          new commits are not descendants of the old ones on the branch the
+          input follows. Then writes the pull request body from the two locks.
 
 Standard library only, so the write-token job needs nothing but the runner's
 own Python. Run with `python3 -I`.
@@ -23,8 +24,10 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 
 NIXPKGS = "nixpkgs"
@@ -33,6 +36,15 @@ TOPLEVEL = ".#nixosConfigurations.nuc.config.system.build.toplevel"
 REPORT_LIMIT = 50_000
 # diff-closures colours its sizes even when piped.
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
+# The only locked fields an update may change, and their formats.
+MOVABLE = {
+    "rev": re.compile(r"[0-9a-f]{40}"),
+    "narHash": re.compile(r"sha256-[A-Za-z0-9+/]{43}="),
+}
+
+# Read once and kept out of the environment, so the read-only token reaches
+# the GitHub API lookups and not every program this script starts.
+TOKEN = os.environ.pop("GITHUB_TOKEN", None)
 
 
 def log(msg):
@@ -48,36 +60,74 @@ def load(path):
     return json.loads(pathlib.Path(path).read_text())
 
 
+def utc(ts):
+    return datetime.datetime.fromtimestamp(ts, datetime.UTC)
+
+
 def direct_inputs(lock):
-    """Direct inputs of the flake, name -> node, as flake.lock records them."""
+    """Direct inputs, name -> node. A `follows` entry (a list) is skipped."""
     nodes = lock["nodes"]
-    return {name: nodes[ref] for name, ref in nodes["root"]["inputs"].items()}
+    return {
+        name: nodes[ref]
+        for name, ref in nodes["root"]["inputs"].items()
+        if isinstance(ref, str)
+    }
 
 
 def github(path):
     req = urllib.request.Request(f"https://api.github.com{path}")
     req.add_header("Accept", "application/vnd.github+json")
-    token = os.environ.get("GITHUB_TOKEN")
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
+    if TOKEN:
+        req.add_header("Authorization", f"Bearer {TOKEN}")
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.load(resp)
 
 
-def cooled_commit(original, cooldown):
-    """Newest commit on the input's branch that is at least `cooldown` old."""
+def branch_of(original):
     owner, repo = original["owner"], original["repo"]
-    branch = original.get("ref") or github(f"/repos/{owner}/{repo}")["default_branch"]
-    until = datetime.datetime.now(datetime.UTC) - cooldown
-    commits = github(
-        f"/repos/{owner}/{repo}/commits?sha={branch}"
-        f"&until={until.strftime('%Y-%m-%dT%H:%M:%SZ')}&per_page=1"
-    )
-    if not commits:
-        return None, None
-    c = commits[0]
-    date = datetime.datetime.fromisoformat(c["commit"]["committer"]["date"])
-    return c["sha"], date
+    return original.get("ref") or github(f"/repos/{owner}/{repo}")["default_branch"]
+
+
+def on_branch(owner, repo, branch, old, new):
+    """Why `new` is not a descendant of `old` still on `branch`, or None."""
+    if github(f"/repos/{owner}/{repo}/compare/{old}...{new}")["status"] != "ahead":
+        return f"{new[:10]} does not descend from {old[:10]}"
+    status = github(f"/repos/{owner}/{repo}/compare/{new}...{branch}")["status"]
+    if status not in ("ahead", "identical"):
+        return f"{new[:10]} is not on {branch}"
+    return None
+
+
+def cooled_commit(original, locked, cooldown):
+    """The branch head as pushed at least `cooldown` ago, by GitHub's clock.
+
+    Uses the repository's activity log, which records when each push reached
+    GitHub. Commit dates are set by whoever made the commit and can be
+    backdated, so they would not hold back a hijacked maintainer.
+    Returns (sha, pushed at, notes), sha None when nothing qualifies.
+    """
+    owner, repo = original["owner"], original["repo"]
+    branch = branch_of(original)
+    pushes = github(f"/repos/{owner}/{repo}/activity"
+                    f"?ref=refs/heads/{branch}&per_page=100")
+    cutoff = datetime.datetime.now(datetime.UTC) - cooldown
+    notes = [
+        f"force-pushed {p['timestamp'][:10]}"
+        for p in pushes
+        if p["activity_type"] == "force_push"
+        and datetime.datetime.fromisoformat(p["timestamp"]) > utc(locked["lastModified"])
+    ]
+    for p in pushes:  # newest first
+        at = datetime.datetime.fromisoformat(p["timestamp"])
+        if at <= cutoff:
+            sha = p["after"]
+            if sha == locked["rev"]:
+                return None, at, notes
+            why = on_branch(owner, repo, branch, locked["rev"], sha)
+            if why:
+                return None, at, notes + [why]
+            return sha, at, notes
+    return None, None, notes + ["no push old enough in the activity log"]
 
 
 def build_toplevel():
@@ -86,8 +136,9 @@ def build_toplevel():
 
 
 def vulnix(path, cache):
-    """CVE ids per package name in the runtime closure of `path`."""
-    # Exit 2 means vulnerabilities were found, which is the normal case.
+    """CVE ids per package in the runtime closure of `path`, None on failure."""
+    # Exit 2 means vulnerabilities were found, the normal case, but vulnix
+    # also exits 2 on an internal error; only a JSON list counts as a result.
     res = run(
         "nix", "run", "--inputs-from", ".", "nixpkgs#vulnix", "--",
         "--json", "--closure", "--cache-dir", cache, path,
@@ -95,17 +146,20 @@ def vulnix(path, cache):
     )
     if res.returncode not in (0, 2):
         return None
-    found = {}
-    for pkg in json.loads(res.stdout or "[]"):
-        name = f"{pkg['pname']}-{pkg['version']}"
-        found[name] = set(pkg.get("affected_by", []))
-    return found
+    try:
+        data = json.loads(res.stdout)
+    except ValueError:
+        return None
+    if not isinstance(data, list) or (res.returncode == 2 and not data):
+        return None
+    return {f"{p['pname']}-{p['version']}": set(p.get("affected_by", []))
+            for p in data}
 
 
 def cve_diff(old, new):
     """Lines for CVE ids that the update fixes and that it introduces."""
     if old is None or new is None:
-        return ["vulnix failed; see the workflow log."]
+        return ["vulnix failed; see the workflow log. No CVE comparison."]
     old_ids = set().union(*old.values()) if old else set()
     new_ids = set().union(*new.values()) if new else set()
     fixed, added = sorted(old_ids - new_ids), sorted(new_ids - old_ids)
@@ -118,14 +172,29 @@ def cve_diff(old, new):
                               ("No longer reported", fixed, old)):
         if not ids:
             continue
-        lines.append(f"**{title}:**")
-        lines.append("")
+        lines += [f"**{title}:**", ""]
         for pkg in sorted(pkgs):
             hit = sorted(pkgs[pkg] & set(ids))
             if hit:
                 lines.append(f"- `{pkg}`: {', '.join(hit)}")
         lines.append("")
     return lines
+
+
+def closure_report(old_top, new_top):
+    diff = run("nix", "store", "diff-closures", old_top, new_top)
+    lines = ANSI.sub("", diff.stdout).strip().splitlines()
+    # Version changes in full; the whole list, mostly size changes and
+    # packages renamed with a dependency (perl5.42.0-* to perl5.42.3-*, say),
+    # folded away.
+    versions = [ln for ln in lines if "→" in ln and "∅" not in ln]
+    short = ["", "### Package changes on the nuc", "",
+             f"From `nix store diff-closures`: {len(versions)} version "
+             "changes:", "", "```", "\n".join(versions) or "(none)", "```", ""]
+    full = ["<details>",
+            f"<summary>Every change ({len(lines)} lines)</summary>", "",
+            "```", "\n".join(lines) or "(none)", "```", "", "</details>", ""]
+    return short, full
 
 
 def cmd_update(args):
@@ -140,22 +209,26 @@ def cmd_update(args):
 
     if args.others:
         cooldown = datetime.timedelta(days=args.cooldown_days)
-        report.append(f"Other inputs: newest commit at least "
-                      f"{args.cooldown_days} days old.")
-        for name, node in direct_inputs(old_lock).items():
+        report += [f"Other inputs: the branch head as pushed at least "
+                   f"{args.cooldown_days} days ago.", ""]
+        for name, node in sorted(direct_inputs(old_lock).items()):
             if name == NIXPKGS:
                 continue
             original, locked = node["original"], node["locked"]
             if original.get("type") != "github":
                 report.append(f"- `{name}`: not a GitHub input, left as is.")
                 continue
-            sha, date = cooled_commit(original, cooldown)
-            current = datetime.datetime.fromtimestamp(
-                locked["lastModified"], datetime.UTC)
-            if sha is None or sha == locked["rev"] or date <= current:
-                report.append(f"- `{name}`: no commit old enough and newer "
-                              "than the locked one.")
+            try:
+                sha, at, notes = cooled_commit(original, locked, cooldown)
+            except (urllib.error.URLError, KeyError, ValueError) as e:
+                report.append(f"- `{name}`: lookup failed ({e}), left as is.")
                 continue
+            extra = f" ({'; '.join(notes)})" if notes else ""
+            if sha is None:
+                report.append(f"- `{name}`: unchanged{extra}.")
+                continue
+            report.append(f"- `{name}`: `{sha[:10]}`, pushed {at:%Y-%m-%d}"
+                          f"{extra}.")
             run("nix", "flake", "lock", "--override-input", name,
                 f"github:{original['owner']}/{original['repo']}/{sha}")
     else:
@@ -164,84 +237,97 @@ def cmd_update(args):
     new_lock = load("flake.lock")
     changed = new_lock != old_lock
     if changed:
-        (out / "flake.lock").write_text(json.dumps(new_lock, indent=2) + "\n")
+        shutil.copyfile("flake.lock", out / "flake.lock")
 
+    full = []
     if changed and args.report:
         new_top = build_toplevel()
-        diff = run("nix", "store", "diff-closures", old_top, new_top)
-        lines = ANSI.sub("", diff.stdout).strip().splitlines()
+        short, full = closure_report(old_top, new_top)
         cache = str(out.parent / "vulnix-cache")
-        # Version changes in full; the whole list, mostly size changes and
-        # packages renamed with a dependency (perl5.42.0-* to perl5.42.3-*,
-        # say), folded away.
-        versions = [ln for ln in lines if "→" in ln and "∅" not in ln]
-        report += ["", "### Package changes on the nuc", "",
-                   f"From `nix store diff-closures`: {len(versions)} version "
-                   "changes:", "", "```", "\n".join(versions) or "(none)",
-                   "```", "", "<details>",
-                   f"<summary>Every change ({len(lines)} lines)</summary>", "",
-                   "```", "\n".join(lines) or "(none)", "```", "",
-                   "</details>", "",
-                   "### CVEs in the nuc's runtime closure", "",
-                   "From vulnix. It matches package names against the NVD "
-                   "(National Vulnerability Database) and does not know "
-                   "which fixes nixpkgs has patched in, so treat it as a "
-                   "pointer, not a verdict.", ""]
+        report += short + [
+            "### CVEs in the nuc's runtime closure", "",
+            "From vulnix. It matches package names against the NVD (National "
+            "Vulnerability Database) and does not know which fixes nixpkgs "
+            "has patched in, so treat it as a pointer, not a verdict.", ""]
         report += cve_diff(vulnix(old_top, cache), vulnix(new_top, cache))
 
-    text = "\n".join(report) + "\n"
+    text = "\n".join(report + full) + "\n"
     if len(text) > REPORT_LIMIT:
-        text = text[:REPORT_LIMIT] + "\n\n(truncated; see the workflow log)\n"
-    (out / "report.md").write_text(text)
+        # Drop the long list rather than cut a code block or <details> open.
+        text = "\n".join(report + ["(Every change: see the workflow log.)"]) + "\n"
+    (out / "report.md").write_text(text[:REPORT_LIMIT])
     (out / "changed").write_text("true\n" if changed else "false\n")
     log(f"changed: {changed}")
 
 
-def short(node):
-    lk = node["locked"]
-    day = datetime.datetime.fromtimestamp(lk["lastModified"], datetime.UTC)
-    return lk.get("rev", "")[:10], day
+def lock_problems(old, new):
+    """Every difference between the locks beyond what an update may change."""
+    problems = []
+    old_nodes, new_nodes = old.get("nodes", {}), new.get("nodes", {})
+    if {k: v for k, v in old.items() if k != "nodes"} != \
+            {k: v for k, v in new.items() if k != "nodes"}:
+        problems.append("top-level fields changed")
+    if set(old_nodes) != set(new_nodes):
+        problems.append(f"nodes changed: added {sorted(set(new_nodes) - set(old_nodes))}, "
+                        f"removed {sorted(set(old_nodes) - set(new_nodes))}")
+    for name in sorted(set(old_nodes) & set(new_nodes)):
+        o, n = old_nodes[name], new_nodes[name]
+        if set(o) != set(n):
+            problems.append(f"{name}: fields changed")
+        for key in set(o) | set(n):
+            if key != "locked" and o.get(key) != n.get(key):
+                problems.append(f"{name}: {key} changed")
+        if "locked" not in o:
+            continue
+        ol, nl = o["locked"], n.get("locked", {})
+        if set(ol) != set(nl):
+            problems.append(f"{name}: locked fields changed")
+        for key in set(ol) | set(nl):
+            if key in MOVABLE:
+                if not isinstance(nl.get(key), str) or not MOVABLE[key].fullmatch(nl[key]):
+                    problems.append(f"{name}: locked {key} malformed")
+            elif key == "lastModified":
+                if not isinstance(nl.get(key), int):
+                    problems.append(f"{name}: lastModified malformed")
+            elif ol.get(key) != nl.get(key):
+                problems.append(f"{name}: locked {key} changed")
+        if ol.get("rev") != nl.get("rev") and ol.get("type") != "github":
+            problems.append(f"{name}: moved, but is not a GitHub input")
+    return problems
 
 
 def cmd_check(args):
     old, new = load(args.old), load(args.new)
-    old_in, new_in = direct_inputs(old), direct_inputs(new)
-    problems = []
-    if set(old_in) != set(new_in):
-        problems.append(f"inputs changed: {sorted(old_in)} -> {sorted(new_in)}")
-    for name in sorted(set(old_in) & set(new_in)):
-        o, n = old_in[name], new_in[name]
-        if o["original"] != n["original"]:
-            problems.append(f"{name}: original changed")
-        for key in ("type", "owner", "repo"):
-            if o["locked"].get(key) != n["locked"].get(key):
-                problems.append(f"{name}: locked {key} changed")
-    # Inputs of inputs too: one that keeps its name but moves to another
-    # repository is refused. A new one is allowed, since an input's own lock
-    # can gain inputs, but listed in the body.
-    old_nodes, new_nodes = old["nodes"], new["nodes"]
-    for name in sorted(set(old_nodes) & set(new_nodes) - {"root"}):
-        for key in ("type", "owner", "repo"):
-            if (old_nodes[name].get("locked", {}).get(key)
-                    != new_nodes[name].get("locked", {}).get(key)):
-                problems.append(f"node {name}: locked {key} changed")
+    problems = lock_problems(old, new)
+    moved = []
+    if not problems:
+        for name in sorted(old["nodes"]):
+            ol, nl = old["nodes"][name].get("locked"), new["nodes"][name].get("locked")
+            if ol and ol.get("rev") != nl.get("rev"):
+                moved.append((name, ol, nl))
+        for name, ol, nl in moved:
+            original = old["nodes"][name]["original"]
+            try:
+                why = on_branch(ol["owner"], ol["repo"], branch_of(original),
+                                ol["rev"], nl["rev"])
+            except (urllib.error.URLError, KeyError, ValueError) as e:
+                why = f"could not check ({e})"
+            if why:
+                problems.append(f"{name}: {why}")
     if problems:
         sys.exit("refusing the new lock:\n  " + "\n  ".join(problems))
-    added = sorted(set(new_nodes) - set(old_nodes))
 
     now = datetime.datetime.now(datetime.UTC)
-    rows = ["| Input | From | To | Age of new commit | Changes |",
+    direct = set(direct_inputs(new))
+    rows = ["| Input | From | To | Commit date | Changes |",
             "|---|---|---|---|---|"]
-    for name in sorted(new_in):
-        o, n = old_in[name], new_in[name]
-        if o["locked"].get("rev") == n["locked"].get("rev"):
-            continue
-        (orev, oday), (nrev, nday) = short(o), short(n)
-        lk = n["locked"]
-        compare = (f"https://github.com/{lk['owner']}/{lk['repo']}/compare/"
-                   f"{o['locked']['rev']}...{lk['rev']}")
-        rows.append(f"| `{name}` | `{orev}` {oday:%Y-%m-%d} | `{nrev}` "
-                    f"{nday:%Y-%m-%d} | {(now - nday).days} days | "
+    for name, ol, nl in moved:
+        label = f"`{name}`" if name in direct else f"`{name}` (input of an input)"
+        compare = (f"https://github.com/{nl['owner']}/{nl['repo']}/compare/"
+                   f"{ol['rev']}...{nl['rev']}")
+        day = utc(nl["lastModified"])
+        rows.append(f"| {label} | `{ol['rev'][:10]}` | `{nl['rev'][:10]}` | "
+                    f"{day:%Y-%m-%d} ({(now - day).days} days) | "
                     f"[diff]({compare}) |")
 
     report = pathlib.Path(args.report).read_text()[:REPORT_LIMIT]
@@ -255,19 +341,29 @@ def cmd_check(args):
         "",
         "Review the source diff of every input other than nixpkgs: each runs "
         "as root on the nuc once merged, and comin deploys it within a "
-        "minute.",
+        "minute. Commit dates are the committer's own; the cooldown goes by "
+        "push time instead.",
         "",
         "### Inputs",
         "",
         *rows,
         "",
-        *([f"**New inputs of inputs:** {', '.join(f'`{a}`' for a in added)}"
-           " — check where each comes from.", ""] if added else []),
         report,
         "",
         "🤖 Opened by `.github/workflows/update-flake-lock.yml`",
     ]
     pathlib.Path(args.body).write_text("\n".join(body) + "\n")
+
+
+def cmd_carry(args):
+    """Exit 0 if the open pull request's lock moved an input other than
+    nixpkgs, so this week's run must update them too or drop the change."""
+    main_in, pr_in = direct_inputs(load(args.main)), direct_inputs(load(args.pr))
+    for name in main_in:
+        if name != NIXPKGS and name in pr_in and \
+                main_in[name]["locked"].get("rev") != pr_in[name]["locked"].get("rev"):
+            sys.exit(0)
+    sys.exit(1)
 
 
 def main():
@@ -285,8 +381,11 @@ def main():
     c.add_argument("--new", required=True)
     c.add_argument("--report", required=True)
     c.add_argument("--body", required=True)
+    k = sub.add_parser("carry")
+    k.add_argument("--main", required=True)
+    k.add_argument("--pr", required=True)
     args = p.parse_args()
-    {"update": cmd_update, "check": cmd_check}[args.cmd](args)
+    {"update": cmd_update, "check": cmd_check, "carry": cmd_carry}[args.cmd](args)
 
 
 if __name__ == "__main__":
