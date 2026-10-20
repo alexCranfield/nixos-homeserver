@@ -43,6 +43,8 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
+      # To see whether last run's pull request is still open.
+      pull-requests: read
     outputs:
       changed: ${{ steps.update.outputs.changed }}
     steps:
@@ -58,6 +60,7 @@ jobs:
         env:
           # Read-only; raises the GitHub API rate limit for the cooldown lookups.
           GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
           OTHERS: ${{ github.event_name == 'workflow_dispatch' && inputs.others }}
         run: |
           set -euo pipefail
@@ -65,9 +68,11 @@ jobs:
           # Monthly: the first scheduled run of the month, or on request.
           if [ "$OTHERS" = true ] || { [ "$GITHUB_EVENT_NAME" = schedule ] && [ "$(date -u +%-d)" -le 7 ]; }; then
             args+=(--others)
-          # Or when last run's pull request, still unmerged, moved them: this
-          # run replaces it, and would otherwise drop them until next month.
-          elif git fetch --depth=1 origin update/flake-lock; then
+          # Or when last run's pull request, still open, moved them: this run
+          # replaces it, and would otherwise drop them until next month. A
+          # closed one is a rejection, and is not carried.
+          elif [ "$(gh pr list --head update/flake-lock --state open --json number --jq length)" != 0 ] &&
+            git fetch --depth=1 origin update/flake-lock; then
             git show FETCH_HEAD:flake.lock > "$RUNNER_TEMP/pr.lock"
             if python3 -I scripts/flake_update.py carry --main flake.lock --pr "$RUNNER_TEMP/pr.lock"; then
               args+=(--others)

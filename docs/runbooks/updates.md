@@ -40,11 +40,12 @@ run.
    CI (continuous integration) included, for a pull request a workflow opened,
    and `main` cannot merge without a green `check`. Reopening counts as Alex's
    action, so CI runs. A machine account (#61) would make this unnecessary.
-2. **Read the inputs table.** Every input that moved, with the date and age of
-   its new commit and a link to its source diff. For anything but nixpkgs, read
-   the diff: it is short, and it becomes root on the nuc. A new "input of
-   inputs" line means an input's own lock gained one; check where it comes
-   from.
+2. **Read the inputs table.** Every input that moved, with the date of its new
+   commit and a link to its source diff, all written by the job that checked
+   them. For anything but nixpkgs, read the diff: it is short, and it becomes
+   root on the nuc. A row marked "input of an input" moved because an input's
+   own lock did. Everything under "From the update job" was written by the job
+   that ran the new code, and is unchecked.
 3. **Read the package changes** (`nix store diff-closures` between the running
    system and the new one). A kernel series change (7.2 to 7.3, say) needs a
    reboot to take effect, which is #18's.
@@ -80,7 +81,9 @@ code (ADR 0003):
   owner or repository. Commit ids and hashes must be well formed, and every
   moved commit must descend from the old one and still be on the branch the
   input follows, which rules out a commit that exists only in a fork. It then
-  writes the description from the two locks itself.
+  writes the description from the two locks itself. For inputs other than
+  nixpkgs it also applies the cooldown again: the update job runs code from the
+  new nixpkgs, so it is not trusted to have done so.
 
 If an input's own lock gains or loses an input, `check` refuses that week's
 update; update it by hand in a reviewed pull request.
@@ -97,8 +100,13 @@ cannot apply the cooldown. See `docs/q-and-a/security.md`.
 ## Running it by hand
 
 From the Actions tab, "Update flake.lock", "Run workflow"; tick the box to
-update the other inputs too, outside the monthly run. It runs the workflow from
-the branch chosen there.
+update the other inputs too, outside the monthly run. Only a run from `main`
+opens or updates the pull request; from another branch, the first job runs and
+the second is skipped.
+
+To reject an update, close its pull request. A closed one is not carried into
+the next week's run, but the next monthly run proposes the same inputs again if
+they are still the cooled heads.
 
 To see what an update would do without opening anything, run the first job's
 script on a scratch copy of the repo (it rewrites `flake.lock` in place):

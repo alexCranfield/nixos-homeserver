@@ -20,6 +20,7 @@ own Python. Run with `python3 -I`.
 
 import argparse
 import datetime
+import http.client
 import json
 import os
 import pathlib
@@ -27,7 +28,6 @@ import re
 import shutil
 import subprocess
 import sys
-import urllib.error
 import urllib.request
 
 NIXPKGS = "nixpkgs"
@@ -42,9 +42,12 @@ MOVABLE = {
     "narHash": re.compile(r"sha256-[A-Za-z0-9+/]{43}="),
 }
 
-# Read once and kept out of the environment, so the read-only token reaches
-# the GitHub API lookups and not every program this script starts.
+# Read once and removed from the environment, so programs this script starts
+# do not inherit it. (Nix may hold a token of its own: install-nix-action can
+# configure one.)
 TOKEN = os.environ.pop("GITHUB_TOKEN", None)
+# Network failures of a GitHub API call.
+NET_ERRORS = (OSError, http.client.HTTPException, KeyError, ValueError)
 
 
 def log(msg):
@@ -98,36 +101,44 @@ def on_branch(owner, repo, branch, old, new):
     return None
 
 
-def cooled_commit(original, locked, cooldown):
+def cooled_head(owner, repo, branch, cooldown):
     """The branch head as pushed at least `cooldown` ago, by GitHub's clock.
 
     Uses the repository's activity log, which records when each push reached
     GitHub. Commit dates are set by whoever made the commit and can be
     backdated, so they would not hold back a hijacked maintainer.
-    Returns (sha, pushed at, notes), sha None when nothing qualifies.
+    Returns (sha, pushed at, force pushes in the log), sha None if no push in
+    the last 100 is old enough.
     """
-    owner, repo = original["owner"], original["repo"]
-    branch = branch_of(original)
     pushes = github(f"/repos/{owner}/{repo}/activity"
                     f"?ref=refs/heads/{branch}&per_page=100")
     cutoff = datetime.datetime.now(datetime.UTC) - cooldown
-    notes = [
-        f"force-pushed {p['timestamp'][:10]}"
-        for p in pushes
-        if p["activity_type"] == "force_push"
-        and datetime.datetime.fromisoformat(p["timestamp"]) > utc(locked["lastModified"])
-    ]
+    forced = [p["timestamp"][:10] for p in pushes
+              if p["activity_type"] == "force_push"]
     for p in pushes:  # newest first
         at = datetime.datetime.fromisoformat(p["timestamp"])
-        if at <= cutoff:
-            sha = p["after"]
-            if sha == locked["rev"]:
-                return None, at, notes
-            why = on_branch(owner, repo, branch, locked["rev"], sha)
-            if why:
-                return None, at, notes + [why]
-            return sha, at, notes
-    return None, None, notes + ["no push old enough in the activity log"]
+        if at <= cutoff and p["activity_type"] != "branch_deletion":
+            return p["after"], at, forced
+    return None, None, forced
+
+
+def cooled_commit(original, locked, cooldown):
+    """(sha, pushed at, notes) for one input; sha None to leave it as is."""
+    owner, repo = original["owner"], original["repo"]
+    branch = branch_of(original)
+    sha, at, forced = cooled_head(owner, repo, branch, cooldown)
+    notes = [f"force pushes recorded on {', '.join(forced)}"] if forced else []
+    if sha is None:
+        return None, None, notes + ["no push old enough in the activity log"]
+    if sha == locked["rev"]:
+        return None, at, notes
+    status = github(f"/repos/{owner}/{repo}/compare/{locked['rev']}...{sha}")["status"]
+    if status == "behind":
+        return None, at, notes + ["the locked commit is newer than the cooled head"]
+    why = on_branch(owner, repo, branch, locked["rev"], sha)
+    if why:
+        return None, at, notes + [why]
+    return sha, at, notes
 
 
 def build_toplevel():
@@ -220,8 +231,8 @@ def cmd_update(args):
                 continue
             try:
                 sha, at, notes = cooled_commit(original, locked, cooldown)
-            except (urllib.error.URLError, KeyError, ValueError) as e:
-                report.append(f"- `{name}`: lookup failed ({e}), left as is.")
+            except NET_ERRORS as e:
+                report.append(f"- `{name}`: lookup failed ({e!r}), left as is.")
                 continue
             extra = f" ({'; '.join(notes)})" if notes else ""
             if sha is None:
@@ -287,11 +298,14 @@ def lock_problems(old, new):
                 if not isinstance(nl.get(key), str) or not MOVABLE[key].fullmatch(nl[key]):
                     problems.append(f"{name}: locked {key} malformed")
             elif key == "lastModified":
-                if not isinstance(nl.get(key), int):
+                if type(nl.get(key)) is not int:
                     problems.append(f"{name}: lastModified malformed")
             elif ol.get(key) != nl.get(key):
                 problems.append(f"{name}: locked {key} changed")
-        if ol.get("rev") != nl.get("rev") and ol.get("type") != "github":
+        if ol.get("rev") == nl.get("rev"):
+            if ol != nl:
+                problems.append(f"{name}: hash or date changed without a new rev")
+        elif ol.get("type") != "github":
             problems.append(f"{name}: moved, but is not a GitHub input")
     return problems
 
@@ -305,13 +319,24 @@ def cmd_check(args):
             ol, nl = old["nodes"][name].get("locked"), new["nodes"][name].get("locked")
             if ol and ol.get("rev") != nl.get("rev"):
                 moved.append((name, ol, nl))
+        cooldown = datetime.timedelta(days=args.cooldown_days)
         for name, ol, nl in moved:
             original = old["nodes"][name]["original"]
             try:
-                why = on_branch(ol["owner"], ol["repo"], branch_of(original),
-                                ol["rev"], nl["rev"])
-            except (urllib.error.URLError, KeyError, ValueError) as e:
-                why = f"could not check ({e})"
+                branch = branch_of(original)
+                why = on_branch(ol["owner"], ol["repo"], branch, ol["rev"], nl["rev"])
+                if not why and name != NIXPKGS:
+                    # The update job runs code from the new nixpkgs, so it is
+                    # not trusted to have applied the cooldown: check it here.
+                    head, _, _ = cooled_head(ol["owner"], ol["repo"], branch, cooldown)
+                    status = head and github(
+                        f"/repos/{ol['owner']}/{ol['repo']}/compare/{nl['rev']}...{head}"
+                    )["status"]
+                    if status not in ("ahead", "identical"):
+                        why = (f"{nl['rev'][:10]} was not on {branch} "
+                               f"{args.cooldown_days} days ago")
+            except NET_ERRORS as e:
+                why = f"could not check ({e!r})"
             if why:
                 problems.append(f"{name}: {why}")
     if problems:
@@ -346,7 +371,15 @@ def cmd_check(args):
         "",
         "### Inputs",
         "",
+        "Checked by the job that opens this pull request: every change below "
+        "is a commit that descends from the old one on the input's branch "
+        f"and, except for nixpkgs, was there {args.cooldown_days} days ago.",
+        "",
         *rows,
+        "",
+        "## From the update job",
+        "",
+        "Not checked: the job that wrote this also ran the new inputs' code.",
         "",
         report,
         "",
@@ -381,6 +414,7 @@ def main():
     c.add_argument("--new", required=True)
     c.add_argument("--report", required=True)
     c.add_argument("--body", required=True)
+    c.add_argument("--cooldown-days", type=int, default=7)
     k = sub.add_parser("carry")
     k.add_argument("--main", required=True)
     k.add_argument("--pr", required=True)
