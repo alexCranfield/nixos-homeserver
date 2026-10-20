@@ -124,11 +124,12 @@ Check from the LAN with a full scan. A default-deny firewall drops probes
 rather than refusing them, so nmap gets no answer on any port and keeps
 slowing itself down; a fixed minimum rate keeps it to about two minutes. nmap
 reports no open ports both for a clean result and for a scan it gave up on, so
-read the "Not shown" line too:
+read the "Not shown" line too. nmap is not installed in WSL (Windows Subsystem
+for Linux), and the dev shell does not provide it, so `nix shell` fetches it:
 
 ```bash
-nmap -Pn -p- --min-rate 3000 --max-retries 1 nuc.home.arpa
-# expect "Not shown: 65535 filtered tcp ports", 22 included
+nix shell nixpkgs#nmap -c nmap -Pn -p- --min-rate 3000 --max-retries 1 nuc.home.arpa
+# expect "Not shown: 65535 filtered tcp ports"
 ```
 
 At that rate the scan still found a single port opened for the purpose
@@ -143,18 +144,42 @@ that as well. The UniFi router advertises a ULA (unique local address) prefix,
 it. Find it with `ip -6 -br addr show lan0` on the nuc, then:
 
 ```bash
-nmap -6 -Pn -p- -T4 <the nuc's global IPv6 address>   # expect the same: nothing open
+nmap -6 -Pn -p- -T4 <ULA address of the nuc>   # from a machine with nmap: expect nothing open
 ```
 
-Run it from a machine with an IPv6 route to the LAN, and check that first
-with `ping -6 -c 3 <address>`: a scan that cannot reach the nuc looks the same
-as a clean one. The workstation's WSL (Windows Subsystem for Linux), in its
-default NAT (network address translation) mode, has no such route; Windows
-itself does, but has no nmap. On 2026-10-18 the IPv6 scan ran from Windows
-PowerShell instead, as a TCP connect to every port with a 1.5 second wait
-(`System.Net.Sockets.TcpClient.ConnectAsync`, 2,000 ports at a time). A
-dropped probe never connects, so only ports that complete the handshake count
-as open.
+That needs a machine with nmap and an IPv6 route to the LAN. The workstation's
+WSL, in its default NAT (network address translation) mode, has none; Windows
+itself does, but has no nmap. So the scan runs from Windows PowerShell 5.1
+instead (in PowerShell 7, `Test-Connection` shows `Latency` rather than
+`ResponseTime`), as a TCP connect to every port, 2,000 at a time, with a 1.5
+second wait. A dropped
+probe never connects, so only ports that complete the handshake count as open:
+
+```powershell
+$a = '<ULA address of the nuc>'
+Test-Connection -ComputerName $a -Count 3 | Select-Object Address, ResponseTime
+$open = @()
+for ($s = 1; $s -le 65535; $s += 2000) {
+  $e = [Math]::Min($s + 1999, 65535)
+  $c = foreach ($p in $s..$e) { $t = New-Object System.Net.Sockets.TcpClient([System.Net.Sockets.AddressFamily]::InterNetworkV6); [pscustomobject]@{ P = $p; T = $t; K = $t.ConnectAsync($a, $p) } }
+  Start-Sleep -Milliseconds 1500
+  foreach ($x in $c) { if ($x.K.Status -eq 'RanToCompletion') { $open += $x.P }; $x.T.Dispose() }
+}
+"scanned 65535 ports, open: " + ($(if ($open) { $open -join ',' } else { 'none' }))
+```
+
+Expect `open: none`. A scan that cannot reach the nuc looks the same as a clean
+one, so check that it arrived. `Test-Connection` must get replies, and the
+nuc's own counters show the scan landing:
+
+```bash
+ssh nuc 'nstat -az Ip6InReceives Icmp6InEchos Icmp6OutEchoReplies'
+```
+
+The counters run from the nuc's last boot. On 2026-10-19, with one scan and
+three pings since the boot, they read 131,104 IPv6 packets received, about two
+per port (presumably Windows resending each unanswered connection request
+within the 1.5 s wait), and 3 echo requests answered.
 
 Docker publishes container ports around this firewall (ADR 0006), so the scan
 is worth re-running once stacks arrive.
