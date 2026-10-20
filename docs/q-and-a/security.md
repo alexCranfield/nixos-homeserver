@@ -222,8 +222,9 @@ decrypt everything the key ever protected. Recovery means reissuing every
 credential it ever encrypted.
 
 On this workstation the file's mode of `0600` is a Linux control, and WSL
-exposes the Linux home directory to Windows through `\\wsl$`. So the key is as
-well protected as the Windows account, not as well as its mode suggests.
+(Windows Subsystem for Linux) exposes the Linux home directory to Windows
+through `\\wsl$`. So the key is as well protected as the Windows account, not
+as well as its mode suggests.
 
 Keep it off anything that syncs, treat every copy as an event worth noticing,
 and passphrase-protect it before the first real secret arrives (#56). The
@@ -249,8 +250,8 @@ passphrase, a copy taken from a backup, or by malware on Windows (which can read
 the WSL home directory through `\\wsl$`), works straight away. With one, a copy
 is useless until the passphrase is guessed. OpenSSH derives the file's
 encryption key with bcrypt_pbkdf, 16 rounds by default (`ssh-keygen -a` raises
-it): a modest slowdown per guess, far less than LUKS's Argon2id, so the
-passphrase itself has to be decent.
+it): a modest slowdown per guess, far less than the Argon2id of LUKS (Linux
+Unified Key Setup), so the passphrase itself has to be decent.
 
 It costs little: `ssh-keygen -p -f ~/.ssh/id_nuc` re-encrypts only the private
 file, so the public key, `keys/ops.pub`, stays the same. `ssh-add` asks for it
@@ -272,12 +273,12 @@ drops the key from the agent afterwards.
 
 Seventeen characters is plenty, if a generator picked them. Drawn at random
 from the roughly 94 printable keyboard characters, each carries about 6.5 bits,
-so seventeen give about 111 bits: out of reach of brute force. LUKS2 (Linux
-Unified Key Setup) also runs every guess through Argon2id, a hash built to be
-slow and memory-hungry (by default, about two seconds and up to a gigabyte
-per guess on the machine that formatted the disk), which stops graphics cards
-scaling the attack. A string a person makes up is much
-weaker than its length suggests, because people follow patterns.
+so seventeen give about 111 bits: out of reach of brute force. LUKS2 also runs
+every guess through Argon2id, a hash built to be slow and memory-hungry (by
+default, about two seconds and up to a gigabyte per guess on the machine that
+formatted the disk), which stops graphics cards scaling the attack.
+A string a person makes up is much weaker than its length suggests, because
+people follow patterns.
 
 A short memorable password is the wrong trade here. The passphrase protects
 the disk against someone who has the disk, who can guess offline for as long as
@@ -332,8 +333,8 @@ What an impersonator gets, and what it does not:
 - *Not the ops key.* Key login signs data bound to that one session, so the
   signature cannot be replayed to the real server, and the private key never
   leaves the workstation.
-- *Anything typed into the session.* The TPM (Trusted Platform Module)
-  enrolment asked for the disk passphrase over SSH.
+- *Anything typed into the session.* The TPM enrolment asked for the disk
+  passphrase over SSH.
 - *Future secrets.* Ticket 1.7 (#14) derives the server's age identity from
   this host key and encrypts secrets to it. A wrong key would mean encrypting
   them for the impersonator.
@@ -366,8 +367,8 @@ Neither identity in that step asked for a new passphrase.
   passphrase.
 
 A passphrase on the nuc's key would defeat its purpose: nobody is there to type
-it at boot. Its protection is the encrypted disk (ADR 0009) and the TPM
-(Trusted Platform Module) unlock instead.
+it at boot. Its protection is the encrypted disk (ADR 0009) and the TPM unlock
+instead.
 
 </details>
 
@@ -396,5 +397,37 @@ earlier generation at the boot menu.
 `users.mutableUsers` is still `true`, so someone with root could add a password
 that survives rebuilds; setting it `false` is noted on the security review,
 #45.
+
+</details>
+
+### Does a reinstall need a new disk passphrase?
+
+*2026-10-19*
+
+> For step 4 should I use a new passphrase or is the old one okay?
+
+<details>
+<summary>Answer</summary>
+
+The old one is fine. A passphrase needs changing for a reason, and a reinstall
+is not one:
+
+- It was never stored on the workstation by the 2026-10-18 install that
+  worked: it was typed at the nuc's console, and kept in the password manager
+  and the offline backup. The failed first attempt of 2026-10-18 went through
+  a file in WSL; if that was the same passphrase, a trace of it may remain in
+  WSL's disk image, and that would be a reason to change it.
+- The disk does not give it away. LUKS never stores the passphrase, only key
+  slots holding the volume key encrypted under a key derived from it with
+  Argon2id, and the reinstall writes a new header with a new volume key, so
+  through the drive's normal interface nothing left from the old install can
+  be opened with it.
+- It is already in the password manager and the offline backup. A new one
+  means updating both before the install: one more step, with room for a
+  mismatch.
+
+Change it if it might have been exposed: written down somewhere untrusted, seen
+by someone, or used elsewhere. Either way, it is typed twice at the console
+(install.md step 3).
 
 </details>
