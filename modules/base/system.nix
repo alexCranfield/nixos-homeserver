@@ -11,6 +11,14 @@
   # deploys without filling the ESP (EFI System Partition).
   boot.loader.systemd-boot.configurationLimit = 10;
 
+  # Shown at every login. comin replaces the running system at each merge to
+  # `main` (comin.nix), so a change made by hand on the host does not last.
+  # Also the change that shows comin deploying a merge by itself (#16).
+  users.motd = ''
+    Managed from github.com/alexCranfield/nixos-homeserver, branch main.
+    comin deploys each merge; system changes made here are lost at the next one.
+  '';
+
   programs.git.enable = true;
   # Defaults for now. Porting the tmux configuration from the previous project
   # is left to Alex, with home-manager in ticket 6.1 (#39).

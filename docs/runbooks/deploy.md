@@ -43,9 +43,8 @@ setting differs from comin's default.
   (#25); not reachable from the LAN (local area network) or the tailnet.
 - **A local control socket.** `comin status` and the other subcommands talk to
   comin over `/var/lib/comin/grpc.sock`, which comin makes writable by every
-  local user, so `comin status` should work as ops without sudo (to be
-  confirmed on the nuc). Any local account could also suspend comin or ask it
-  to fetch; tightening that is #101.
+  local user, so `comin status` works as ops without sudo. Any local account
+  could also suspend comin or ask it to fetch; tightening that is #101.
 
 ## Is it working?
 
@@ -90,6 +89,6 @@ deletion") before doing it, and note the steps here when it is.
 | | |
 |---|---|
 | comin | 0.14.0, from the comin flake input (`ffeadf34`) |
-| First deploy | to be filled in after the merge |
+| First deploy | 2026-10-20: `just deploy` of `main` (`e6d25b7`) installed comin at 14:56:43 UTC (Coordinated Universal Time); comin fetched `main` at 14:57:44, one poll period later, found the system already built (`jaj4lsqv…`) and switched to it at 14:57:52, as generation 1 of comin's profile (`system-profiles/comin-1-link`). `comin status` works as ops without sudo. |
 | Merge to running, `users.motd` | to be filled in after the merge |
 | `comin` active after a reboot | to be filled in after the merge |
