@@ -23,8 +23,8 @@ setting differs from comin's default.
   check `comin` pushes `testing-nuc` and confirms comin ignores it.
 - **Commits are not signature-checked.** GitHub makes and signs the squash
   merges, so the check would prove nothing the ruleset does not. The risk
-  accepted: whoever controls the GitHub account can deploy to the nuc as root
-  (ADR 0003).
+  accepted: whoever controls the GitHub account, or GitHub itself, can deploy
+  to the nuc as root (ADR 0003).
 - **`main` only moves forward.** comin refuses a `main` that is not on top of
   the last `main` commit it accepted, so a history rewrite stops deploys
   rather than rolling the nuc back. See "After a history rewrite" below.
@@ -33,16 +33,19 @@ setting differs from comin's default.
   the usual `system` profile, which only `just deploy` moves. The boot menu
   lists both, each up to the ten-generation limit, which applies per profile.
   comin is set to keep ten (its default is three); the weekly garbage
-  collection also deletes generations older than 14 days from both profiles,
-  so with few merges there are fewer. For the same reason, on the nuc
-  `nixos-rebuild --rollback` rolls back the `system` profile, not comin's;
-  rollback is ticket 2.4 (#19).
+  collection also removes most generations older than 14 days from both
+  profiles, so with few merges there are fewer.
+- **Do not use `nixos-rebuild --rollback` on the nuc.** It switches to the
+  `system` profile's previous generation, which may be older than what comin
+  deployed, and comin does not correct it until the next merge, since it
+  compares against its own last deployment. Rollback is ticket 2.4 (#19).
 - **Metrics on 127.0.0.1:4243.** comin's Prometheus exporter, for phase 3
   (#25); not reachable from the LAN (local area network) or the tailnet.
 - **A local control socket.** `comin status` and the other subcommands talk to
   comin over `/var/lib/comin/grpc.sock`, which comin makes writable by every
-  local user, so `comin status` works as ops without sudo. Any local account
-  could also suspend comin or ask it to fetch; tightening that is #101.
+  local user, so `comin status` should work as ops without sudo (to be
+  confirmed on the nuc). Any local account could also suspend comin or ask it
+  to fetch; tightening that is #101.
 
 ## Is it working?
 
@@ -76,8 +79,9 @@ comin reports `this branch has been hard reset` and deploys nothing. Rewrites
 need Alex's explicit instruction (`CLAUDE.md`), so this is expected only
 after one. Once `main` is confirmed correct, comin's record of the last
 deployed commit has to be cleared, which lives in `/var/lib/comin` with its
-deployment history. Clearing it also drops the boot entries of earlier comin
-deployments; only the booted one is kept. Not yet done on the nuc; check
+deployment history. The next deployment after clearing it drops the boot
+entries of earlier comin deployments, keeping only the booted and current
+ones. Not yet done on the nuc; check
 comin's own documentation (`docs/howtos.md`, "What happen on /var/lib/comin
 deletion") before doing it, and note the steps here when it is.
 

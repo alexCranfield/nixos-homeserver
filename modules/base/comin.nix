@@ -19,12 +19,12 @@
 #    came through GitHub, which the ruleset already ensures for `main`.
 #    Requiring Alex's key instead would mean merging locally and pushing to
 #    `main`, which the ruleset forbids. Accepted: whoever controls the GitHub
-#    account can deploy as root. See ADR 0003.
+#    account, or GitHub itself, can deploy as root. See ADR 0003.
 #  - Ten boot entries. comin keeps its deployments in its own profile,
 #    /nix/var/nix/profiles/system-profiles/comin, and deletes all but three
 #    of them by default. The boot menu's limit of ten (system.nix) applies to
 #    each profile, so ten here gives comin's deploys the same depth as manual
-#    ones. Weekly garbage collection still removes those over 14 days old.
+#    ones. Weekly garbage collection still removes most over 14 days old.
 #  - The metrics exporter on loopback. The firewall already denies it from
 #    outside; binding it to 127.0.0.1 means a firewall mistake cannot expose it.
 #    Phase 3 (#25) may scrape it locally.
