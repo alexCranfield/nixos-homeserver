@@ -47,7 +47,8 @@ MOVABLE = {
 # configure one.)
 TOKEN = os.environ.pop("GITHUB_TOKEN", None)
 # Network failures of a GitHub API call.
-NET_ERRORS = (OSError, http.client.HTTPException, KeyError, ValueError)
+NET_ERRORS = (OSError, http.client.HTTPException, KeyError, ValueError,
+              TypeError)
 
 
 def log(msg):
@@ -113,8 +114,8 @@ def cooled_head(owner, repo, branch, cooldown):
     pushes = github(f"/repos/{owner}/{repo}/activity"
                     f"?ref=refs/heads/{branch}&per_page=100")
     cutoff = datetime.datetime.now(datetime.UTC) - cooldown
-    forced = [p["timestamp"][:10] for p in pushes
-              if p["activity_type"] == "force_push"]
+    forced = sorted({p["timestamp"][:10] for p in pushes
+                     if p["activity_type"] == "force_push"})
     for p in pushes:  # newest first
         at = datetime.datetime.fromisoformat(p["timestamp"])
         if at <= cutoff and p["activity_type"] != "branch_deletion":
@@ -135,9 +136,11 @@ def cooled_commit(original, locked, cooldown):
     status = github(f"/repos/{owner}/{repo}/compare/{locked['rev']}...{sha}")["status"]
     if status == "behind":
         return None, at, notes + ["the locked commit is newer than the cooled head"]
-    why = on_branch(owner, repo, branch, locked["rev"], sha)
-    if why:
-        return None, at, notes + [why]
+    if status != "ahead":
+        return None, at, notes + [f"{sha[:10]} does not descend from {locked['rev'][:10]}"]
+    on = github(f"/repos/{owner}/{repo}/compare/{sha}...{branch}")["status"]
+    if on not in ("ahead", "identical"):
+        return None, at, notes + [f"{sha[:10]} is not on {branch}"]
     return sha, at, notes
 
 
@@ -329,10 +332,11 @@ def cmd_check(args):
                     # The update job runs code from the new nixpkgs, so it is
                     # not trusted to have applied the cooldown: check it here.
                     head, _, _ = cooled_head(ol["owner"], ol["repo"], branch, cooldown)
-                    status = head and github(
-                        f"/repos/{ol['owner']}/{ol['repo']}/compare/{nl['rev']}...{head}"
-                    )["status"]
-                    if status not in ("ahead", "identical"):
+                    if head is None:
+                        why = (f"no push to {branch} older than "
+                               f"{args.cooldown_days} days in its activity log")
+                    elif github(f"/repos/{ol['owner']}/{ol['repo']}/compare/"
+                                f"{nl['rev']}...{head}")["status"] not in ("ahead", "identical"):
                         why = (f"{nl['rev'][:10]} was not on {branch} "
                                f"{args.cooldown_days} days ago")
             except NET_ERRORS as e:
@@ -344,7 +348,7 @@ def cmd_check(args):
 
     now = datetime.datetime.now(datetime.UTC)
     direct = set(direct_inputs(new))
-    rows = ["| Input | From | To | Commit date | Changes |",
+    rows = ["| Input | From | To | Commit date (unchecked) | Changes |",
             "|---|---|---|---|---|"]
     for name, ol, nl in moved:
         label = f"`{name}`" if name in direct else f"`{name}` (input of an input)"
@@ -369,11 +373,13 @@ def cmd_check(args):
         "minute. Commit dates are the committer's own; the cooldown goes by "
         "push time instead.",
         "",
-        "### Inputs",
+        "## Inputs",
         "",
-        "Checked by the job that opens this pull request: every change below "
-        "is a commit that descends from the old one on the input's branch "
-        f"and, except for nixpkgs, was there {args.cooldown_days} days ago.",
+        "Checked by the job that opens this pull request: every row in this "
+        "table is a commit that descends from the old one on the input's "
+        f"branch and, except for nixpkgs, was there {args.cooldown_days} days "
+        "ago. The commit date comes from the lock and is not checked; the "
+        "committer sets it.",
         "",
         *rows,
         "",

@@ -40,12 +40,13 @@ run.
    CI (continuous integration) included, for a pull request a workflow opened,
    and `main` cannot merge without a green `check`. Reopening counts as Alex's
    action, so CI runs. A machine account (#61) would make this unnecessary.
-2. **Read the inputs table.** Every input that moved, with the date of its new
-   commit and a link to its source diff, all written by the job that checked
-   them. For anything but nixpkgs, read the diff: it is short, and it becomes
-   root on the nuc. A row marked "input of an input" moved because an input's
-   own lock did. Everything under "From the update job" was written by the job
-   that ran the new code, and is unchecked.
+2. **Read the inputs table.** Every input that moved, with a link to its source
+   diff, written by the job that checked them. The commit date beside each comes
+   from the lock and is the committer's own, unchecked. For anything but
+   nixpkgs, read the diff: it is short, and it becomes root on the nuc. A row
+   marked "input of an input" moved because an input's own lock did. Everything
+   under "From the update job" was written by the job that ran the new code, and
+   is unchecked.
 3. **Read the package changes** (`nix store diff-closures` between the running
    system and the new one). A kernel series change (7.2 to 7.3, say) needs a
    reboot to take effect, which is #18's.
@@ -86,7 +87,11 @@ code (ADR 0003):
   new nixpkgs, so it is not trusted to have done so.
 
 If an input's own lock gains or loses an input, `check` refuses that week's
-update; update it by hand in a reviewed pull request.
+update; update it by hand in a reviewed pull request. It can also refuse one
+because an input of an input (flake-compat, say) fails the cooldown, which the
+first job does not apply to those, or because a repository's activity log has
+no push old enough. Either way the whole week's update is refused, nixpkgs
+included; the next run, or a hand update, follows.
 
 `main`'s ruleset needs a green check but no approval, so anything holding a
 write token could merge a green pull request, and comin would deploy it. That

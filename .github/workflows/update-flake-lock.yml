@@ -60,7 +60,6 @@ jobs:
         env:
           # Read-only; raises the GitHub API rate limit for the cooldown lookups.
           GITHUB_TOKEN: ${{ github.token }}
-          GH_TOKEN: ${{ github.token }}
           OTHERS: ${{ github.event_name == 'workflow_dispatch' && inputs.others }}
         run: |
           set -euo pipefail
@@ -71,7 +70,9 @@ jobs:
           # Or when last run's pull request, still open, moved them: this run
           # replaces it, and would otherwise drop them until next month. A
           # closed one is a rejection, and is not carried.
-          elif [ "$(gh pr list --head update/flake-lock --state open --json number --jq length)" != 0 ] &&
+          # The token goes to gh alone, not to the Nix programs below. A failed
+          # lookup prints nothing, and `-gt` on nothing is false: not carried.
+          elif [ "$(GH_TOKEN="$GITHUB_TOKEN" gh pr list --head update/flake-lock --state open --json number --jq length)" -gt 0 ] &&
             git fetch --depth=1 origin update/flake-lock; then
             git show FETCH_HEAD:flake.lock > "$RUNNER_TEMP/pr.lock"
             if python3 -I scripts/flake_update.py carry --main flake.lock --pr "$RUNNER_TEMP/pr.lock"; then
