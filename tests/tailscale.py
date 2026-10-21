@@ -3,7 +3,7 @@
 # front of this script.
 #
 # LAN: local area network. DNS: Domain Name System. TCP: Transmission Control
-# Protocol. API: application programming interface.
+# Protocol. API: application programming interface. CI: continuous integration.
 import json
 import re
 
