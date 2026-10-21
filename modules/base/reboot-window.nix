@@ -71,7 +71,8 @@ in
 
         # Wait up to 30 minutes for a comin deploy in progress to finish, then
         # reboot regardless: switch-to-configuration installs the boot entry
-        # before it activates, so the next boot should still be a complete system.
+        # before it activates, so the next boot should still be a complete
+        # system.
         # If comin cannot be asked, go ahead.
         for _ in $(seq 60); do
           if comin status --json | jq -e '.deployer.is_deploying == true' >/dev/null; then
