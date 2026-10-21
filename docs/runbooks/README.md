@@ -11,7 +11,7 @@ Operational procedures, written as tickets are completed.
 - [tailscale.md](tailscale.md) — the tailnet, the auth key, joining devices, SSH over Tailscale (ticket 1.5)
 - [reinstall.md](reinstall.md) — any install since 1.7: the host key made on the workstation, the smoke tests (ticket 1.8)
 - [install.md](install.md) — installing the nuc with nixos-anywhere, the disk passphrase, the TPM key (ticket 1.6)
-- [updates.md](updates.md) — the weekly `flake.lock` pull request, reviewing it, the cooldown (ticket 2.2; reboots arrive with 2.3)
+- [updates.md](updates.md) — the weekly `flake.lock` pull request, the reboot window, pausing comin (tickets 2.2 and 2.3)
 - [deploy.md](deploy.md) — comin pulling `main`, checking it, the manual deploy (ticket 2.1)
 - [hardware.md](hardware.md) — the live USB, assembly, BIOS settings and the hardware survey (ticket 1.1; the record fills in when it closes)
 
@@ -19,7 +19,6 @@ Operational procedures, written as tickets are completed.
 
 Not yet written. Each arrives with the ticket named.
 
-- `updates.md`, continued (ticket 2.3) — kernel reboots, the maintenance window, pausing comin
 - `data-layout.md` (ticket 3.3) — `/srv/data` conventions and ownership
 - `game-ops.md` (ticket 4.4) — broadcasts, restarts, restoring a world
 - `new-game-server.md` (ticket 4.6) — adding another game

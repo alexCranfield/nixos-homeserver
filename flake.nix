@@ -141,6 +141,13 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 2.3 (#18): a kernel change reboots in the window, a
+        # configuration-only change does not.
+        reboot-window = import ./tests/reboot-window.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
         # Fails `nix flake check` if the server stops using the dev shell's Nix,
         # for example after a `nix.package` override on the host.
         devshell-nix-matches-server =

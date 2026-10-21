@@ -35,11 +35,14 @@ modules/base/tailscale.nix         Tailscale, with SSH open on the tailnet
 modules/base/nix.nix               Nix settings and weekly garbage collection
 modules/base/system.nix            UTC clock, locale, boot menu retention, git and tmux
 modules/base/comin.nix             comin: the host deploys itself from `main`
+modules/base/reboot-window.nix     weekly window that reboots only for a new kernel
 modules/base/vm.nix                SSH into `just vm` on 127.0.0.1:2222; no effect on a real host
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
 tests/comin.nix                    VM test: comin runs, fetches `main`, ignores a testing branch
 tests/comin.py                     its test script
+tests/reboot-window.nix            VM test: a kernel change reboots in the window, a config change does not
+tests/reboot-window.py             its test script
 tests/disk-tpm.nix                 VM test: the real layout boots, then unlocks from an emulated TPM (Trusted Platform Module)
 tests/disk-tpm.py                  its test script, in Python; disk-tpm.nix passes in the values only Nix knows
 tests/network.nix                  VM test: reserved address on lan0, nuc.home.arpa, a LAN scan finds nothing open
