@@ -73,8 +73,10 @@ with subtest("a failing unit posts its name and the end of its log, pinging the 
     pings(msg)
     content = msg["content"]
     assert content.startswith(f"{PING}**nuc: notify-probe.service failed**"), content
-    # Mentioned in the text, but allowed_mentions lets only the role ping.
-    assert "probe end @everyone ''' fence" in content, content
+    # Broken up by a zero-width space, and allowed_mentions lets only the
+    # role ping anyway.
+    assert "probe end @​everyone ''' fence" in content, content
+    assert "@everyone" not in content, content
     assert content.count("```") == 2, content
     assert "line 30 " in content and "line 01 " not in content, content
     assert len(content) <= 2000, len(content)

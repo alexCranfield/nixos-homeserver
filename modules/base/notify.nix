@@ -63,6 +63,10 @@ let
       # Discord refuses a message over 2000 characters; keep the end, where
       # the error usually is. A code fence in the body would end ours early.
       body=''${body//\`\`\`/\'\'\'}
+      # And a zero-width space after each @, so `@everyone` in a log line does
+      # not even look like a mention; allowed_mentions below is what stops it
+      # pinging. Bytes, not ​, which needs a UTF-8 locale.
+      body=''${body//@/@$'\xe2\x80\x8b'}
       max=$((1900 - ''${#title}))
       if [ "''${#body}" -gt "$max" ]; then
         body="…''${body: -$max}"

@@ -20,8 +20,12 @@ module adds its own with `homeserver.notify.units = [ "<service>" ];` beside
 the unit.
 
 Messages longer than Discord's 2,000 characters keep their end, where the error
-usually is. Only the one role can be pinged: a log line containing `@everyone`
-or `@here` stays text.
+usually is. Only the one role can be pinged: each message tells Discord so
+(`allowed_mentions`), and a zero-width space after every `@` in log text keeps
+`@everyone` or `@here` from even looking like a mention. Discord highlights
+`@everyone` in text it will not ping; checked from the workstation on
+2026-10-21, Discord recorded the test message as pinging the role and not
+everyone (`mention_everyone: false`).
 
 A deploy does not post: comin does not restart the up and down unit, and
 successful deployments are left quiet so the channel shows only what needs
