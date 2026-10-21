@@ -40,10 +40,11 @@ attention.
   message says afterwards that the last boot ended badly, not when. A check
   from outside is #112.
 
-How the boot message knows: `notify-online.service` keeps a marker file in
-`/var/lib/private/notify-online` from start to stop. If the marker is there at
-boot, the last boot ended before the unit was stopped, so before a clean
-shutdown.
+How the boot message knows: `notify-online.service` keeps a marker file,
+`/var/lib/notify-online/running`, from start to stop, and syncs the disk each
+time. If the marker is there at boot, the last boot ended before the unit was
+stopped, so before a clean shutdown. A failed post does not fail the unit, so a
+Discord outage at boot cannot make the next boot look unclean.
 
 ## Setting it up
 
@@ -70,7 +71,9 @@ The URL is the credential: anyone holding it can post to the channel, though
 not read it. It is never put on a command line, where any local user could read
 it from `/proc`, and never in the Nix store, which every local user can read
 (the build fails if it is). sops-nix decrypts both values into `/run/secrets`,
-readable by root, and systemd hands them to the posting units as credentials.
+readable by root. `notify-failure@` runs as a throwaway user and gets them from
+systemd as credentials; `notify-online` and comin's hook run as root and read
+them in place, because the credentials could not be read when stopping a unit.
 
 **If the URL leaks**, delete the webhook in Discord (that is the revocation),
 make a new one, and replace it with `just secrets-edit notify.yaml`.
