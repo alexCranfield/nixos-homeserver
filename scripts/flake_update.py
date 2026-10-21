@@ -28,6 +28,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 
 NIXPKGS = "nixpkgs"
@@ -149,8 +150,23 @@ def build_toplevel():
     return out.stdout.strip()
 
 
-def vulnix(path, cache):
-    """CVE ids per package in the runtime closure of `path`, None on failure."""
+def vulnix(path, cache, attempts=3):
+    """CVE ids per package in the runtime closure of `path`, None on failure.
+
+    Retried, since its first run downloads the NVD data, and on GitHub's
+    runners that download has timed out (2026-10-21, #17).
+    """
+    for attempt in range(1, attempts + 1):
+        found = vulnix_once(path, cache)
+        if found is not None:
+            return found
+        log(f"vulnix failed (attempt {attempt} of {attempts})")
+        if attempt < attempts:
+            time.sleep(30 * attempt)
+    return None
+
+
+def vulnix_once(path, cache):
     # Exit 2 means vulnerabilities were found, the normal case, but vulnix
     # also exits 2 on an internal error; only a JSON list counts as a result.
     res = run(
@@ -173,7 +189,7 @@ def vulnix(path, cache):
 def cve_diff(old, new):
     """Lines for CVE ids that the update fixes and that it introduces."""
     if old is None or new is None:
-        return ["vulnix failed; see the workflow log. No CVE comparison."]
+        return ["vulnix failed; see the workflow log. No CVE comparison.", ""]
     old_ids = set().union(*old.values()) if old else set()
     new_ids = set().union(*new.values()) if new else set()
     fixed, added = sorted(old_ids - new_ids), sorted(new_ids - old_ids)

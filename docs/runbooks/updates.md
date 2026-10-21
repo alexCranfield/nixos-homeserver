@@ -55,7 +55,9 @@ run.
    It matches package names against the NVD (National Vulnerability Database)
    and does not know which fixes nixpkgs has patched in, so most entries are
    false positives; what matters is what the update adds. It informs; it does
-   not block.
+   not block. Its first step downloads the NVD data, which timed out on
+   GitHub's runner on 2026-10-21, so it is tried three times; if all fail, the
+   pull request says so and shows no comparison.
 5. **Merge once `check` is green.** Then confirm the deploy as in
    [deploy.md](deploy.md), "Is it working?".
 
