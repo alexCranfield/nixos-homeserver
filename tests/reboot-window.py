@@ -79,7 +79,7 @@ with subtest("a kernel change does not reboot at the switch; the window's servic
     rebooting = wait_console(r"reboot-window-start\[\d+\]: rebooting\s*$", 120)
     # The quotes, the unset variable and the backtick reached bash intact.
     first = wait_console(r"reboot-window-start\[\d+\]: hook-one-ran \[\] `x`", 0)
-    failed = wait_console(r"pre-reboot command failed \(exit 1, 124 if stopped\); rebooting anyway", 0)
+    failed = wait_console(r"pre-reboot command failed \(exit 1, 124 if timed out\); rebooting anyway", 0)
     assert first.start() < failed.start() < rebooting.start(), "hooks out of order"
     nuc.wait_for_shutdown()
 

@@ -71,7 +71,7 @@ in
 
         # Wait up to 30 minutes for a comin deploy in progress to finish, then
         # reboot regardless: switch-to-configuration installs the boot entry
-        # before it activates, so the next boot is still a complete system.
+        # before it activates, so the next boot should still be a complete system.
         # If comin cannot be asked, go ahead.
         for _ in $(seq 60); do
           if comin status --json | jq -e '.deployer.is_deploying == true' >/dev/null; then
@@ -85,7 +85,7 @@ in
         ${lib.concatMapStrings (cmd: ''
           echo ${lib.escapeShellArg "pre-reboot: ${cmd}"}
           timeout 30m bash -c ${lib.escapeShellArg cmd} ||
-            echo "pre-reboot command failed (exit $?, 124 if stopped); rebooting anyway"
+            echo "pre-reboot command failed (exit $?, 124 if timed out); rebooting anyway"
         '') cfg.preReboot}
         echo "rebooting"
         systemctl reboot
