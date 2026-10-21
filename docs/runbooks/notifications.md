@@ -6,7 +6,7 @@ configuration is `modules/base/notify.nix`, with the nuc's secrets wired in
 
 ## What posts
 
-| Event | Message | Pings `@server-mods` |
+| Event | Message | Pings `@nuc-mods` |
 |---|---|---|
 | A watched unit fails | `nuc: <unit> failed`, with its last 20 log lines | yes |
 | comin's deployment fails | `nuc: comin deployment failed`, with the commit and comin's error | yes |
@@ -49,10 +49,14 @@ Discord outage at boot cannot make the next boot look unclean.
 ## Setting it up
 
 1. **The role.** In the Discord server, Server Settings, Roles, create
-   `server-mods` and give it to whoever should be pinged. With Developer Mode on
-   (User Settings, Advanced), right-click the role and Copy Role ID.
+   `nuc-mods` and give it to whoever should be pinged. It needs no
+   permissions, but if the alerts channel is private, give the role View
+   Channel there, or its members are not notified. With Developer Mode on
+   (User Settings, App Settings, Advanced), right-click the role and Copy Role
+   ID.
 2. **The webhook.** Edit the alerts channel, Integrations, Webhooks, New
-   Webhook, name it `nuc`, Copy Webhook URL.
+   Webhook, Copy Webhook URL. Messages show the webhook's name and picture,
+   set in Discord, not here; the nuc's is `nuccy`.
 3. **The secret.** In the repository:
 
    ```bash
@@ -101,4 +105,5 @@ that sent it: `notify-failure@<unit>.service`, `notify-online.service`, or
 
 | | |
 |---|---|
+| Set up | 2026-10-21: role `@nuc-mods`, webhook `nuccy`; `secrets/notify.yaml` re-encrypted by Alex at 23:24:36 UTC |
 | First notification on the phone | to be filled in |
