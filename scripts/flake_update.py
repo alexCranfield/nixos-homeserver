@@ -56,9 +56,10 @@ def log(msg):
     print(msg, file=sys.stderr, flush=True)
 
 
-def run(*cmd, check=True):
+def run(*cmd, check=True, timeout=None):
     log("+ " + " ".join(cmd))
-    return subprocess.run(cmd, check=check, text=True, stdout=subprocess.PIPE)
+    return subprocess.run(cmd, check=check, text=True, stdout=subprocess.PIPE,
+                          timeout=timeout)
 
 
 def load(path):
@@ -153,8 +154,10 @@ def build_toplevel():
 def vulnix(path, cache, attempts=3):
     """CVE ids per package in the runtime closure of `path`, None on failure.
 
-    Retried, since its first run downloads the NVD data, and on GitHub's
-    runners that download has timed out (2026-10-21, #17).
+    Retried, since its first run downloads the NVD (National Vulnerability
+    Database) data, and on GitHub's runners that download has timed out
+    (2026-10-21 UTC, #17). Each attempt is capped at ten minutes, so an
+    outage costs about 32 minutes at most, inside the job's 60.
     """
     for attempt in range(1, attempts + 1):
         found = vulnix_once(path, cache)
@@ -169,11 +172,14 @@ def vulnix(path, cache, attempts=3):
 def vulnix_once(path, cache):
     # Exit 2 means vulnerabilities were found, the normal case, but vulnix
     # also exits 2 on an internal error; only a JSON list counts as a result.
-    res = run(
-        "nix", "run", "--inputs-from", ".", "nixpkgs#vulnix", "--",
-        "--json", "--closure", "--cache-dir", cache, path,
-        check=False,
-    )
+    try:
+        res = run(
+            "nix", "run", "--inputs-from", ".", "nixpkgs#vulnix", "--",
+            "--json", "--closure", "--cache-dir", cache, path,
+            check=False, timeout=600,
+        )
+    except subprocess.TimeoutExpired:
+        return None
     if res.returncode not in (0, 2):
         return None
     try:
@@ -279,7 +285,11 @@ def cmd_update(args):
             "From vulnix. It matches package names against the NVD (National "
             "Vulnerability Database) and does not know which fixes nixpkgs "
             "has patched in, so treat it as a pointer, not a verdict.", ""]
-        report += cve_diff(vulnix(old_top, cache), vulnix(new_top, cache))
+        # One download serves both scans; if it failed three times for the
+        # first, a second round would only spend the job's time.
+        old_cves = vulnix(old_top, cache)
+        new_cves = vulnix(new_top, cache) if old_cves is not None else None
+        report += cve_diff(old_cves, new_cves)
 
     text = "\n".join(report + full) + "\n"
     if len(text) > REPORT_LIMIT:
