@@ -1,12 +1,21 @@
-# Updates: the weekly `flake.lock` pull request
+# Updates: the weekly `flake.lock` pull request and the reboot window
 
-Ticket 2.2 (#17), ADR (Architecture Decision Record) 0003. Ticket 2.3 (#18)
-adds kernel reboots and the maintenance window here later.
+Tickets 2.2 (#17) and 2.3 (#18), ADR (Architecture Decision Record) 0003.
 
 Everything the nuc runs is pinned in `flake.lock`: each input to a commit and a
 content hash. Nothing changes until the lock does, and the lock changes only
 through a reviewed pull request. Once one merges, comin deploys it within about
 a minute ([deploy.md](deploy.md)).
+
+How a change reaches the nuc:
+
+1. A pull request merges to `main`: one of the weekly `flake.lock` pull
+   requests below, or any other.
+2. comin switches the nuc to it within a minute or two. Configuration changes
+   take effect then.
+3. A new kernel, initrd or set of kernel modules waits for the reboot window,
+   Tuesday 10:00 UTC (Coordinated Universal Time), 04:00 Mountain daylight
+   time; see "The reboot window" below.
 
 ## What runs, and when
 
@@ -105,6 +114,74 @@ Determinate Systems' `update-flake-lock` action was not used: it runs a compiled
 bundle and five more third-party actions in the job with the write token, and
 cannot apply the cooldown. See `docs/q-and-a/security.md`.
 
+## The reboot window
+
+`modules/base/reboot-window.nix`: the timer `reboot-window.timer` runs
+`reboot-window.service` every Tuesday at 10:00 UTC. The service compares the
+kernel, initrd, kernel modules and kernel parameters of `/run/current-system`,
+what comin last switched to, with `/run/booted-system`. If they match, it does
+nothing; a configuration-only change never reboots the nuc. If they differ, it
+waits up to 30 minutes for a comin deploy in progress to finish (and goes ahead
+after that even if one is still running: switch-to-configuration installs the
+boot entry before it activates, so the next boot should be a complete system),
+runs the pre-reboot commands, then reboots. The disk unlocks from the TPM
+(Trusted Platform Module); in the one recorded reboot, on 2026-10-20, SSH
+answered 47 s after the reboot command ([deploy.md](deploy.md), Record).
+
+A missed window, the nuc being off at 10:00, is not made up at the next boot:
+that boot has already done what the reboot was for.
+
+**Is a reboot pending?**
+
+```bash
+ssh nuc 'comin status | grep -i reboot; systemctl list-timers reboot-window.timer'
+```
+
+comin prints `Need to reboot: yes` when the running kernel differs from the
+booted one. That is narrower than the window's test, which also compares the
+initrd (where CPU microcode and the early-boot systemd live), the modules and
+the kernel parameters: comin can say "no" to a change the window reboots for.
+
+**Pre-reboot commands.** `homeserver.rebootWindow.preReboot` takes a list of
+commands, run in order just before the reboot; game servers (#31) will use it
+to warn players and wait. Each runs in its own bash, so quoting in it is its
+own, and is stopped after 30 minutes. A failing or stopped command is logged
+and the reboot goes ahead.
+
+**Reboot now instead.** `ssh nuc sudo systemctl reboot`, or run the window
+early, which still skips the reboot if no kernel changed:
+
+```bash
+ssh nuc sudo systemctl start reboot-window.service
+ssh nuc journalctl -u reboot-window.service -I
+```
+
+**Skip a window.** `ssh nuc sudo systemctl stop reboot-window.timer` stops it
+until the next boot, and probably until the next deploy that changes the
+timer, which restarts it (not verified). To move it, set
+`homeserver.rebootWindow.calendar` in a pull request.
+
+## Pausing comin, and forcing a deploy
+
+comin's commands work as ops without sudo (its socket is open to local users,
+#101):
+
+- **Pause:** `ssh nuc comin suspend` stops builds and deploys, for example
+  while something is being debugged by hand; `comin resume` starts them again.
+  comin keeps fetching meanwhile. **Resume before any restart of comin or
+  reboot, the window's included.** By comin's source, the deploy half of the
+  pause is saved in `/var/lib/comin` and survives, while the rest is not, so
+  afterwards comin builds but never deploys, and `comin resume` refuses ("the
+  manager is not suspended"). `comin suspend` then `comin resume` should clear
+  it; that recovery is untested, #110. Check with
+  `ssh nuc comin status --json | jq .deployer.is_suspended` (jq runs on the
+  workstation; the nuc has none). For a pause that may last past a Tuesday,
+  also skip the window (above).
+- **Fetch now** rather than within the minute: `ssh nuc comin fetch`.
+- **Deploy something that is not on `main`:** `just deploy` from a checkout,
+  the emergency path ([deploy.md](deploy.md), "Manual deploy"). comin replaces
+  it at the next merge.
+
 ## Running it by hand
 
 From the Actions tab, "Update flake.lock", "Run workflow"; tick the box to
@@ -140,5 +217,5 @@ nix develop -c python3 -I scripts/flake_update.py update --out /tmp/lock-out --o
 
 | | |
 |---|---|
-| First automated pull request | to be filled in |
-| First deploy of one by comin | to be filled in |
+| First automated pull request | #106, opened 2026-10-21 by a manual dispatch from `main` (run 39517082032); nixpkgs 93108a5 → cd4ea8d, and comin, disko, home-manager and sops-nix to their heads as pushed at least seven days earlier. vulnix's database download timed out on the runner, so no CVE comparison (#108 adds retries); CI's `tailscale` test failed once on a race (#103, fixed in #107) and passed on re-run |
+| First deploy of one by comin | merged 02:20:22 UTC, comin fetched at 02:21:21 and finished switching at 02:22:28: 2 min 6 s. Nix 2.34.9 running; kernel 7.3 waiting for a reboot |
