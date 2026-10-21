@@ -14,8 +14,8 @@
 # deny), tailscale.nix (admin access over the tailnet), nix.nix (Nix settings
 # and garbage collection), system.nix (clock, bootloader retention, tools),
 # comin.nix (deploys itself from `main`), reboot-window.nix (kernel reboots
-# in a weekly window), vm.nix (SSH into `just vm`, which changes nothing on a
-# real host).
+# in a weekly window), notify.nix (failure notifications to Discord), vm.nix
+# (SSH into `just vm`, which changes nothing on a real host).
 # Hardware-specific settings, such as the kernel series and CPU microcode,
 # belong to the host.
 { lib, inputs, ... }:
@@ -29,6 +29,7 @@
     ./system.nix
     ./comin.nix
     ./reboot-window.nix
+    ./notify.nix
     ./vm.nix
   ];
 
