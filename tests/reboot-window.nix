@@ -1,11 +1,12 @@
-# Test for ticket 2.3 (#18): the reboot window reboots only for a new kernel.
+# Test for ticket 2.3 (#18): the reboot window reboots only for a new kernel
+# or new kernel parameters.
 #
-# One VM (virtual machine) runs the real host configuration with two
+# One VM (virtual machine) runs the real host configuration with three
 # specialisations, variants built alongside it that the test switches to as
 # comin would switch to a new commit: `config` changes only the login banner,
-# `kernel` changes the kernel series, `params` adds a kernel parameter. The test starts the window's service by
-# hand rather than waiting for Tuesday, and checks the timer's schedule
-# separately.
+# `kernel` changes the kernel series, `params` adds a kernel parameter. The
+# test starts the window's service by hand rather than waiting for Tuesday,
+# and checks the timer's schedule separately.
 {
   pkgs,
   inputs,

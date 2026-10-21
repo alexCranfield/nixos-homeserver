@@ -41,7 +41,7 @@ modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
 tests/comin.nix                    VM test: comin runs, fetches `main`, ignores a testing branch
 tests/comin.py                     its test script
-tests/reboot-window.nix            VM test: a kernel change reboots in the window, a config change does not
+tests/reboot-window.nix            VM test: kernel and kernel-parameter changes reboot in the window, a config change does not
 tests/reboot-window.py             its test script
 tests/disk-tpm.nix                 VM test: the real layout boots, then unlocks from an emulated TPM (Trusted Platform Module)
 tests/disk-tpm.py                  its test script, in Python; disk-tpm.nix passes in the values only Nix knows

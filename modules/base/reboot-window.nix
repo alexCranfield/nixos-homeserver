@@ -85,7 +85,7 @@ in
         ${lib.concatMapStrings (cmd: ''
           echo ${lib.escapeShellArg "pre-reboot: ${cmd}"}
           timeout 30m bash -c ${lib.escapeShellArg cmd} ||
-            echo "pre-reboot command failed (exit $?); rebooting anyway"
+            echo "pre-reboot command failed (exit $?, 124 if stopped); rebooting anyway"
         '') cfg.preReboot}
         echo "rebooting"
         systemctl reboot

@@ -121,12 +121,12 @@ cannot apply the cooldown. See `docs/q-and-a/security.md`.
 kernel, initrd, kernel modules and kernel parameters of `/run/current-system`,
 what comin last switched to, with `/run/booted-system`. If they match, it does
 nothing; a configuration-only change never reboots the nuc. If they differ, it
-waits up to 30 minutes for a comin deploy in progress to finish, and reboots
-after that even if one is still running: the switch installs the boot entry
-before it activates, so the next boot is a complete system. It then runs the
-pre-reboot commands and reboots. The disk unlocks from the TPM (Trusted
-Platform Module); in the one recorded reboot, on 2026-10-20, SSH answered 47 s
-after the reboot command ([deploy.md](deploy.md), Record).
+waits up to 30 minutes for a comin deploy in progress to finish (and goes ahead
+after that even if one is still running: switch-to-configuration installs the
+boot entry before it activates, so the next boot should be a complete system),
+runs the pre-reboot commands, then reboots. The disk unlocks from the TPM
+(Trusted Platform Module); in the one recorded reboot, on 2026-10-20, SSH
+answered 47 s after the reboot command ([deploy.md](deploy.md), Record).
 
 A missed window, the nuc being off at 10:00, is not made up at the next boot:
 that boot has already done what the reboot was for.
@@ -174,7 +174,9 @@ comin's commands work as ops without sudo (its socket is open to local users,
   afterwards comin builds but never deploys, and `comin resume` refuses ("the
   manager is not suspended"). `comin suspend` then `comin resume` should clear
   it; that recovery is untested, #110. Check with
-  `comin status --json | jq .deployer.is_suspended`.
+  `ssh nuc comin status --json | jq .deployer.is_suspended` (jq runs on the
+  workstation; the nuc has none). For a pause that may last past a Tuesday,
+  also skip the window (above).
 - **Fetch now** rather than within the minute: `ssh nuc comin fetch`.
 - **Deploy something that is not on `main`:** `just deploy` from a checkout,
   the emergency path ([deploy.md](deploy.md), "Manual deploy"). comin replaces
