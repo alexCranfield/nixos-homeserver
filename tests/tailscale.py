@@ -3,7 +3,7 @@
 # front of this script.
 #
 # LAN: local area network. DNS: Domain Name System. TCP: Transmission Control
-# Protocol. API: application programming interface.
+# Protocol. API: application programming interface. CI: continuous integration.
 import json
 import re
 
@@ -23,6 +23,10 @@ def open_ports(out):
 start_all()
 headscale.wait_for_unit("headscale.service")
 headscale.wait_for_open_port(443)
+# Port 443 is nginx; the headscale command talks to the daemon over its own
+# socket, which can come up later. On CI's slower runners it had not, and the
+# command gave up (#103). Wait until the command works.
+headscale.wait_until_succeeds("headscale users list", timeout=120)
 headscale.succeed("headscale users create test")
 
 
@@ -50,9 +54,9 @@ with subtest("the nuc joins the tailnet from its auth key file"):
     nuc.wait_for_unit("tailscaled.service")
     nuc.succeed("install -m 600 /dev/null /run/ts-authkey")
     nuc.succeed(f"printf %s '{new_key('--tags tag:server')}' > /run/ts-authkey")
-    # The unit started at boot, before the key existed, and is still waiting
-    # to log in; on the real machine sops writes the file before it starts.
-    nuc.succeed("systemctl restart tailscaled-autoconnect.service")
+    # Started only now that the key exists, as on the real machine, where sops
+    # writes the file before the unit starts (tests/tailscale.nix, #103).
+    nuc.succeed("systemctl start tailscaled-autoconnect.service")
     NUC_TS_IP = nuc.succeed("tailscale ip -4").strip()
     print(f"nuc's tailnet address: {NUC_TS_IP}")
     assert NUC_TS_IP.startswith("100."), NUC_TS_IP

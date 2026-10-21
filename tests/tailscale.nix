@@ -74,6 +74,13 @@ pkgs.testers.runNixOSTest {
       # The host points this at its sops secret (hosts/nuc/tailscale.nix), which
       # a test VM cannot decrypt. The test writes a Headscale key here instead.
       services.tailscale.authKeyFile = lib.mkForce "/run/ts-authkey";
+      # Not started at boot: the key does not exist yet, and a boot-time start
+      # runs `tailscale up` with no key, which waits at a login URL. Racing the
+      # test's own start against it made the test flaky in CI (continuous
+      # integration, #103). The test starts it once the key is written, as on
+      # the real host, where sops-nix writes it at activation, before services
+      # start.
+      systemd.services.tailscaled-autoconnect.wantedBy = lib.mkForce [ ];
       services.tailscale.extraUpFlags = [ "--login-server=https://headscale" ];
 
       users.users.ops.openssh.authorizedKeys.keys = [ keys.snakeOilPublicKey ];
