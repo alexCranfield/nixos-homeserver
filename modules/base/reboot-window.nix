@@ -3,10 +3,11 @@
 # comin switches to each new configuration as soon as it merges (comin.nix),
 # but a new kernel, initrd or set of kernel modules only takes effect at the
 # next boot. Rather than rebooting at deploy time, possibly mid-game, the timer
-# below reboots in the window, and only if the running system's kernel, initrd
-# or modules differ from the booted one: the same comparison nixpkgs'
-# system.autoUpgrade makes before it reboots. A configuration-only change
-# needs no reboot and gets none.
+# below reboots in the window, and only if the running system's kernel, initrd,
+# modules or kernel parameters differ from the booted one: the comparison
+# nixpkgs' system.autoUpgrade makes before it reboots, plus the parameters,
+# which it leaves out. A configuration-only change needs no reboot and gets
+# none.
 #
 # Tuesday 10:00 UTC (Coordinated Universal Time), Alex's choice (2026-10-21):
 # 04:00 Mountain daylight time, 03:00 standard, the day after the weekly
@@ -34,7 +35,8 @@ in
       example = [ "/run/current-system/sw/bin/broadcast-reboot-warning" ];
       description = ''
         Commands run in order just before a window reboot, for example to warn
-        players and wait (game servers, #31). A failing command is logged and
+        players and wait (game servers, #31). Each runs in its own bash and is
+        stopped after 30 minutes. A failing or stopped command is logged and
         does not stop the reboot: a security fix should not wait on a chat
         message.
       '';
@@ -49,6 +51,7 @@ in
       description = "Reboot if the kernel changed since boot";
       # comin is off in `just vm`, where its package is unset.
       path = [
+        pkgs.bash
         pkgs.coreutils
         pkgs.jq
       ]
@@ -56,15 +59,20 @@ in
       serviceConfig.Type = "oneshot";
       script = ''
         set -u
-        parts() { readlink "$1"/initrd "$1"/kernel "$1"/kernel-modules; }
+        parts() {
+          readlink "$1"/initrd "$1"/kernel "$1"/kernel-modules
+          cat "$1"/kernel-params
+        }
         if [ "$(parts /run/booted-system)" = "$(parts /run/current-system)" ]; then
-          echo "kernel, initrd and modules unchanged since boot: no reboot"
+          echo "kernel, initrd, modules and parameters unchanged since boot: no reboot"
           exit 0
         fi
-        echo "the running system's kernel, initrd or modules differ from the booted ones"
+        echo "the running system's kernel, initrd, modules or parameters differ from the booted ones"
 
-        # Do not reboot under a deploy in progress: wait up to 30 minutes for
-        # comin to finish. If comin cannot be asked, go ahead.
+        # Wait up to 30 minutes for a comin deploy in progress to finish, then
+        # reboot regardless: switch-to-configuration installs the boot entry
+        # before it activates, so the next boot is still a complete system.
+        # If comin cannot be asked, go ahead.
         for _ in $(seq 60); do
           if comin status --json | jq -e '.deployer.is_deploying == true' >/dev/null; then
             echo "comin is deploying; waiting"
@@ -75,8 +83,9 @@ in
         done
 
         ${lib.concatMapStrings (cmd: ''
-          echo "pre-reboot: ${cmd}"
-          ${cmd} || echo "pre-reboot command failed (exit $?); rebooting anyway"
+          echo ${lib.escapeShellArg "pre-reboot: ${cmd}"}
+          timeout 30m bash -c ${lib.escapeShellArg cmd} ||
+            echo "pre-reboot command failed (exit $?); rebooting anyway"
         '') cfg.preReboot}
         echo "rebooting"
         systemctl reboot

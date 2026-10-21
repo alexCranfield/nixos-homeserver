@@ -35,7 +35,7 @@ modules/base/tailscale.nix         Tailscale, with SSH open on the tailnet
 modules/base/nix.nix               Nix settings and weekly garbage collection
 modules/base/system.nix            UTC clock, locale, boot menu retention, git and tmux
 modules/base/comin.nix             comin: the host deploys itself from `main`
-modules/base/reboot-window.nix     weekly window that reboots only for a new kernel
+modules/base/reboot-window.nix     weekly window that reboots only for a new kernel or kernel parameters
 modules/base/vm.nix                SSH into `just vm` on 127.0.0.1:2222; no effect on a real host
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)

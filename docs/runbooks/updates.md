@@ -118,13 +118,15 @@ cannot apply the cooldown. See `docs/q-and-a/security.md`.
 
 `modules/base/reboot-window.nix`: the timer `reboot-window.timer` runs
 `reboot-window.service` every Tuesday at 10:00 UTC. The service compares the
-kernel, initrd and kernel modules of `/run/current-system`, what comin last
-switched to, with `/run/booted-system`. If they match, it does nothing; a
-configuration-only change never reboots the nuc. If they differ, it waits up
-to 30 minutes for a comin deploy in progress to finish, runs the pre-reboot
-commands, then reboots. The disk unlocks from the TPM (Trusted Platform
-Module) and the nuc is back on the tailnet within about a minute
-([deploy.md](deploy.md), Record).
+kernel, initrd, kernel modules and kernel parameters of `/run/current-system`,
+what comin last switched to, with `/run/booted-system`. If they match, it does
+nothing; a configuration-only change never reboots the nuc. If they differ, it
+waits up to 30 minutes for a comin deploy in progress to finish, and reboots
+after that even if one is still running: the switch installs the boot entry
+before it activates, so the next boot is a complete system. It then runs the
+pre-reboot commands and reboots. The disk unlocks from the TPM (Trusted
+Platform Module); in the one recorded reboot, on 2026-10-20, SSH answered 47 s
+after the reboot command ([deploy.md](deploy.md), Record).
 
 A missed window, the nuc being off at 10:00, is not made up at the next boot:
 that boot has already done what the reboot was for.
@@ -135,14 +137,16 @@ that boot has already done what the reboot was for.
 ssh nuc 'comin status | grep -i reboot; systemctl list-timers reboot-window.timer'
 ```
 
-comin prints `Need to reboot: yes` when the booted system differs from the
-running one, which is close to, but not exactly, the window's test: comin
-compares whole systems, the window only the kernel, initrd and modules.
+comin prints `Need to reboot: yes` when the running kernel differs from the
+booted one. That is narrower than the window's test, which also compares the
+initrd (where CPU microcode and the early-boot systemd live), the modules and
+the kernel parameters: comin can say "no" to a change the window reboots for.
 
 **Pre-reboot commands.** `homeserver.rebootWindow.preReboot` takes a list of
 commands, run in order just before the reboot; game servers (#31) will use it
-to warn players and wait. A failing command is logged and the reboot goes
-ahead.
+to warn players and wait. Each runs in its own bash, so quoting in it is its
+own, and is stopped after 30 minutes. A failing or stopped command is logged
+and the reboot goes ahead.
 
 **Reboot now instead.** `ssh nuc sudo systemctl reboot`, or run the window
 early, which still skips the reboot if no kernel changed:
@@ -152,9 +156,10 @@ ssh nuc sudo systemctl start reboot-window.service
 ssh nuc journalctl -u reboot-window.service -I
 ```
 
-**Skip a window.** `ssh nuc sudo systemctl stop reboot-window.timer` until
-the next boot, or set `homeserver.rebootWindow.calendar` in a pull request to
-move it.
+**Skip a window.** `ssh nuc sudo systemctl stop reboot-window.timer` stops it
+until the next boot, and probably until the next deploy that changes the
+timer, which restarts it (not verified). To move it, set
+`homeserver.rebootWindow.calendar` in a pull request.
 
 ## Pausing comin, and forcing a deploy
 
@@ -163,11 +168,13 @@ comin's commands work as ops without sudo (its socket is open to local users,
 
 - **Pause:** `ssh nuc comin suspend` stops builds and deploys, for example
   while something is being debugged by hand; `comin resume` starts them again.
-  comin keeps fetching meanwhile. The pause is held in comin's memory only
-  (`internal/manager/manager.go`), so a restart of comin or a reboot, the
-  reboot window's included, ends it: for a pause longer than a day, also stop
-  the window's timer (below), or `sudo systemctl stop comin`, which a reboot
-  also undoes.
+  comin keeps fetching meanwhile. **Resume before any restart of comin or
+  reboot, the window's included.** By comin's source, the deploy half of the
+  pause is saved in `/var/lib/comin` and survives, while the rest is not, so
+  afterwards comin builds but never deploys, and `comin resume` refuses ("the
+  manager is not suspended"). `comin suspend` then `comin resume` should clear
+  it; that recovery is untested, #110. Check with
+  `comin status --json | jq .deployer.is_suspended`.
 - **Fetch now** rather than within the minute: `ssh nuc comin fetch`.
 - **Deploy something that is not on `main`:** `just deploy` from a checkout,
   the emergency path ([deploy.md](deploy.md), "Manual deploy"). comin replaces

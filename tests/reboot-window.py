@@ -10,15 +10,16 @@ import time
 assert KERNEL_LATEST != KERNEL_OTHER, (KERNEL_LATEST, KERNEL_OTHER)
 
 
-def wait_console(pattern, timeout):
-    """The first match of `pattern` on the console, waiting up to `timeout` s.
+def wait_console(pattern, timeout, since=0):
+    """The first match of `pattern` on the console after offset `since`,
+    waiting up to `timeout` s.
 
     Not wait_for_console_text(timeout=...): that takes one queued console line
     per second, and with the whole boot log still queued it misses a line
     printed in time. The full log is searched instead.
     """
     deadline = time.monotonic() + timeout
-    while not (m := re.search(pattern, nuc.get_console_log(), re.M)):
+    while not (m := re.compile(pattern, re.M).search(nuc.get_console_log(), since)):
         assert time.monotonic() < deadline, f"{pattern!r} not on the console in {timeout} s"
         time.sleep(1)
     return m
@@ -67,7 +68,7 @@ with subtest("a configuration-only change deploys and does not reboot"):
     assert "unchanged since boot: no reboot" in log, log
     assert KERNEL_LATEST in nuc.succeed("uname -r"), "kernel changed without a reboot?"
 
-with subtest("a kernel change waits for the window, then reboots"):
+with subtest("a kernel change does not reboot at the switch; the window's service then does"):
     switch("kernel")
     # Switching alone does not reboot: the machine keeps running the old kernel.
     nuc.succeed("sleep 5")
@@ -76,7 +77,8 @@ with subtest("a kernel change waits for the window, then reboots"):
     # The pre-reboot commands run, in order, and a failing one does not stop
     # the reboot.
     rebooting = wait_console(r"reboot-window-start\[\d+\]: rebooting\s*$", 120)
-    first = wait_console(r"reboot-window-start\[\d+\]: hook-one-ran", 0)
+    # The quotes, the unset variable and the backtick reached bash intact.
+    first = wait_console(r"reboot-window-start\[\d+\]: hook-one-ran \[\] `x`", 0)
     failed = wait_console(r"pre-reboot command failed \(exit 1\); rebooting anyway", 0)
     assert first.start() < failed.start() < rebooting.start(), "hooks out of order"
     nuc.wait_for_shutdown()
@@ -89,3 +91,10 @@ with subtest("after the reboot the machine comes back"):
     log = window()
     print(log)
     assert "unchanged since boot: no reboot" in log, log
+
+with subtest("a kernel parameter change also reboots"):
+    switch("params")
+    since = len(nuc.get_console_log())
+    nuc.succeed("systemctl start --no-block reboot-window.service")
+    wait_console(r"reboot-window-start\[\d+\]: [^\n]*parameters differ", 120, since)
+    nuc.wait_for_shutdown()
