@@ -157,7 +157,8 @@ def vulnix(path, cache, attempts=3):
     Retried, since its first run downloads the NVD (National Vulnerability
     Database) data, and on GitHub's runners that download has timed out
     (2026-10-21 UTC, #17). Each attempt is capped at ten minutes, so an
-    outage costs about 32 minutes at most, inside the job's 60.
+    outage costs about 32 minutes, and the second scan, which reuses the
+    download, gets one attempt, so vulnix stays well inside the job's 60.
     """
     for attempt in range(1, attempts + 1):
         found = vulnix_once(path, cache)
@@ -179,6 +180,7 @@ def vulnix_once(path, cache):
             check=False, timeout=600,
         )
     except subprocess.TimeoutExpired:
+        log("vulnix stopped after ten minutes")
         return None
     if res.returncode not in (0, 2):
         return None
@@ -285,10 +287,11 @@ def cmd_update(args):
             "From vulnix. It matches package names against the NVD (National "
             "Vulnerability Database) and does not know which fixes nixpkgs "
             "has patched in, so treat it as a pointer, not a verdict.", ""]
-        # One download serves both scans; if it failed three times for the
-        # first, a second round would only spend the job's time.
+        # One download serves both scans: the first may retry it, the second
+        # reads the cached data, so one attempt is enough, and a failed first
+        # scan means the second is skipped.
         old_cves = vulnix(old_top, cache)
-        new_cves = vulnix(new_top, cache) if old_cves is not None else None
+        new_cves = vulnix(new_top, cache, attempts=1) if old_cves is not None else None
         report += cve_diff(old_cves, new_cves)
 
     text = "\n".join(report + full) + "\n"
