@@ -124,13 +124,24 @@ with subtest("a full TCP scan over the tailnet finds SSH and Tailscale's peer AP
     ]
     assert len(peerapi) == 1, listeners
     PEERAPI = peerapi[0]
-    # Alone it takes about 2.5 minutes; the timeout fails a stalled scan
-    # (no ports reported) long before the test's one-hour limit.
-    out = client.succeed(
-        f"nmap -Pn -p- -T4 --max-retries 1 --host-timeout 10m {NUC_TS_IP}"
-    )
-    print(out)
-    assert open_ports(out) == sorted([22, PEERAPI]), open_ports(out)
+    # Alone a scan takes about 2.5 minutes. On CI runners a dropped probe
+    # once missed the peer API port (#109's first run), so the scan is
+    # repeated, up to three times, until one scan finds exactly SSH and the
+    # peer API. Any other port, in any scan, fails the test at once. Three
+    # stalled scans (10 minutes each, no ports reported) still fail well
+    # within the test's one-hour limit.
+    expected = {22, PEERAPI}
+    for attempt in range(1, 4):
+        out = client.succeed(
+            f"nmap -Pn -p- -T4 --max-retries 1 --host-timeout 10m {NUC_TS_IP}"
+        )
+        print(out)
+        found = set(open_ports(out))
+        assert found <= expected, f"unexpected open ports: {sorted(found - expected)}"
+        if found == expected:
+            break
+        print(f"scan {attempt} found {sorted(found)}, not both known ports")
+    assert found == expected, sorted(found)
 
 with subtest("negative control: the scan sees a port opened on tailscale0"):
     nuc.succeed(
