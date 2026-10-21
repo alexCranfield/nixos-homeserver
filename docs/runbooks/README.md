@@ -12,6 +12,7 @@ Operational procedures, written as tickets are completed.
 - [reinstall.md](reinstall.md) — any install since 1.7: the host key made on the workstation, the smoke tests (ticket 1.8)
 - [install.md](install.md) — installing the nuc with nixos-anywhere, the disk passphrase, the TPM key (ticket 1.6)
 - [updates.md](updates.md) — the weekly `flake.lock` pull request, the reboot window, pausing comin (tickets 2.2 and 2.3)
+- [notifications.md](notifications.md) — what posts to Discord, the webhook and role secret, a test failure (ticket 2.5)
 - [deploy.md](deploy.md) — comin pulling `main`, checking it, the manual deploy (ticket 2.1)
 - [hardware.md](hardware.md) — the live USB, assembly, BIOS settings and the hardware survey (ticket 1.1; the record fills in when it closes)
 

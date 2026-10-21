@@ -72,7 +72,7 @@ run.
    [deploy.md](deploy.md), "Is it working?".
 
 GitHub emails a notification when the pull request opens, with the description
-in it. Phone alerts for failed deploys are ticket 2.5 (#20).
+in it. A failed deploy posts to Discord ([notifications.md](notifications.md)).
 
 ## How it is built, and why
 

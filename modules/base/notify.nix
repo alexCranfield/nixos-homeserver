@@ -1,26 +1,37 @@
-# Failure notifications to Discord, ticket 2.5 (#20).
+# Notifications to Discord, ticket 2.5 (#20).
 #
-# Two sources, one sender:
+# What posts, and whether it pings the role in `roleFile`:
 #
-#  - A unit in `homeserver.notify.units` that fails starts
-#    `notify-failure@<unit>.service` (systemd's OnFailure=), which posts the
-#    unit's name and its last 20 journal lines.
-#  - comin runs `postDeploymentCommand` after every deployment; a failed one
-#    posts the commit and comin's error. comin itself keeps running when a
-#    deployment fails, so OnFailure= on comin would not see it.
+#  - A unit in `homeserver.notify.units` fails: systemd's OnFailure= starts
+#    `notify-failure@<unit>.service`, which posts the unit's name and its last
+#    20 journal lines. Pings.
+#  - comin's deployment fails: comin runs `postDeploymentCommand` after every
+#    deployment, and a failed one posts the commit and comin's error. comin
+#    keeps running when a deployment fails, so OnFailure= on comin would not
+#    see it. Pings.
+#  - The host comes up: `notify-online.service` posts at boot. If the last
+#    boot did not shut down cleanly (a power cut, crash or hang) it says so,
+#    and pings; otherwise it does not.
+#  - The host goes down cleanly: the same unit posts when it is stopped at
+#    shutdown, saying whether it is a reboot. Does not ping.
 #
-# Not covered here: a failed fetch, evaluation or build of `main` on the host.
-# comin runs no hook after a failed evaluation, and reports a cancelled build
-# (preempted by a newer commit) through its build hook the same way as a failed
-# one, and again for each retry. Its exporter tells them apart
-# (`comin_last_{fetch,eval,build}_failed`), so phase 3's alert rules (#27) take
-# them. CI builds the same configuration before merge, so a failure there is
-# the host's environment (disk, network), not the code.
+# Not covered here:
+#
+#  - A failed fetch, evaluation or build of `main` on the host. comin runs no
+#    hook after a failed evaluation, and reports a cancelled build (preempted
+#    by a newer commit) through its build hook the same way as a failed one,
+#    and again for each retry. Its exporter tells them apart
+#    (`comin_last_{fetch,eval,build}_failed`), so phase 3's alert rules (#27)
+#    take them. CI builds the same configuration before merge, so a failure
+#    there is the host's environment (disk, network), not the code.
+#  - Being down. A host that is off cannot say so; the boot message reports
+#    an unclean shutdown afterwards, and only a check from outside can report
+#    one while it lasts (#112).
 #
 # The webhook URL is a secret: anyone holding it can post to the channel. It is
 # never put on a command line, where any local user could read it from /proc;
-# curl reads it from a config file on a pipe. Messages are sent with mentions
-# disabled, so a log line containing `@everyone` stays text.
+# curl reads it from a config file on a pipe. Messages allow only the one role
+# to be mentioned, so a log line containing `@everyone` stays text.
 {
   config,
   lib,
@@ -29,8 +40,10 @@
 }:
 let
   cfg = config.homeserver.notify;
+  host = config.networking.hostName;
 
-  # homeserver-notify WEBHOOK_FILE TITLE, with the body on stdin.
+  # homeserver-notify WEBHOOK_FILE ROLE_FILE TITLE, with the body on stdin.
+  # ROLE_FILE is `-` for a message that pings no one.
   send = pkgs.writeShellApplication {
     name = "homeserver-notify";
     runtimeInputs = [
@@ -39,8 +52,14 @@ let
     ];
     text = ''
       webhook_file=$1
-      title=$2
+      role_file=$2
+      title=$3
       body=$(cat)
+      role=
+      if [ "$role_file" != - ]; then
+        role=$(< "$role_file")
+        [[ $role =~ ^[0-9]+$ ]] || { echo "role id is not a number" >&2; exit 1; }
+      fi
       # Discord refuses a message over 2000 characters; keep the end, where
       # the error usually is. A code fence in the body would end ours early.
       body=''${body//\`\`\`/\'\'\'}
@@ -48,22 +67,46 @@ let
       if [ "''${#body}" -gt "$max" ]; then
         body="…''${body: -$max}"
       fi
-      content=$(printf '**%s**\n```\n%s\n```' "$title" "$body")
-      jq -n --arg content "$content" \
-        '{content: $content, allowed_mentions: {parse: []}}' |
-        curl --fail --silent --show-error --max-time 10 --retry 2 \
+      content="**$title**"
+      [ -z "$role" ] || content="<@&$role> $content"
+      fence=$'\x60\x60\x60'
+      [ -z "$body" ] || content="$content"$'\n'"$fence"$'\n'"$body"$'\n'"$fence"
+      # Retried, for the boot message above all: the network may be up before
+      # DNS (Domain Name System) is.
+      jq -n --arg content "$content" --arg role "$role" \
+        '{content: $content, allowed_mentions: {parse: [], roles: ([$role] - [""])}}' |
+        curl --fail --silent --show-error --max-time 10 \
+          --retry 3 --retry-delay 5 --retry-all-errors \
           --header 'Content-Type: application/json' --data-binary @- \
           --config <(printf 'url = "%s"\n' "$(< "$webhook_file")")
     '';
   };
 
-  host = config.networking.hostName;
+  roleArg = if cfg.roleFile == null then "-" else cfg.roleFile;
 
   deployHook = pkgs.writeShellScript "notify-comin-deployment" ''
     [ "$COMIN_STATUS" = failed ] || exit 0
     printf 'commit %s: %s\n\n%s\n' "''${COMIN_GIT_SHA:0:12}" "$COMIN_GIT_MSG" "$COMIN_ERROR_MSG" |
-      ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} ${lib.escapeShellArg "${host}: comin deployment failed"}
+      ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} ${lib.escapeShellArg roleArg} \
+        ${lib.escapeShellArg "${host}: comin deployment failed"}
   '';
+
+  # For units that run as a dynamic user: systemd hands each the files it
+  # needs as credentials, readable by that unit alone.
+  credentials = [
+    "webhook:${cfg.webhookFile}"
+  ]
+  ++ lib.optional (cfg.roleFile != null) "role:${cfg.roleFile}";
+  credRole = if cfg.roleFile == null then "-" else ''"$CREDENTIALS_DIRECTORY/role"'';
+  hardening = {
+    RestrictAddressFamilies = [
+      "AF_INET"
+      "AF_INET6"
+      "AF_UNIX"
+    ];
+    ProtectHome = true;
+    PrivateDevices = true;
+  };
 in
 {
   options.homeserver.notify = {
@@ -73,6 +116,14 @@ in
       description = ''
         File holding the Discord webhook URL, decrypted at activation (sops),
         never a store path. null turns notifications off.
+      '';
+    };
+    roleFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        File holding the id of the Discord role that failures ping. null pings
+        no one.
       '';
     };
     units = lib.mkOption {
@@ -88,12 +139,16 @@ in
   };
 
   config = lib.mkIf (cfg.webhookFile != null) {
-    assertions = [
-      {
-        assertion = !lib.hasPrefix builtins.storeDir cfg.webhookFile;
-        message = "homeserver.notify.webhookFile must not be in the Nix store, which every local user can read.";
-      }
-    ];
+    assertions =
+      map
+        (f: {
+          assertion = f == null || !lib.hasPrefix builtins.storeDir f;
+          message = "homeserver.notify: ${f} is in the Nix store, which every local user can read.";
+        })
+        [
+          cfg.webhookFile
+          cfg.roleFile
+        ];
 
     # The services the base modules run, each only where it exists.
     # Ticket-specific ones add themselves beside their unit.
@@ -116,23 +171,80 @@ in
         scriptArgs = "%i";
         script = ''
           journalctl --unit "$1" --lines 20 --no-pager --output short-iso |
-            ${lib.getExe send} "$CREDENTIALS_DIRECTORY/webhook" "${host}: $1 failed"
+            ${lib.getExe send} "$CREDENTIALS_DIRECTORY/webhook" ${credRole} "${host}: $1 failed"
         '';
         path = [ pkgs.systemd ];
-        serviceConfig = {
+        serviceConfig = hardening // {
           Type = "oneshot";
-          # Root is not needed: the journal is readable by its group, and the
-          # URL is handed over by systemd, readable only by this unit.
           DynamicUser = true;
+          LoadCredential = credentials;
+          # The journal is readable by its group; root is not needed.
           SupplementaryGroups = [ "systemd-journal" ];
-          LoadCredential = [ "webhook:${cfg.webhookFile}" ];
-          RestrictAddressFamilies = [
-            "AF_INET"
-            "AF_INET6"
-            "AF_UNIX"
-          ];
-          ProtectHome = true;
-          PrivateDevices = true;
+        };
+      };
+
+      # Up at boot, down at shutdown. A marker in its state directory lives
+      # from start to stop, so finding it at start means the last boot never
+      # stopped this unit: it ended without a clean shutdown. The marker, not
+      # the journal: what the journal held in memory is lost in a power cut.
+      notify-online = {
+        description = "Post to Discord when the host comes up and goes down";
+        wantedBy = [ "multi-user.target" ];
+        # network.target too, so it is stopped before the network is.
+        after = [
+          "network-online.target"
+          "network.target"
+        ];
+        wants = [ "network-online.target" ];
+        # A deploy that changes this unit must not post a fake down and up.
+        restartIfChanged = false;
+        path = [
+          pkgs.coreutils
+          pkgs.systemd
+        ];
+        script = ''
+          marker=/var/lib/notify-online/running
+          if [ -e "$marker" ]; then
+            unclean=1
+          else
+            unclean=0
+          fi
+          touch "$marker"
+          # All of it, not the file alone: a new file's directory entry is
+          # what makes it exist after a power cut.
+          sync
+          kernel=$(uname -r)
+          # A failed post must not fail the unit: a failed unit is not stopped
+          # at shutdown, which would leave the marker and report the next boot
+          # as unclean.
+          if [ "$unclean" = 1 ]; then
+            echo "The last boot ended without a clean shutdown (power cut, crash or hang); when it went down is not known." |
+              ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} ${lib.escapeShellArg roleArg} "${host} is up after an unclean shutdown, kernel $kernel" ||
+              echo "could not post the boot message" >&2
+          else
+            ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - "${host} is up, kernel $kernel" < /dev/null ||
+              echo "could not post the boot message" >&2
+          fi
+        '';
+        preStop = ''
+          rm -f /var/lib/notify-online/running
+          sync
+          if systemctl list-jobs --no-legend | grep -q '^[0-9]* *reboot\.target'; then
+            what=rebooting
+          else
+            what="shutting down"
+          fi
+          ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - "${host} is $what" < /dev/null
+        '';
+        # As root, reading the secrets where sops-nix put them, as comin's hook
+        # does. With a dynamic user and LoadCredential=, as notify-failure@
+        # has, ExecStop= could not use the credentials: $CREDENTIALS_DIRECTORY
+        # was empty there, and with the path given as %d, reading the file was
+        # denied (tests/notify.py, 2026-10-21).
+        serviceConfig = hardening // {
+          Type = "oneshot";
+          RemainAfterExit = true;
+          StateDirectory = "notify-online";
         };
       };
     }
