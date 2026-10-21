@@ -40,7 +40,9 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Two system builds (about ten minutes cold) plus, at worst, three capped
+    # vulnix attempts (scripts/flake_update.py), about 32 minutes.
+    timeout-minutes: 60
     permissions:
       contents: read
       # To see whether last run's pull request is still open.

@@ -28,6 +28,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
 
 NIXPKGS = "nixpkgs"
@@ -55,9 +56,10 @@ def log(msg):
     print(msg, file=sys.stderr, flush=True)
 
 
-def run(*cmd, check=True):
+def run(*cmd, check=True, timeout=None):
     log("+ " + " ".join(cmd))
-    return subprocess.run(cmd, check=check, text=True, stdout=subprocess.PIPE)
+    return subprocess.run(cmd, check=check, text=True, stdout=subprocess.PIPE,
+                          timeout=timeout)
 
 
 def load(path):
@@ -149,15 +151,37 @@ def build_toplevel():
     return out.stdout.strip()
 
 
-def vulnix(path, cache):
-    """CVE ids per package in the runtime closure of `path`, None on failure."""
+def vulnix(path, cache, attempts=3):
+    """CVE ids per package in the runtime closure of `path`, None on failure.
+
+    Retried, since its first run downloads the NVD (National Vulnerability
+    Database) data, and on GitHub's runners that download has timed out
+    (2026-10-21 UTC, #17). Each attempt is capped at ten minutes, so an
+    outage costs about 32 minutes, and the second scan, which reuses the
+    download, gets one attempt, so vulnix stays well inside the job's 60.
+    """
+    for attempt in range(1, attempts + 1):
+        found = vulnix_once(path, cache)
+        if found is not None:
+            return found
+        log(f"vulnix failed (attempt {attempt} of {attempts})")
+        if attempt < attempts:
+            time.sleep(30 * attempt)
+    return None
+
+
+def vulnix_once(path, cache):
     # Exit 2 means vulnerabilities were found, the normal case, but vulnix
     # also exits 2 on an internal error; only a JSON list counts as a result.
-    res = run(
-        "nix", "run", "--inputs-from", ".", "nixpkgs#vulnix", "--",
-        "--json", "--closure", "--cache-dir", cache, path,
-        check=False,
-    )
+    try:
+        res = run(
+            "nix", "run", "--inputs-from", ".", "nixpkgs#vulnix", "--",
+            "--json", "--closure", "--cache-dir", cache, path,
+            check=False, timeout=600,
+        )
+    except subprocess.TimeoutExpired:
+        log("vulnix stopped after ten minutes")
+        return None
     if res.returncode not in (0, 2):
         return None
     try:
@@ -173,7 +197,7 @@ def vulnix(path, cache):
 def cve_diff(old, new):
     """Lines for CVE ids that the update fixes and that it introduces."""
     if old is None or new is None:
-        return ["vulnix failed; see the workflow log. No CVE comparison."]
+        return ["vulnix failed; see the workflow log. No CVE comparison.", ""]
     old_ids = set().union(*old.values()) if old else set()
     new_ids = set().union(*new.values()) if new else set()
     fixed, added = sorted(old_ids - new_ids), sorted(new_ids - old_ids)
@@ -263,7 +287,12 @@ def cmd_update(args):
             "From vulnix. It matches package names against the NVD (National "
             "Vulnerability Database) and does not know which fixes nixpkgs "
             "has patched in, so treat it as a pointer, not a verdict.", ""]
-        report += cve_diff(vulnix(old_top, cache), vulnix(new_top, cache))
+        # One download serves both scans: the first may retry it, the second
+        # reads the cached data, so one attempt is enough, and a failed first
+        # scan means the second is skipped.
+        old_cves = vulnix(old_top, cache)
+        new_cves = vulnix(new_top, cache, attempts=1) if old_cves is not None else None
+        report += cve_diff(old_cves, new_cves)
 
     text = "\n".join(report + full) + "\n"
     if len(text) > REPORT_LIMIT:
