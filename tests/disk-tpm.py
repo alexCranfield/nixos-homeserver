@@ -41,6 +41,8 @@ def boot(expect_prompt, timeout=600):
         prompted = re.search(PROMPT, console) is not None
         if prompted or BOOTED in console:
             break
+        stuck = re.search(EMERGENCY, console)
+        assert not stuck, f"the boot stopped: {stuck.group(0) if stuck else ''}"
         assert time.monotonic() < deadline, "neither a prompt nor a boot"
         time.sleep(1)
     assert prompted == expect_prompt, f"passphrase prompt shown: {prompted}"

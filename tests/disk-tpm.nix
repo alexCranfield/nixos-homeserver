@@ -41,6 +41,19 @@ let
   # The test node cannot supply these itself: the test framework replaces its
   # `fileSystems`, so they come from the host's own configuration.
   hostFileSystems = inputs.self.nixosConfigurations.nuc.config.fileSystems;
+  # The ones a boot must have mounted. A mount that may fail or wait
+  # (`nofail`, `noauto`, an automount, a network share) does not stop the
+  # boot, so the test does not demand it; one on a device the VM (virtual
+  # machine) lacks, such as a second disk, needs an override here.
+  mustMount = lib.filterAttrs (
+    _: fs:
+    !lib.any (o: lib.elem o fs.options) [
+      "nofail"
+      "noauto"
+      "x-systemd.automount"
+      "_netdev"
+    ]
+  ) hostFileSystems;
 in
 pkgs.testers.runNixOSTest {
   name = "disk-tpm";
@@ -113,7 +126,7 @@ pkgs.testers.runNixOSTest {
       FORMAT_MOUNT = ${builtins.toJSON (lib.getExe build.formatMount)}
       UNMOUNT = ${builtins.toJSON (lib.getExe build.unmount)}
       INSTALLED = ${builtins.toJSON installed}
-      HOST_MOUNTS = ${builtins.toJSON (builtins.attrNames hostFileSystems)}
+      HOST_MOUNTS = ${builtins.toJSON (builtins.attrNames mustMount)}
     ''
     + builtins.readFile ./disk-tpm.py;
 }
