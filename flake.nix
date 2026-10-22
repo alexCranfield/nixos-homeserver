@@ -148,6 +148,13 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 2.5 (#20): failures reach the webhook, cut to Discord's limit
+        # with mentions off, and a successful deploy stays quiet.
+        notify = import ./tests/notify.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
         # Fails `nix flake check` if the server stops using the dev shell's Nix,
         # for example after a `nix.package` override on the host.
         devshell-nix-matches-server =

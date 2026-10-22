@@ -11,6 +11,7 @@
     ./network.nix
     ./secrets.nix
     ./tailscale.nix
+    ./notify.nix
     ../../modules/base
   ];
 

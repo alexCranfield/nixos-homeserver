@@ -47,6 +47,9 @@ in
     # comin owns deploys (ADR 0003); stated so nobody enables it beside comin.
     system.autoUpgrade.enable = false;
 
+    # A failed run posts to Discord (notify.nix, #20).
+    homeserver.notify.units = [ "reboot-window" ];
+
     systemd.services.reboot-window = {
       description = "Reboot if the kernel changed since boot";
       # comin is off in `just vm`, where its package is unset.
