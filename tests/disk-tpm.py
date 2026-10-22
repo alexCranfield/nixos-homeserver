@@ -4,7 +4,7 @@
 # not defined here:
 #   - from the driver: `nuc` (the VM), `subtest`;
 #   - from the preamble disk-tpm.nix puts in front of this file: PASSPHRASE,
-#     WRONG_PCR7, FORMAT_MOUNT, UNMOUNT and INSTALLED.
+#     WRONG_PCR7, FORMAT_MOUNT, UNMOUNT, INSTALLED and HOST_MOUNTS.
 #
 # Acronyms: LUKS2, Linux Unified Key Setup version 2; ESP, EFI System
 # Partition; TPM, Trusted Platform Module; PCR, Platform Configuration
@@ -19,6 +19,10 @@ import time
 PROMPT = r"Please enter passphrase for disk \S+ \(cryptroot\)"
 
 BOOTED = "Reached target Multi-User System"
+
+# A mount that fails at boot stops it here; the test's shell into the VM never
+# starts, so waiting for a unit would hang until CI gave up (#19).
+EMERGENCY = r"You are in emergency mode|Dependency failed for .*Local File Systems"
 
 # The passphrase quoted for the guest's shell.
 QUOTED = shlex.quote(PASSPHRASE)
@@ -42,6 +46,12 @@ def boot(expect_prompt, timeout=600):
     assert prompted == expect_prompt, f"passphrase prompt shown: {prompted}"
     if prompted:
         nuc.send_console(PASSPHRASE + "\n")
+    # Then the rest of the boot, bounded the same way.
+    while BOOTED not in (console := nuc.get_console_log()):
+        stuck = re.search(EMERGENCY, console)
+        assert not stuck, f"the boot stopped: {stuck.group(0) if stuck else ''}"
+        assert time.monotonic() < deadline, "no end of the boot"
+        time.sleep(1)
     nuc.wait_for_unit("multi-user.target")
 
 
@@ -70,6 +80,12 @@ with subtest("disko formats and mounts the blank disk"):
 
 with subtest("first boot stops at the passphrase prompt"):
     reboot(expect_prompt=True)
+
+with subtest("every filesystem the host declares is mounted"):
+    # From nixosConfigurations.nuc itself, so a mount added outside disko is
+    # checked too (#19).
+    for target in HOST_MOUNTS:
+        nuc.succeed(f"mountpoint -q {shlex.quote(target)}")
 
 with subtest("the root is btrfs inside LUKS2"):
     source = nuc.succeed("findmnt -no SOURCE,FSTYPE /").strip()
