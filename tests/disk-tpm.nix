@@ -37,6 +37,10 @@ let
   passphrase = "test passphrase, not the real one";
   # A PCR 7 value this firmware never produces, for the negative control.
   wrongPcr7 = lib.strings.replicate 8 "deadbeef";
+  # Every filesystem the real host mounts, disko's and any other module's.
+  # The test node cannot supply these itself: the test framework replaces its
+  # `fileSystems`, so they come from the host's own configuration.
+  hostFileSystems = inputs.self.nixosConfigurations.nuc.config.fileSystems;
 in
 pkgs.testers.runNixOSTest {
   name = "disk-tpm";
@@ -46,9 +50,6 @@ pkgs.testers.runNixOSTest {
 
   nodes.nuc =
     { config, ... }:
-    let
-      disko = config.disko.devices._config;
-    in
     {
       imports = [ ../hosts/nuc ];
       # The host's Tailscale key is a sops secret no test VM can decrypt, so
@@ -82,14 +83,15 @@ pkgs.testers.runNixOSTest {
 
       environment.systemPackages = [ pkgs.compsize ];
 
-      # The machine as installed: booted from the layout disko created. The
-      # test framework replaces `fileSystems` with its own, so disko's are
-      # handed back here. /boot stays on the test VM's boot disk, which holds
-      # the boot loader.
+      # The machine as installed: booted from the layout disko created, with
+      # every mount the host has, not disko's alone. With disko's alone, a
+      # mount added elsewhere that cannot succeed passed CI and would have
+      # stopped the nuc's next boot in emergency mode (#19). /boot stays on
+      # the test VM's boot disk, which holds the boot loader.
       specialisation.installed.configuration = {
         virtualisation.useDefaultFilesystems = lib.mkForce false;
         virtualisation.fileSystems = lib.mkMerge [
-          disko.fileSystems
+          hostFileSystems
           { "/boot".device = lib.mkForce config.virtualisation.bootPartition; }
         ];
       };
