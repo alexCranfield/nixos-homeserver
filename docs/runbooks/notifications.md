@@ -29,6 +29,12 @@ fstrim, logrotate and reboot-window, each only where it exists on the host. A
 module adds its own with `homeserver.notify.units = [ "<service>" ];` beside
 the unit.
 
+Each title carries the time it was sent, in UTC (Coordinated Universal Time),
+for example `🔴 [2026-10-22T22:57:34Z] nuc: drill-broken.service failed`.
+Discord itself shows only the time of day, in the reader's zone, and none on
+messages grouped under one heading. A failure message shows the failed run's
+log only, not earlier runs or boots.
+
 Messages longer than Discord's 2,000 characters keep their end, where the error
 usually is. Only the one role can be pinged: each message tells Discord so
 (`allowed_mentions`), and a zero-width space after every `@` in log text keeps
@@ -78,7 +84,7 @@ Discord outage at boot cannot make the next boot look unclean.
    ID.
 2. **The webhook.** Edit the alerts channel, Integrations, Webhooks, New
    Webhook, Copy Webhook URL. Messages show the webhook's name and picture,
-   set in Discord, not here; the nuc's is `nuccy`.
+   set in Discord, not here; the nuc's is `nucbot`.
 3. **The secret.** In the repository:
 
    ```bash
@@ -134,7 +140,7 @@ ssh nuc 'journalctl -t notify-comin-deployment -n 20 --no-pager'
 
 | | |
 |---|---|
-| Set up | 2026-10-21: role `@nuc-mods`, webhook `nuccy`; `secrets/notify.yaml` re-encrypted by Alex at 23:24:36 UTC |
+| Set up | 2026-10-21: role `@nuc-mods`, webhook `nucbot`; `secrets/notify.yaml` re-encrypted by Alex at 23:24:36 UTC |
 | First message from the nuc | 2026-10-22, at comin's deploy of #114: `nuc is up, kernel 7.2.3` |
 | Forced failure on the phone | 2026-10-22 22:09:38 UTC, the `notify-check` command above: `nuc: notify-check.service failed`, pinging `@nuc-mods`; the handler took 314 ms |
 | A real failed deploy | 2026-10-22, the #19 drill (#118): merged 22:05:49, unit failure posted 22:06:43 (54 s), then `nuc: comin deployment failed` with exit status 4 |

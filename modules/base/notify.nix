@@ -50,7 +50,7 @@ let
     wrong = "🔴";
   };
 
-  # homeserver-notify WEBHOOK_FILE ROLE_FILE TITLE, with the body on stdin.
+  # homeserver-notify WEBHOOK_FILE ROLE_FILE ICON TITLE, with the body on stdin.
   # ROLE_FILE is `-` for a message that pings no one.
   send = pkgs.writeShellApplication {
     name = "homeserver-notify";
@@ -62,7 +62,10 @@ let
     text = ''
       webhook_file=$1
       role_file=$2
-      title=$3
+      # The time in UTC (Coordinated Universal Time), after the icon: Discord
+      # shows only the time of day, in the reader's own zone, and groups
+      # messages under one heading.
+      title="$3 [$(date -u +%Y-%m-%dT%H:%M:%SZ)] $4"
       body=$(cat)
       role=
       if [ "$role_file" != - ]; then
@@ -106,7 +109,7 @@ let
     exec 2> >(${pkgs.systemd}/bin/systemd-cat --identifier notify-comin-deployment --priority err)
     printf 'commit %s: %s\n\n%s\n' "''${COMIN_GIT_SHA:0:12}" "$COMIN_GIT_MSG" "$COMIN_ERROR_MSG" |
       ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} ${lib.escapeShellArg roleArg} \
-        ${lib.escapeShellArg "${icon.wrong} ${host}: comin deployment failed"}
+        ${icon.wrong} ${lib.escapeShellArg "${host}: comin deployment failed"}
   '';
 
   # For units that run as a dynamic user: systemd hands each the files it
@@ -224,12 +227,13 @@ in
             exit 0
           fi
           # In the title, which is never cut to fit, unlike the log.
-          title="${icon.wrong} ${host}: $unit failed"
+          title="${host}: $unit failed"
           if [ "$held" -gt 0 ]; then
             title="$title ($held more times since the last message, not posted)"
           fi
-          journalctl --unit "$unit" --lines 20 --no-pager --output short-iso |
-            ${lib.getExe send} "$CREDENTIALS_DIRECTORY/webhook" ${credRole} "$title"
+          # The failed run only, not earlier runs or boots.
+          journalctl --unit "$unit" --invocation 0 --lines 20 --no-pager --output short-iso |
+            ${lib.getExe send} "$CREDENTIALS_DIRECTORY/webhook" ${credRole} ${icon.wrong} "$title"
           save "$now" 0
         '';
         path = [
@@ -284,10 +288,10 @@ in
           # as unclean.
           if [ "$unclean" = 1 ]; then
             echo "The last boot ended without a clean shutdown (power cut, crash or hang); when it went down is not known." |
-              ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} ${lib.escapeShellArg roleArg} "${icon.wrong} ${host} is up after an unclean shutdown, kernel $kernel" ||
+              ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} ${lib.escapeShellArg roleArg} ${icon.wrong} "${host} is up after an unclean shutdown, kernel $kernel" ||
               echo "could not post the boot message" >&2
           else
-            ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - "${icon.up} ${host} is up, kernel $kernel" < /dev/null ||
+            ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - ${icon.up} "${host} is up, kernel $kernel" < /dev/null ||
               echo "could not post the boot message" >&2
           fi
         '';
@@ -300,7 +304,7 @@ in
           else
             what="shutting down"
           fi
-          ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - "${icon.down} ${host} is $what" < /dev/null ||
+          ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - ${icon.down} "${host} is $what" < /dev/null ||
             echo "could not post the shutdown message" >&2
         '';
         # As root, reading the secrets where sops-nix put them, as comin's hook

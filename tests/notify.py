@@ -1,6 +1,7 @@
 # Test script for tests/notify.nix. `nuc` is the test driver's machine; PORT,
 # SECRET, ROLE, UNITS and DEPLOY_HOOK are defined by the Nix file in front of
 # this script.
+import datetime
 import json
 import re
 import shutil
@@ -9,10 +10,26 @@ import time
 PING = f"<@&{ROLE}> "
 
 
+# The title's timestamp: "**<icon> [2026-10-22T22:57:34Z] <text>**".
+STAMP = re.compile(r"^((?:<@&\d+> )?\*\*\S+) \[(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\] ")
+
+
+def unstamped(msg):
+    """The message with its title's timestamp checked, then removed, so the
+    checks below compare the rest exactly."""
+    m = STAMP.match(msg["content"])
+    assert m, msg
+    when = datetime.datetime.fromisoformat(m.group(2).replace("Z", "+00:00"))
+    now = datetime.datetime.now(datetime.timezone.utc)
+    # The VM's clock follows the host's; the message is from this run.
+    assert abs((now - when).total_seconds()) < 3600, (when, now)
+    return {**msg, "content": m.group(1) + " " + msg["content"][m.end():]}
+
+
 def received():
     """Every request body so far, oldest first, read on the host."""
     out = nuc.shared_dir / "webhook"
-    return [json.loads(f.read_text()) for f in sorted(out.glob("*.json"))]
+    return [unstamped(json.loads(f.read_text())) for f in sorted(out.glob("*.json"))]
 
 
 def wait_received(n, timeout=90):
@@ -174,6 +191,11 @@ with subtest("after the cooldown, the next message counts what was held back"):
     held = int(m.group(1))
     print("held back:", held, "of", restarts)
     assert 1 <= held <= restarts, (held, restarts)
+    # The failed run's lines only. The first loop's runs are in the journal
+    # too, and their few lines each would fit in 20: without --invocation 0
+    # the message carried them, and other boots' (seen on the nuc).
+    pids = set(re.findall(r"notify-flappy-start\[(\d+)\]", msg["content"]))
+    assert len(pids) == 1, (pids, msg)
 
 with subtest("an empty cooldown file, as a power cut can leave, does not silence a unit"):
     state = "/var/lib/private/notify-failure/notify-probe.service"
