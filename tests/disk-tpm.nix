@@ -113,6 +113,7 @@ pkgs.testers.runNixOSTest {
       FORMAT_MOUNT = ${builtins.toJSON (lib.getExe build.formatMount)}
       UNMOUNT = ${builtins.toJSON (lib.getExe build.unmount)}
       INSTALLED = ${builtins.toJSON installed}
+      HOST_MOUNTS = ${builtins.toJSON (builtins.attrNames hostFileSystems)}
     ''
     + builtins.readFile ./disk-tpm.py;
 }
