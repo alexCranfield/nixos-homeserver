@@ -118,6 +118,8 @@ ssh nuc 'sudo systemd-run --unit=notify-check -p OnFailure=notify-failure@notify
 ```
 
 `nuc: notify-check.service failed` arrives within seconds, pinging the role.
+The test unit stays listed as failed until cleared:
+`ssh nuc 'sudo systemctl reset-failed notify-check'`.
 
 A post that fails (Discord down, the URL revoked) is in the journal of the unit
 that sent it, as curl's error, without the URL: `notify-failure@<unit>.service`
@@ -133,4 +135,6 @@ ssh nuc 'journalctl -t notify-comin-deployment -n 20 --no-pager'
 | | |
 |---|---|
 | Set up | 2026-10-21: role `@nuc-mods`, webhook `nuccy`; `secrets/notify.yaml` re-encrypted by Alex at 23:24:36 UTC |
-| First notification on the phone | to be filled in |
+| First message from the nuc | 2026-10-22, at comin's deploy of #114: `nuc is up, kernel 7.2.3` |
+| Forced failure on the phone | 2026-10-22 22:09:38 UTC, the `notify-check` command above: `nuc: notify-check.service failed`, pinging `@nuc-mods`; the handler took 314 ms |
+| A real failed deploy | 2026-10-22, the #19 drill (#118): merged 22:05:49, unit failure posted 22:06:43 (54 s), then `nuc: comin deployment failed` with exit status 4 |
