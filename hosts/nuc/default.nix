@@ -12,7 +12,6 @@
     ./secrets.nix
     ./tailscale.nix
     ./notify.nix
-    ./drill.nix
     ../../modules/base
   ];
 
