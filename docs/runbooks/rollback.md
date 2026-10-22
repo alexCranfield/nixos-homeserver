@@ -12,7 +12,7 @@ default and what comin deploys next.
 
 | The nuc | Do |
 |---|---|
-| Up, with a service failing (Discord: `nuc: <unit> failed`, `nuc: comin deployment failed`) | [Revert on GitHub](#revert-on-github). Nothing on the nuc. |
+| Up, with a service failing (Discord: `nuc: <unit> failed`, `nuc: comin deployment failed`) | [Revert on GitHub](#revert-on-github); a revert of the latest deploy also needs comin restarted (step 4). |
 | Up, but unreachable over SSH or the tailnet | Revert on GitHub; comin still pulls, since it needs no SSH. If it does not recover, the boot menu. |
 | Not booting (it stops in emergency mode, or never posts `nuc is up`) | [The boot menu](#the-boot-menu), at the nuc's console, then revert on GitHub. |
 
@@ -32,6 +32,21 @@ profile, which comin does not use ([deploy.md](deploy.md)).
    ```bash
    ssh nuc 'comin status; systemctl --failed --no-legend'
    ```
+
+4. **If `comin status` still shows the broken commit as deployed, restart
+   comin.** A revert of the *latest* deploy builds the configuration from
+   before it again, and comin 0.14.0 skips that as "already deployed": its
+   check compares a new build with the deployment before the current one, not
+   with the current one (#123). Its log says `skipping deployment of
+   generation …: … has already been deployed`. A restart resets that, and
+   comin deploys the revert on its next poll, within about a minute:
+
+   ```bash
+   ssh nuc 'sudo systemctl restart comin'
+   ```
+
+   Not needed when the revert builds something new, for example when other
+   changes have merged since the bad one.
 
 A revert deploys a new generation. It does not restart the nuc: a change that
 only a reboot undoes (a kernel, say) waits for the reboot window
@@ -77,6 +92,6 @@ for ([notifications.md](notifications.md)).
 | | |
 |---|---|
 | Boot-breaking mount in CI | 2026-10-22: passed CI before the fix (#115), failed with it in 15½ min (#116) |
-| Broken service, merge to alert | to be filled in |
-| Broken service, revert merge to recovered | to be filled in |
+| Broken service, merge to alert | 2026-10-22, #118: merged 22:05:49 UTC, comin fetched at 22:06:36, the switch failed and Discord had `nuc: drill-broken.service failed` at 22:06:43 (54 s), then `nuc: comin deployment failed` (exit status 4). sshd untouched (running since 2026-10-21, 0 restarts) |
+| Broken service, revert to recovered | revert #119 merged 22:31:22; comin built it at 22:31:41 and **skipped it** (#123); after `systemctl restart comin` at 22:39:59 it deployed at 22:41:01, `drill-broken` gone, no failed units. Merge to recovered: 9 min 39 s, of which 1 min 2 s after the restart |
 | Boot menu, broken boot to running on the older entry | to be filled in |
