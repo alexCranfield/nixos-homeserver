@@ -42,6 +42,14 @@ let
   cfg = config.homeserver.notify;
   host = config.networking.hostName;
 
+  # The first thing in each title, so the channel reads at a glance: up,
+  # going down on purpose, or something wrong (which also pings).
+  icon = {
+    up = "🟢";
+    down = "🟠";
+    wrong = "🔴";
+  };
+
   # homeserver-notify WEBHOOK_FILE ROLE_FILE TITLE, with the body on stdin.
   # ROLE_FILE is `-` for a message that pings no one.
   send = pkgs.writeShellApplication {
@@ -98,7 +106,7 @@ let
     exec 2> >(${pkgs.systemd}/bin/systemd-cat --identifier notify-comin-deployment --priority err)
     printf 'commit %s: %s\n\n%s\n' "''${COMIN_GIT_SHA:0:12}" "$COMIN_GIT_MSG" "$COMIN_ERROR_MSG" |
       ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} ${lib.escapeShellArg roleArg} \
-        ${lib.escapeShellArg "${host}: comin deployment failed"}
+        ${lib.escapeShellArg "${icon.wrong} ${host}: comin deployment failed"}
   '';
 
   # For units that run as a dynamic user: systemd hands each the files it
@@ -216,7 +224,7 @@ in
             exit 0
           fi
           # In the title, which is never cut to fit, unlike the log.
-          title="${host}: $unit failed"
+          title="${icon.wrong} ${host}: $unit failed"
           if [ "$held" -gt 0 ]; then
             title="$title ($held more times since the last message, not posted)"
           fi
@@ -276,10 +284,10 @@ in
           # as unclean.
           if [ "$unclean" = 1 ]; then
             echo "The last boot ended without a clean shutdown (power cut, crash or hang); when it went down is not known." |
-              ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} ${lib.escapeShellArg roleArg} "${host} is up after an unclean shutdown, kernel $kernel" ||
+              ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} ${lib.escapeShellArg roleArg} "${icon.wrong} ${host} is up after an unclean shutdown, kernel $kernel" ||
               echo "could not post the boot message" >&2
           else
-            ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - "${host} is up, kernel $kernel" < /dev/null ||
+            ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - "${icon.up} ${host} is up, kernel $kernel" < /dev/null ||
               echo "could not post the boot message" >&2
           fi
         '';
@@ -292,7 +300,7 @@ in
           else
             what="shutting down"
           fi
-          ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - "${host} is $what" < /dev/null ||
+          ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - "${icon.down} ${host} is $what" < /dev/null ||
             echo "could not post the shutdown message" >&2
         '';
         # As root, reading the secrets where sops-nix put them, as comin's hook
