@@ -56,7 +56,7 @@ with subtest("the first boot posts that the host is up, without a ping"):
     msg = wait_received(1)
     quiet(msg)
     kernel = nuc.succeed("uname -r").strip()
-    assert msg["content"] == f"**nuc is up, kernel {kernel}**", msg
+    assert msg["content"] == f"**🟢 nuc is up, kernel {kernel}**", msg
 
 with subtest("every watched unit loads, with the handler attached"):
     for unit in ["comin", "sshd", "reboot-window", "notify-probe"]:
@@ -73,7 +73,7 @@ with subtest("a failing unit posts its name and the end of its log, pinging the 
     msg = wait_received(2)
     pings(msg)
     content = msg["content"]
-    assert content.startswith(f"{PING}**nuc: notify-probe.service failed**"), content
+    assert content.startswith(f"{PING}**🔴 nuc: notify-probe.service failed**"), content
     # Broken up by a zero-width space, and allowed_mentions lets only the
     # role ping anyway.
     assert "probe end @​everyone ''' fence" in content, content
@@ -93,7 +93,7 @@ with subtest("comin's hook posts a failed deployment only"):
     msg = wait_received(3)
     pings(msg)
     content = msg["content"]
-    assert content.startswith(f"{PING}**nuc: comin deployment failed**"), content
+    assert content.startswith(f"{PING}**🔴 nuc: comin deployment failed**"), content
     assert "commit 0123456789ab: Break a unit (#999)" in content, content
     assert "switch-to-configuration exited with 4" in content, content
 
@@ -104,10 +104,10 @@ with subtest("a clean shutdown posts going down, then up, without a ping"):
     # once it is back.
     msg = wait_received(5)
     quiet(msg)
-    assert msg["content"] == f"**nuc is up, kernel {kernel}**", msg
+    assert msg["content"] == f"**🟢 nuc is up, kernel {kernel}**", msg
     down = message(4)
     quiet(down)
-    assert down["content"] == "**nuc is shutting down**", down
+    assert down["content"] == "**🟠 nuc is shutting down**", down
 
 with subtest("after a power cut, the boot message says so and pings"):
     nuc.crash()
@@ -115,7 +115,7 @@ with subtest("after a power cut, the boot message says so and pings"):
     msg = wait_received(6)
     pings(msg)
     assert msg["content"].startswith(
-        f"{PING}**nuc is up after an unclean shutdown, kernel {kernel}**"
+        f"{PING}**🔴 nuc is up after an unclean shutdown, kernel {kernel}**"
     ), msg
 
 with subtest("the next clean boot is reported as clean again"):
@@ -126,10 +126,10 @@ with subtest("the next clean boot is reported as clean again"):
     boot()
     msg = wait_received(8)
     quiet(msg)
-    assert msg["content"] == f"**nuc is up, kernel {kernel}**", msg
+    assert msg["content"] == f"**🟢 nuc is up, kernel {kernel}**", msg
     down = message(7)
     quiet(down)
-    assert down["content"] == "**nuc is rebooting**", down
+    assert down["content"] == "**🟠 nuc is rebooting**", down
 
 with subtest("a deploy that changes the up and down unit posts nothing"):
     nuc.succeed(
@@ -152,8 +152,8 @@ with subtest("a service that keeps failing and restarting posts once per cooldow
     assert restarts >= 2, restarts
     msg = wait_received(9)
     pings(msg)
-    assert msg["content"].startswith(f"{PING}**nuc: notify-flappy.service failed**"), msg
-    assert msg["content"].startswith(f"{PING}**nuc: notify-flappy.service failed**\n"), msg
+    assert msg["content"].startswith(f"{PING}**🔴 nuc: notify-flappy.service failed**"), msg
+    assert msg["content"].startswith(f"{PING}**🔴 nuc: notify-flappy.service failed**\n"), msg
     time.sleep(10)
     assert len(received()) == 9, received()
 
@@ -166,7 +166,7 @@ with subtest("after the cooldown, the next message counts what was held back"):
     # but the posted one. A floor, not exact: a failure while the handler is
     # still posting joins its running job, uncounted (seen on a loaded host).
     m = re.match(
-        rf"{re.escape(PING)}\*\*nuc: notify-flappy\.service failed "
+        rf"{re.escape(PING)}\*\*🔴 nuc: notify-flappy\.service failed "
         r"\((\d+) more times since the last message, not posted\)\*\*\n",
         msg["content"],
     )
@@ -181,7 +181,7 @@ with subtest("an empty cooldown file, as a power cut can leave, does not silence
     nuc.succeed(f": > {state}")
     nuc.fail("systemctl start notify-probe.service")
     msg = wait_received(11)
-    assert msg["content"].startswith(f"{PING}**nuc: notify-probe.service failed**\n"), msg
+    assert msg["content"].startswith(f"{PING}**🔴 nuc: notify-probe.service failed**\n"), msg
 
 with subtest("a post that fails is logged, without the URL"):
     # A transient unit with the handler attached, as the runbook's test

@@ -8,11 +8,11 @@ configuration is `modules/base/notify.nix`, with the nuc's secrets wired in
 
 | Event | Message | Pings `@nuc-mods` |
 |---|---|---|
-| A watched unit fails | `nuc: <unit> failed`, with its last 20 log lines | yes |
-| comin's deployment fails | `nuc: comin deployment failed`, with the commit and comin's error | yes |
-| The nuc comes up | `nuc is up, kernel <version>` | no |
-| The nuc comes up after an unclean shutdown (power cut, crash or hang) | `nuc is up after an unclean shutdown, kernel <version>` | yes |
-| The nuc shuts down or reboots cleanly | `nuc is shutting down` or `nuc is rebooting` | no |
+| A watched unit fails | 🔴 `nuc: <unit> failed`, with its last 20 log lines | yes |
+| comin's deployment fails | 🔴 `nuc: comin deployment failed`, with the commit and comin's error | yes |
+| The nuc comes up | 🟢 `nuc is up, kernel <version>` | no |
+| The nuc comes up after an unclean shutdown (power cut, crash or hang) | 🔴 `nuc is up after an unclean shutdown, kernel <version>` | yes |
+| The nuc shuts down or reboots cleanly | 🟠 `nuc is shutting down` or `nuc is rebooting` | no |
 
 **At most one failure message per unit every 10 minutes.** systemd runs the
 handler on every failure, including each one followed by an automatic restart
