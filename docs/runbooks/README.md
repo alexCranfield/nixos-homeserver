@@ -13,6 +13,7 @@ Operational procedures, written as tickets are completed.
 - [install.md](install.md) — installing the nuc with nixos-anywhere, the disk passphrase, the TPM key (ticket 1.6)
 - [updates.md](updates.md) — the weekly `flake.lock` pull request, the reboot window, pausing comin (tickets 2.2 and 2.3)
 - [notifications.md](notifications.md) — what posts to Discord, the webhook and role secret, a test failure (ticket 2.5)
+- [rollback.md](rollback.md) — undoing a bad change: revert on GitHub, the boot menu, what CI catches (ticket 2.4)
 - [deploy.md](deploy.md) — comin pulling `main`, checking it, the manual deploy (ticket 2.1)
 - [hardware.md](hardware.md) — the live USB, assembly, BIOS settings and the hardware survey (ticket 1.1; the record fills in when it closes)
 
