@@ -14,6 +14,13 @@ configuration is `modules/base/notify.nix`, with the nuc's secrets wired in
 | The nuc comes up after an unclean shutdown (power cut, crash or hang) | `nuc is up after an unclean shutdown, kernel <version>` | yes |
 | The nuc shuts down or reboots cleanly | `nuc is shutting down` or `nuc is rebooting` | no |
 
+**At most one failure message per unit every 10 minutes.** systemd runs the
+handler on every failure, including each one followed by an automatic restart
+(measured in the VM test on systemd 260), so a service stuck in a crash loop
+would otherwise post every few seconds. Failures inside the 10 minutes are
+counted, and the next message's title says how many were not posted
+(`homeserver.notify.cooldown`).
+
 The watched units are comin, sshd, nix-gc, tailscaled, tailscaled-autoconnect,
 fstrim, logrotate and reboot-window, each only where it exists on the host. A
 module adds its own with `homeserver.notify.units = [ "<service>" ];` beside
@@ -27,9 +34,16 @@ usually is. Only the one role can be pinged: each message tells Discord so
 2026-10-21, Discord recorded the test message as pinging the role and not
 everyone (`mention_everyone: false`).
 
-A deploy does not post: comin does not restart the up and down unit, and
-successful deployments are left quiet so the channel shows only what needs
-attention.
+A deploy does not post: switching configuration leaves the up and down unit
+running even when the deploy changes it (`restartIfChanged = false`, tested),
+and successful deployments are left quiet so the channel shows only what needs
+attention. The exceptions are deploys that add or remove the unit itself: the
+deploy of #20 posts `nuc is up` once, as the unit starts for the first time,
+and one that turned notifications off would post `nuc is shutting down`.
+
+`nuc is rebooting` covers a reboot, a kexec and a soft reboot; anything else is
+`shutting down`. Each post gives up after 30 seconds, so a Discord outage
+delays boot, shutdown or comin's next deployment by that much at most.
 
 ## What does not post
 
@@ -102,8 +116,13 @@ ssh nuc 'sudo systemd-run --unit=notify-check -p OnFailure=notify-failure@notify
 `nuc: notify-check.service failed` arrives within seconds, pinging the role.
 
 A post that fails (Discord down, the URL revoked) is in the journal of the unit
-that sent it: `notify-failure@<unit>.service`, `notify-online.service`, or
-`comin.service` for the deployment hook.
+that sent it, as curl's error, without the URL: `notify-failure@<unit>.service`
+(which is then failed) or `notify-online.service`. comin keeps its hook's
+output to itself, so the deployment hook logs under its own name:
+
+```bash
+ssh nuc 'journalctl -t notify-comin-deployment -n 20 --no-pager'
+```
 
 ## Record
 

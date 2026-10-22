@@ -47,6 +47,7 @@ let
   send = pkgs.writeShellApplication {
     name = "homeserver-notify";
     runtimeInputs = [
+      pkgs.coreutils
       pkgs.curl
       pkgs.jq
     ];
@@ -65,7 +66,7 @@ let
       body=''${body//\`\`\`/\'\'\'}
       # And a zero-width space after each @, so `@everyone` in a log line does
       # not even look like a mention; allowed_mentions below is what stops it
-      # pinging. Bytes, not ​, which needs a UTF-8 locale.
+      # pinging. Bytes, not \u200b (U+200B), which needs a UTF-8 locale.
       body=''${body//@/@$'\xe2\x80\x8b'}
       max=$((1900 - ''${#title}))
       if [ "''${#body}" -gt "$max" ]; then
@@ -76,11 +77,13 @@ let
       fence=$'\x60\x60\x60'
       [ -z "$body" ] || content="$content"$'\n'"$fence"$'\n'"$body"$'\n'"$fence"
       # Retried, for the boot message above all: the network may be up before
-      # DNS (Domain Name System) is.
+      # DNS (Domain Name System) is. All errors, since a DNS failure is not one
+      # curl retries by default, but 30 s in all: a post holds up whatever
+      # waits on its sender (boot, shutdown, comin's next deployment).
       jq -n --arg content "$content" --arg role "$role" \
         '{content: $content, allowed_mentions: {parse: [], roles: ([$role] - [""])}}' |
         curl --fail --silent --show-error --max-time 10 \
-          --retry 3 --retry-delay 5 --retry-all-errors \
+          --retry 3 --retry-delay 5 --retry-all-errors --retry-max-time 30 \
           --header 'Content-Type: application/json' --data-binary @- \
           --config <(printf 'url = "%s"\n' "$(< "$webhook_file")")
     '';
@@ -90,6 +93,9 @@ let
 
   deployHook = pkgs.writeShellScript "notify-comin-deployment" ''
     [ "$COMIN_STATUS" = failed ] || exit 0
+    # comin keeps a hook's output to itself, logging only its exit status
+    # (deployer.go in 0.14.0), so errors go to the journal from here.
+    exec 2> >(${pkgs.systemd}/bin/systemd-cat --identifier notify-comin-deployment --priority err)
     printf 'commit %s: %s\n\n%s\n' "''${COMIN_GIT_SHA:0:12}" "$COMIN_GIT_MSG" "$COMIN_ERROR_MSG" |
       ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} ${lib.escapeShellArg roleArg} \
         ${lib.escapeShellArg "${host}: comin deployment failed"}
@@ -128,6 +134,14 @@ in
       description = ''
         File holding the id of the Discord role that failures ping. null pings
         no one.
+      '';
+    };
+    cooldown = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 600;
+      description = ''
+        Seconds after a unit's failure is posted during which its further
+        failures are counted, not posted.
       '';
     };
     units = lib.mkOption {
@@ -173,13 +187,41 @@ in
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
         scriptArgs = "%i";
+        # systemd starts this on every failure, including each one followed by
+        # an automatic restart (tests/notify.py, systemd 260), so a unit stuck
+        # in a crash loop would post every few seconds. One message per unit
+        # per cooldown; failures inside it are counted, and the next message
+        # says how many.
         script = ''
-          journalctl --unit "$1" --lines 20 --no-pager --output short-iso |
-            ${lib.getExe send} "$CREDENTIALS_DIRECTORY/webhook" ${credRole} "${host}: $1 failed"
+          unit=$1
+          state=$STATE_DIRECTORY/$unit
+          now=$(date +%s)
+          last=0
+          held=0
+          if [ -e "$state" ]; then
+            read -r last held < "$state"
+          fi
+          if [ $((now - last)) -lt ${toString cfg.cooldown} ]; then
+            echo "$last $((held + 1))" > "$state"
+            echo "posted about $unit $((now - last)) s ago; holding this one back"
+            exit 0
+          fi
+          # In the title, which is never cut to fit, unlike the log.
+          title="${host}: $unit failed"
+          if [ "$held" -gt 0 ]; then
+            title="$title ($held more times since the last message, not posted)"
+          fi
+          journalctl --unit "$unit" --lines 20 --no-pager --output short-iso |
+            ${lib.getExe send} "$CREDENTIALS_DIRECTORY/webhook" ${credRole} "$title"
+          echo "$now 0" > "$state"
         '';
-        path = [ pkgs.systemd ];
+        path = [
+          pkgs.coreutils
+          pkgs.systemd
+        ];
         serviceConfig = hardening // {
           Type = "oneshot";
+          StateDirectory = "notify-failure";
           DynamicUser = true;
           LoadCredential = credentials;
           # The journal is readable by its group; root is not needed.
@@ -233,12 +275,14 @@ in
         preStop = ''
           rm -f /var/lib/notify-online/running
           sync
-          if systemctl list-jobs --no-legend | grep -q '^[0-9]* *reboot\.target'; then
+          # A queued job for one of these targets: the host comes back.
+          if systemctl list-jobs --no-legend reboot.target kexec.target soft-reboot.target | grep -q .; then
             what=rebooting
           else
             what="shutting down"
           fi
-          ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - "${host} is $what" < /dev/null
+          ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - "${host} is $what" < /dev/null ||
+            echo "could not post the shutdown message" >&2
         '';
         # As root, reading the secrets where sops-nix put them, as comin's hook
         # does. With a dynamic user and LoadCredential=, as notify-failure@

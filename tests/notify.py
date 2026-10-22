@@ -96,7 +96,7 @@ with subtest("comin's hook posts a failed deployment only"):
     assert "commit 0123456789ab: Break a unit (#999)" in content, content
     assert "switch-to-configuration exited with 4" in content, content
 
-with subtest("a clean reboot posts going down, then up, without a ping"):
+with subtest("a clean shutdown posts going down, then up, without a ping"):
     nuc.shutdown()
     boot()
     # The receiver is in the VM, so what it got while going down is read
@@ -130,6 +130,59 @@ with subtest("the next clean boot is reported as clean again"):
     quiet(down)
     assert down["content"] == "**nuc is rebooting**", down
 
+with subtest("a deploy that changes the up and down unit posts nothing"):
+    nuc.succeed(
+        "/run/booted-system/specialisation/changed/bin/switch-to-configuration test"
+    )
+    desc = nuc.succeed("systemctl show -P Description notify-online").strip()
+    assert desc == "Changed by a deploy", desc
+    nuc.succeed("systemctl is-active notify-online")
+    time.sleep(10)
+    assert len(received()) == 8, received()
+
+with subtest("a service that keeps failing and restarting posts once per cooldown"):
+    nuc.succeed("systemctl start notify-flappy.service")
+    nuc.wait_until_succeeds("systemctl is-failed notify-flappy.service", timeout=60)
+    restarts = int(nuc.succeed("systemctl show -P NRestarts notify-flappy").strip())
+    print("restarts:", restarts)
+    # Several failures, each of which starts the handler (the journal says
+    # "Triggering OnFailure= dependencies" each time); one message.
+    assert restarts >= 2, restarts
+    msg = wait_received(9)
+    pings(msg)
+    assert msg["content"].startswith(f"{PING}**nuc: notify-flappy.service failed**"), msg
+    assert "more failures" not in msg["content"], msg
+    time.sleep(10)
+    assert len(received()) == 9, received()
+
+with subtest("after the cooldown, the next message counts what was held back"):
+    time.sleep(30)
+    nuc.succeed("systemctl reset-failed notify-flappy.service")
+    nuc.succeed("systemctl start notify-flappy.service")
+    msg = wait_received(10)
+    # Every failure but the posted one, from the first run.
+    held = restarts
+    assert msg["content"].startswith(
+        f"{PING}**nuc: notify-flappy.service failed ({held} more times since the last message, not posted)**"
+    ), msg
+
+with subtest("a post that fails is logged, without the URL"):
+    # A transient unit with the handler attached, as the runbook's test
+    # failure; not one in its cooldown.
+    nuc.succeed("systemctl stop webhook-receiver.service")
+    handler = "notify-failure@notify-check.service.service"
+    nuc.succeed(
+        f"systemd-run --unit=notify-check -p OnFailure={handler} sh -c 'echo test failure; exit 1'"
+    )
+    nuc.wait_until_succeeds(f"systemctl is-failed {handler}", timeout=120)
+    handler_log = nuc.succeed(f"journalctl -u {handler} -I -o cat --no-pager")
+    print(handler_log)
+    assert "curl: " in handler_log, handler_log
+    nuc.succeed("systemctl start webhook-receiver.service")
+
 with subtest("the webhook URL is not in the journal"):
     nuc.succeed("journalctl --sync")
-    nuc.fail(f"journalctl --no-pager -o cat | grep -F {SECRET}")
+    # Saved first, so a failing journalctl cannot pass as "not found".
+    nuc.succeed("journalctl --no-pager -o cat > /tmp/journal.txt")
+    assert int(nuc.succeed("wc -l < /tmp/journal.txt")) > 1000
+    nuc.fail(f"grep -F {SECRET} /tmp/journal.txt")

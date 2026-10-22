@@ -85,7 +85,12 @@ pkgs.testers.runNixOSTest {
 
     # Fails on demand, with more log than one message holds. The last line
     # carries a mention and a code fence, which must arrive as text.
-    homeserver.notify.units = [ "notify-probe" ];
+    # Short, so the test can see a held-back failure reported.
+    homeserver.notify.cooldown = 30;
+    homeserver.notify.units = [
+      "notify-probe"
+      "notify-flappy"
+    ];
     systemd.services.notify-probe = {
       serviceConfig.Type = "oneshot";
       script = ''
@@ -96,6 +101,28 @@ pkgs.testers.runNixOSTest {
         exit 1
       '';
     };
+
+    # Fails and is restarted, three times in 60 s before systemd gives up:
+    # does each failure post, or only the last?
+    systemd.services.notify-flappy = {
+      script = "echo flapping; exit 1";
+      serviceConfig = {
+        Restart = "on-failure";
+        RestartSec = 1;
+      };
+      unitConfig = {
+        StartLimitIntervalSec = 60;
+        StartLimitBurst = 3;
+      };
+    };
+
+    # A deploy that changes notify-online, which must not post.
+    specialisation.changed.configuration = {
+      systemd.services.notify-online.description = lib.mkForce "Changed by a deploy";
+    };
+    # As in reboot-window.nix: sops-nix cannot decrypt here, and its failure
+    # would fail the switch.
+    system.activationScripts.setupSecrets = lib.mkForce "";
   };
 
   testScript =
