@@ -38,7 +38,8 @@ setting differs from comin's default.
 - **Do not use `nixos-rebuild --rollback` on the nuc.** It switches to the
   `system` profile's previous generation, which may be older than what comin
   deployed, and comin does not correct it until the next merge, since it
-  compares against its own last deployment. Rollback is ticket 2.4 (#19).
+  compares against its own last deployment. To undo a change, see
+  [rollback.md](rollback.md).
 - **Metrics on 127.0.0.1:4243.** comin's Prometheus exporter, for phase 3
   (#25); not reachable from the LAN (local area network) or the tailnet.
 - **A local control socket.** `comin status` and the other subcommands talk to
