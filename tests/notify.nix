@@ -116,9 +116,12 @@ pkgs.testers.runNixOSTest {
       };
     };
 
-    # A deploy that changes notify-online, which must not post.
+    # A deploy that changes notify-online, which must not post. In [Service]:
+    # switch-to-configuration restarts nothing for a new Description (or
+    # OnFailure=, among others), so that would pass whatever restartIfChanged
+    # said.
     specialisation.changed.configuration = {
-      systemd.services.notify-online.description = lib.mkForce "Changed by a deploy";
+      systemd.services.notify-online.environment.DEPLOYED = "changed";
     };
     # As in reboot-window.nix: sops-nix cannot decrypt here, and its failure
     # would fail the switch.

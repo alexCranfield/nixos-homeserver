@@ -19,7 +19,10 @@ handler on every failure, including each one followed by an automatic restart
 (measured in the VM test on systemd 260), so a service stuck in a crash loop
 would otherwise post every few seconds. Failures inside the 10 minutes are
 counted, and the next message's title says how many were not posted
-(`homeserver.notify.cooldown`).
+(`homeserver.notify.cooldown`). The count is a floor: a failure while the last
+post is still being sent is not counted. And it waits for the next failure, so
+a crash loop that ends with systemd giving up (its start limit) shows as one
+message; `systemctl --failed` on the nuc shows what stayed down.
 
 The watched units are comin, sshd, nix-gc, tailscaled, tailscaled-autoconnect,
 fstrim, logrotate and reboot-window, each only where it exists on the host. A
@@ -42,8 +45,9 @@ deploy of #20 posts `nuc is up` once, as the unit starts for the first time,
 and one that turned notifications off would post `nuc is shutting down`.
 
 `nuc is rebooting` covers a reboot, a kexec and a soft reboot; anything else is
-`shutting down`. Each post gives up after 30 seconds, so a Discord outage
-delays boot, shutdown or comin's next deployment by that much at most.
+`shutting down`. Each post gives up after about 30 seconds, so a Discord outage
+delays shutdown or comin's next deployment by that much at most; the boot
+message is not waited for.
 
 ## What does not post
 

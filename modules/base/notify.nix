@@ -198,11 +198,20 @@ in
           now=$(date +%s)
           last=0
           held=0
+          # A file cut short by a power cut, or unreadable, counts as none:
+          # failing here would silence the unit for good.
           if [ -e "$state" ]; then
-            read -r last held < "$state"
+            read -r last held < "$state" || true
           fi
-          if [ $((now - last)) -lt ${toString cfg.cooldown} ]; then
-            echo "$last $((held + 1))" > "$state"
+          [[ $last =~ ^[0-9]+$ && $held =~ ^[0-9]+$ ]] || { last=0; held=0; }
+          save() {
+            echo "$1 $2" > "$state.new"
+            mv "$state.new" "$state"
+          }
+          # 0 or more: a clock set back past the last post does not hold
+          # posts back until it catches up.
+          if [ $((now - last)) -ge 0 ] && [ $((now - last)) -lt ${toString cfg.cooldown} ]; then
+            save "$last" $((held + 1))
             echo "posted about $unit $((now - last)) s ago; holding this one back"
             exit 0
           fi
@@ -213,7 +222,7 @@ in
           fi
           journalctl --unit "$unit" --lines 20 --no-pager --output short-iso |
             ${lib.getExe send} "$CREDENTIALS_DIRECTORY/webhook" ${credRole} "$title"
-          echo "$now 0" > "$state"
+          save "$now" 0
         '';
         path = [
           pkgs.coreutils
@@ -257,7 +266,9 @@ in
           fi
           touch "$marker"
           # All of it, not the file alone: a new file's directory entry is
-          # what makes it exist after a power cut.
+          # what makes it exist after a power cut. ext4 and btrfs often commit
+          # it soon anyway, so the VM test passes without this too; it is here
+          # for the power cut that comes first.
           sync
           kernel=$(uname -r)
           # A failed post must not fail the unit: a failed unit is not stopped
