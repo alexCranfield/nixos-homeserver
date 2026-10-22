@@ -40,7 +40,16 @@ GitHub-hosted Actions run `nix flake check`, build the system closure and check 
   `switch-to-configuration` under its own profile,
   `/nix/var/nix/profiles/system-profiles/comin`, so the `system` profile moves
   only on a manual deploy, and `nixos-rebuild --rollback` does not undo a comin
-  deploy. Rollback is ticket 2.4 (#19). See `docs/runbooks/deploy.md`.
+  deploy. See `docs/runbooks/rollback.md`.
+- As built (ticket 2.4, #19, 2026-10-22): comin skips a revert of its latest
+  deployment. A revert rebuilds the out path from before that deployment, and
+  comin's "already deployed" check compares a new build with that previous
+  deployment rather than the current one (#123, comin 0.14.0 and upstream
+  `main`). So the pull model's rollback, a revert on `main`, needs comin
+  restarted when it undoes the latest deploy; the runbook says so. Still the
+  right tool: the drill also showed comin leaving a generation picked from the
+  boot menu alone, and a failed deploy alerting within a minute (#20, through
+  comin's `postDeploymentCommand`).
 - As built (ticket 2.2, #17, 2026-10-20):
   `.github/workflows/update-flake-lock.yml` opens the weekly pull request,
   written in this repo rather than taken from Determinate Systems'

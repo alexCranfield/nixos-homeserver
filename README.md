@@ -138,10 +138,14 @@ unlocks with the TPM, unattended. It decrypts its own secrets and joins the
 tailnet by itself, and SSH is reachable over the tailnet only (#14). On
 2026-10-19 it was wiped and reinstalled following
 [docs/runbooks/reinstall.md](docs/runbooks/reinstall.md) (#15), the last
-planned phase 1 ticket; follow-ups #75 and #95 remain open. Phase 2 has
-begun: since 2026-10-20 the nuc deploys itself, with comin pulling `main`
-about a minute after each merge (#16,
-[docs/runbooks/deploy.md](docs/runbooks/deploy.md)). See the
+planned phase 1 ticket; follow-ups #75 and #95 remain open. In phase 2, the
+nuc deploys itself, with comin pulling `main` about a minute after each merge
+(#16, [docs/runbooks/deploy.md](docs/runbooks/deploy.md)); a weekly pull
+request updates its pinned inputs (#17); new kernels wait for a Tuesday reboot
+window (#18); failures post to Discord within a minute (#20,
+[docs/runbooks/notifications.md](docs/runbooks/notifications.md)); and both
+ways back from a bad change have been drilled on the nuc (#19,
+[docs/runbooks/rollback.md](docs/runbooks/rollback.md)). See the
 [milestones](https://github.com/alexCranfield/nixos-homeserver/milestones).
 
 ## License
