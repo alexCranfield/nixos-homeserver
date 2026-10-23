@@ -538,3 +538,31 @@ job with the write token runs only GitHub's checkout and artifact actions, git,
 gate; ours needs only a green check.
 
 </details>
+
+### Is a Discord webhook more secure than an ntfy topic?
+
+*2026-10-21*
+
+> Let's use discord webhooks, it's more secure.
+
+<details>
+<summary>Answer</summary>
+
+For reading, yes. A message posted to an ntfy.sh topic can be read by anyone
+who knows or guesses the topic's name; a Discord channel only by members of
+the server who can see it. Alerts carry log lines, so who can read them
+matters.
+
+For posting, the two are alike. A webhook URL is a bearer secret: whoever
+holds it can post to the channel as the webhook, with no other check, as
+whoever holds an ntfy topic name can post to it. So the URL lives in sops
+(`secrets/notify.yaml`), never on a command line or in the Nix store, and
+revoking it means deleting the webhook in Discord and making a new one
+(`docs/runbooks/notifications.md`).
+
+Discord adds one risk of its own: a message can mention `@everyone`. The nuc's
+messages allow only one role to be mentioned (`allowed_mentions`), so a log
+line containing `@everyone` stays text; checked against the real Discord, which
+recorded the test message as not mentioning everyone.
+
+</details>

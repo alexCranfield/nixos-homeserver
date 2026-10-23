@@ -64,3 +64,33 @@ A GitHub App is the heavier alternative: short-lived tokens and clearly labelled
 bot activity, at the cost of more setup.
 
 </details>
+
+### Can the server tell us when it goes down?
+
+*2026-10-21*
+
+> Would it be possible to have downtime messages, online messages?
+
+<details>
+<summary>Answer</summary>
+
+Partly, and the part it cannot do is the important one to understand.
+
+A planned shutdown or reboot can be announced: a unit that is running until
+shutdown is stopped on the way down, before the network, so its stop command
+can post `nuc is rebooting`. And coming up can be announced by a unit that
+starts at boot.
+
+An unplanned stop cannot: after a power cut, a crash or a hang, nothing on the
+machine runs to say so. What the machine can do is notice afterwards. The nuc
+keeps a marker file from boot until a clean shutdown removes it; if the marker
+is still there at the next boot, the last one did not end cleanly, and the boot
+message says so. That reports the outage only once it is over, and not when it
+began.
+
+Reporting an outage while it lasts needs something outside the machine that
+expects to hear from it: a "dead man's switch" (the nuc checks in every few
+minutes; a service alerts when it stops) or a monitor elsewhere that checks the
+nuc. That is #112.
+
+</details>
