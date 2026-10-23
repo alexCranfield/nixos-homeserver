@@ -5,8 +5,9 @@
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
 A home server run the way production infrastructure is run: every change is a
-reviewed pull request, tested in virtual machines, and deployed by the server
-itself; failures alert a phone, and every way back has been drilled. The
+pull request that CI (continuous integration) tests in VMs (virtual machines)
+before it can merge, the server deploys `main` to itself, failures alert a
+phone, and both ways back from a bad change have been drilled. The
 machine is an ASRock Industrial NUC BOX-358H (Intel Core Ultra X7 358H, 96 GB
 DDR5, 1 TB NVMe) running NixOS, and will host game servers, local LLMs (large
 language models) and development shells.
@@ -21,33 +22,39 @@ flowchart TD
         pr["Pull request"]
         ci["CI: lint, 7 VM tests,<br/>build the whole OS"]
         main["main<br/>(protected)"]
-        bot --> pr --> ci -->|"green:<br/>squash merge"| main
+        bot --> pr --> ci -->|"green:<br/>merge"| main
     end
     subgraph nuc["The server"]
         direction LR
-        comin["comin pulls main<br/>within 60 s"]
-        switch["Switch to the<br/>new generation"]
+        comin["comin, the deploy agent,<br/>pulls main within 60 s"]
+        switch["Build and switch to the<br/>new system version"]
+        running["Running"]
         alert["Discord alert"]
-        back["Way back: git revert,<br/>or the boot menu's<br/>previous generation"]
-        comin --> switch -->|"a unit or the<br/>deploy fails"| alert -.-> back
+        back["Way back: git revert,<br/>or the boot menu's<br/>previous version"]
+        comin --> switch -->|ok| running
+        switch -->|"a service or<br/>the deploy fails"| alert -.-> back
     end
     github -->|"new commit on main"| nuc
 ```
 
 - **Nothing is changed by hand.** The server's whole operating system is
-  described by the files in this repo, and the only way to change it is a pull
-  request to `main`.
-- **CI (continuous integration) proves the change first.** It builds the
-  complete system and boots it in seven virtual-machine tests: SSH, disk
-  encryption, network, Tailscale, the deploy agent, the reboot window and
-  alerting. `main` only accepts a merge once that passes.
-- **The server pulls; nothing pushes to it.** [comin](https://github.com/nlewo/comin)
-  on the server notices the merge within a minute and switches to it. No CI
-  system holds a key to the server ([ADR 0003](docs/adr/0003-pull-deploy-comin.md)).
-- **Every way back is tested.** A failure posts to Discord within a minute.
-  A bad change is undone with `git revert`, and a change that breaks booting
-  by choosing the previous generation in the boot menu
-  ([rollback drill](docs/runbooks/rollback.md)).
+  described by the files in this repo, and changes reach it as pull requests
+  to `main`.
+- **CI proves the change first.** It builds the complete system and boots it
+  in seven VM tests: SSH, disk encryption, network, Tailscale, the deploy
+  agent, the reboot window and alerting. `main` only accepts a merge once that
+  passes.
+- **The server pulls its changes.** [comin](https://github.com/nlewo/comin)
+  on the server notices the merge within a minute and switches to it, so no
+  CI system holds SSH or other credentials for the server; only what merges to
+  `main` reaches it ([ADR (Architecture Decision Record) 0003](docs/adr/0003-pull-deploy-comin.md)).
+  An emergency `just deploy` over SSH exists, and comin replaces it at the
+  next merge ([deploy runbook](docs/runbooks/deploy.md)).
+- **Both ways back are drilled.** A failed service or deploy posts to Discord
+  within a minute (54 s in the drill). A bad change is undone with
+  `git revert` (a revert of the latest deploy currently also needs comin
+  restarted, #123), and a change that breaks booting by choosing the previous
+  version in the boot menu ([rollback drill](docs/runbooks/rollback.md)).
 
 ## How the host is built
 
@@ -56,12 +63,13 @@ and kernel to users, firewall and services, from this repo as one unit. The
 same commit always produces the same system, so there is no configuration
 drift and the server can be rebuilt from scratch.
 
-- **Generations.** Each deploy is a new, complete system next to the old one,
-  and switching between them is atomic. The last ten stay in the boot menu.
+- **Generations.** Each deploy is a new, complete system version, a
+  generation, next to the old one, and switching between them is atomic. The last ten stay in the boot menu.
 - **Pinned dependencies.** `flake.lock` fixes the exact revision of every
   input. It changes only through the weekly update pull request, which lists
   the changes and the CVE (Common Vulnerabilities and Exposures) report and
-  goes through CI like any other change ([updates](docs/runbooks/updates.md)).
+  goes through CI like any other change, once Alex closes and reopens it to
+  start CI (#61) ([updates](docs/runbooks/updates.md)).
 - **Modules.** `modules/base` holds what every host gets (SSH, firewall,
   Tailscale, deploy agent, alerting); `hosts/nuc` holds what is particular to
   this machine. [Layout](#layout) lists every file.
@@ -71,9 +79,9 @@ drift and the server can be rebuilt from scratch.
 | Practice | Evidence |
 |---|---|
 | Infrastructure as code, reproducible builds | [ADR 0001](docs/adr/0001-nixos.md), `flake.nix`, `flake.lock` |
-| Protected `main`: pull requests only, required CI, reviewed changes | [CI runbook](docs/runbooks/ci.md), [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
+| Protected `main`: pull requests only, CI required to merge | [CI runbook](docs/runbooks/ci.md), [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
 | Integration tests in VMs; every pull request shows its evidence, including the check broken on purpose and seen to fail | [`tests/`](tests), [pull request template](.github/pull_request_template.md), [closed pull requests](https://github.com/alexCranfield/nixos-homeserver/pulls?q=is%3Apr+is%3Amerged) |
-| Pull-based GitOps deployment | [ADR 0003](docs/adr/0003-pull-deploy-comin.md), [deploy runbook](docs/runbooks/deploy.md) |
+| Pull-based deployment from Git (GitOps) | [ADR 0003](docs/adr/0003-pull-deploy-comin.md), [deploy runbook](docs/runbooks/deploy.md) |
 | Secrets encrypted in Git, decrypted only on the host | [ADR 0004](docs/adr/0004-secrets-sops.md), [secrets runbook](docs/runbooks/secrets.md) |
 | No admin ports on the LAN: SSH by key, over Tailscale only | [ADR 0005](docs/adr/0005-tailscale.md), [Tailscale runbook](docs/runbooks/tailscale.md) |
 | Full-disk encryption unlocked by the TPM (Trusted Platform Module) | [ADR 0009](docs/adr/0009-disk-encryption.md), [install runbook](docs/runbooks/install.md) |
@@ -81,7 +89,7 @@ drift and the server can be rebuilt from scratch.
 | Kernel reboots only in a weekly maintenance window | [updates runbook](docs/runbooks/updates.md) |
 | Alerting on failures, boots and shutdowns | [notifications runbook](docs/runbooks/notifications.md) |
 | Rollback drilled on the real machine, with timings | [rollback runbook](docs/runbooks/rollback.md) |
-| Disaster recovery: a full wipe and reinstall, timed | [reinstall runbook](docs/runbooks/reinstall.md) |
+| Rebuild from scratch: a full wipe and reinstall, timed | [reinstall runbook](docs/runbooks/reinstall.md) |
 | Decisions and procedures written down | [ADRs](docs/adr/), [runbooks](docs/runbooks/), [build plan](docs/PLAN.md) |
 
 ## What runs on it
@@ -99,19 +107,20 @@ flowchart LR
         subgraph docker["Docker Compose stacks (phase 3)"]
             games["Minecraft · Palworld · Satisfactory<br/>(phase 4)"]
             llm["Ollama + Open WebUI<br/>(phase 5)"]
-            grafana["Prometheus + Grafana<br/>(phase 3)"]
+            grafana["Grafana<br/>(phase 3)"]
         end
+        prom["Prometheus, node-exporter:<br/>metrics for Grafana (phase 3)"]
         restic["restic, nightly<br/>(phase 3)"]
     end
     discord["Discord #nuc-alerts"]
     nas["NAS<br/>(phase 3)"]
-    admin -->|"tailnet only"| ts
+    admin -->|"over Tailscale only"| ts
     gh -->|"comin pulls"| comin
     players -.->|"game ports"| games
     notify -->|webhook| discord
     restic -.->|"encrypted backups"| nas
     classDef planned stroke-dasharray: 5 5,color:#888,stroke:#888
-    class games,llm,grafana,restic,nas planned
+    class games,llm,grafana,prom,restic,nas planned
     style docker stroke-dasharray: 5 5,stroke:#888,color:#888
 ```
 
@@ -124,9 +133,10 @@ The server is built from nothing by following
 [docs/runbooks/reinstall.md](docs/runbooks/reinstall.md): boot a NixOS live
 USB, run `nixos-anywhere` from a workstation to partition, encrypt and install
 in one step, then enrol the TPM. On first boot the server decrypts its own
-secrets, joins the tailnet and from then on deploys itself from `main`. The
-runbook was followed end to end on 2026-10-19, a full wipe, in about 73
-minutes of work; the record is at its end.
+secrets, joins the tailnet (the private Tailscale network) and from then on
+deploys itself from `main`. The runbook was followed end to end on 2026-10-19,
+a full wipe, in about 73 minutes of work against a one-hour goal, most of the
+overrun spent waiting at the console; the record is at its end.
 
 To try the configuration without the hardware, `just vm` boots it in a local
 VM, and `just check` runs everything CI runs (see [Tasks](#tasks)).
@@ -139,6 +149,7 @@ flake.lock                         pinned revisions; commit every change
 hosts/nuc/default.nix              the host: imports disko, hardware + base; encrypted-boot settings
 hosts/nuc/disko.nix                the disk: ESP (EFI System Partition), btrfs in LUKS2 (Linux Unified Key Setup), swapfile
 hosts/nuc/network.nix              the LAN port by MAC address, DHCP, nothing open on the LAN
+hosts/nuc/notify.nix               the nuc's Discord webhook and role, from sops
 hosts/nuc/hardware-configuration.nix   kernel modules, detected on the nuc (#13)
 hosts/installer/default.nix        live USB: latest kernel, survey tools, ops key
 keys/ops.pub                       the admin SSH public key (private half on the workstation)
@@ -150,6 +161,7 @@ modules/base/nix.nix               Nix settings and weekly garbage collection
 modules/base/system.nix            UTC clock, locale, boot menu retention, git and tmux
 modules/base/comin.nix             comin: the host deploys itself from `main`
 modules/base/reboot-window.nix     weekly window that reboots only for a new kernel or kernel parameters
+modules/base/notify.nix            Discord alerts: failed units and deploys, boot, shutdown
 modules/base/vm.nix                SSH into `just vm` on 127.0.0.1:2222; no effect on a real host
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
@@ -163,6 +175,8 @@ tests/network.nix                  VM test: reserved address on lan0, nuc.home.a
 tests/network.py                   its test script
 tests/tailscale.nix                VM test: ops logs in over the tailnet from another network, which sees only SSH
 tests/tailscale.py                 its test script
+tests/notify.nix                   VM test: failures, deploys, boot and shutdown post to a stand-in webhook, with the cooldown
+tests/notify.py                    its test script
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
 scripts/tickets.py                 ticket definitions; file_issues.py files them
@@ -245,7 +259,7 @@ does not re-encrypt anything on its own.
 |---|---|
 | [0. Workstation and repo foundations](https://github.com/alexCranfield/nixos-homeserver/milestone/1) | Done; the machine user for bot pull requests (#61) remains |
 | [1. Bare-metal install and base OS](https://github.com/alexCranfield/nixos-homeserver/milestone/2) | Done: installed 2026-10-18, wiped and reinstalled from the runbook 2026-10-19; follow-ups open |
-| [2. GitOps, updates, rollback](https://github.com/alexCranfield/nixos-homeserver/milestone/3) | Nearly done: self-deploy (#16), weekly updates (#17), reboot window (#18), rollback drill (#19) and alerting (#20) are live |
+| [2. GitOps, updates, rollback](https://github.com/alexCranfield/nixos-homeserver/milestone/3) | Live: self-deploy (#16), weekly updates (#17), reboot window (#18), rollback drill (#19) and alerting (#20). Open: whether to auto-merge update pull requests (#17, due late November) and two comin bugs (#110, #123) |
 | [3. Containers, observability, backups](https://github.com/alexCranfield/nixos-homeserver/milestone/4) | Planned |
 | [4. Game servers](https://github.com/alexCranfield/nixos-homeserver/milestone/5) | Planned |
 | [5. Local LLMs](https://github.com/alexCranfield/nixos-homeserver/milestone/6) | Planned |
