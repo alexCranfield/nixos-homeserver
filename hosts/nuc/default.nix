@@ -13,6 +13,7 @@
     ./tailscale.nix
     ./notify.nix
     ../../modules/base
+    ../../modules/containers/docker.nix
   ];
 
   networking.hostName = "nuc";

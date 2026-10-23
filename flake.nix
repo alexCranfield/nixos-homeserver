@@ -155,6 +155,13 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 3.1 (#22): ports Docker publishes without an address bind
+        # to loopback, on every network, and nobody has the docker group.
+        docker = import ./tests/docker.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
         # Fails `nix flake check` if the server stops using the dev shell's Nix,
         # for example after a `nix.package` override on the host.
         devshell-nix-matches-server =

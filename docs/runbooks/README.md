@@ -15,6 +15,7 @@ Operational procedures, written as tickets are completed.
 - [notifications.md](notifications.md) — what posts to Discord, the webhook and role secret, a test failure (ticket 2.5)
 - [rollback.md](rollback.md) — undoing a bad change: revert on GitHub, the boot menu, what CI catches (ticket 2.4)
 - [deploy.md](deploy.md) — comin pulling `main`, checking it, the manual deploy (ticket 2.1)
+- [docker.md](docker.md) — rootful Docker: `sudo docker`, ports on loopback by default, logs, prune, storage (ticket 3.1)
 - [hardware.md](hardware.md) — the live USB, assembly, BIOS settings and the hardware survey (ticket 1.1; the record fills in when it closes)
 
 ## Planned
