@@ -20,9 +20,8 @@
 # password. Use `sudo docker`.
 #
 # Left at the NixOS defaults, on purpose: container logs go to journald, so
-# journald's limits are their retention; `live-restore` stays off until it is
-# tried across a deploy and a reboot on the nuc; the storage driver is the one
-# Docker picks, recorded in the runbook. Compose is part of NixOS's Docker
+# journald's limits are their retention; the storage driver is the one Docker
+# picks, recorded in the runbook. Compose is part of NixOS's Docker
 # package, as the `docker compose` plugin.
 { ... }:
 {
@@ -35,6 +34,14 @@
       # binary or file capabilities. An image that needs it opts out per
       # container with `security_opt: ["no-new-privileges=false"]`.
       no-new-privileges = true;
+      # Containers keep running while the daemon restarts, which a deploy
+      # does whenever Docker or these settings change. Off, every container
+      # stops then, and only those with `restart: unless-stopped` or `always`
+      # come back (measured on the nuc, 2026-10-23). A reboot stops them
+      # either way. Published ports still miss new connections until the
+      # daemon is back (docs/runbooks/docker.md). Docker supports it across
+      # patch releases only. Not compatible with Docker Swarm, not used here.
+      live-restore = true;
     };
     # `docker system prune --force` once a week: stopped containers, unused
     # networks, dangling images and dangling build cache. Not volumes, and not

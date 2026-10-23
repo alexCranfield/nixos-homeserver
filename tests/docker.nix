@@ -12,7 +12,8 @@
 # must make the matching case bind to every interface, which shows the check
 # would catch the setting going missing. A third, `noForwardFilter`, turns
 # the firewall's forward filter off, and `lan` must then reach `far` through
-# the nuc.
+# the nuc. A fourth, `noLiveRestore`, turns `live-restore` off, and a daemon
+# restart must then stop a container.
 {
   pkgs,
   inputs,
@@ -74,6 +75,8 @@ pkgs.testers.runNixOSTest {
     specialisation.noNetworkDefault.configuration.virtualisation.docker.daemon.settings.default-network-opts =
       lib.mkForce { };
     specialisation.noForwardFilter.configuration.networking.firewall.filterForward = lib.mkForce false;
+    specialisation.noLiveRestore.configuration.virtualisation.docker.daemon.settings.live-restore =
+      lib.mkForce false;
   };
 
   # A web server on each side, answering with its own name. Each routes the
