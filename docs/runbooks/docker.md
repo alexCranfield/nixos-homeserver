@@ -54,7 +54,14 @@ changes, a network created before it keeps the old address. The `docker` VM
 (virtual machine) test shows this: with the network default removed, a
 container on an older network still publishes on loopback.
 
-This only matters if the setting changes. Then recreate each network: for a
+The built-in `bridge` network is rebuilt from the settings each time the
+daemon starts, but with `live-restore` only when no container is running, on
+any network: Docker logs "there are running containers, updated network
+configuration will not take affect" and keeps the old one. So a change to
+`ip` takes effect after a reboot, or after stopping every container and
+restarting the daemon (`sudo systemctl restart docker`).
+
+This only matters if a setting changes. Then recreate each other network: for a
 Compose project, `sudo docker compose -p <project> down` then `up -d`; for a
 network made by hand, `sudo docker network rm <name>` and create it again.
 Removing a network does not touch data in bind mounts.
@@ -86,22 +93,24 @@ Removing a network does not touch data in bind mounts.
   mounts under `/srv/data` (3.3, #24), which prune never touches. A stack
   stopped with `docker compose stop` loses its containers at the next prune,
   and `up -d` recreates them.
-- **`live-restore` is off**, the default. With it off, every restart of the
-  daemon stops every container: a Docker update, or any change to its
-  settings, deployed by comin. Only containers whose `restart:` is
-  `unless-stopped` or `always` start again by themselves; Compose's default is
-  `"no"`, and an `on-failure` container stopped cleanly stays down too. The
-  stack units of 3.2 (#23) have to account for that. Whether to turn
-  `live-restore` on is decided by trying both across a deploy and a reboot on
-  the nuc; see the record below.
+- **`live-restore` is on.** Containers keep running while the daemon
+  restarts, which a deploy does whenever Docker or its settings change. In
+  the VM test a container kept its process through a restart, and a LAN
+  client polling its published port every 0.1 s saw four failed attempts
+  while the daemon came back. Without it, measured on the nuc on 2026-10-23,
+  every container stops at a daemon restart, and only those with `restart:`
+  `unless-stopped` or `always` start again, after downtime. A reboot stops
+  containers either way; what comes back then is up to 3.2's (#23) stack
+  units. It does not work with Docker Swarm, which is not used.
 
 ## Storage
 
 `/var/lib/docker` is its own btrfs subvolume, `@docker`
 (`hosts/nuc/disko.nix`), so images and container layers stay out of
-snapshots of the other subvolumes. The storage driver Docker picks there is
-recorded below; it decides whether layers are btrfs subvolumes of their own or
-overlay directories.
+snapshots of the other subvolumes. Docker 29 stores images through
+containerd's snapshotter, and on this btrfs subvolume it picks `overlayfs`:
+layers are overlay directories inside `@docker`, not btrfs subvolumes of their
+own (2026-10-23, below).
 
 ```bash
 sudo docker info --format '{{.Driver}} {{.DockerRootDir}}'
@@ -112,6 +121,6 @@ findmnt /var/lib/docker
 
 | Check | Result |
 |---|---|
-| `docker` VM test | 2026-10-23, Docker 29.9.1 under TCG (Tiny Code Generator) emulation, three machines: all 17 subtests pass in 336 s. Controls in the test: without each loopback setting the new port binds `0.0.0.0`; without the forward filter the LAN neighbour reaches the far host through the nuc. Deleting a setting from the module fails the test at its subtest: `ip` at the bare `docker run`, `default-network-opts` at the network created afterwards (each binding `0.0.0.0` and `[::]`), `filterForward` at "the nuc does not route" (the neighbour got through), the egress rules at "containers reach the LAN". Docker left `FORWARD` at `ACCEPT` with forwarding on. Storage driver in the VM, on ext4: `overlayfs` |
-| On the nuc after deploy: `sudo docker run --rm hello-world`, `id ops`, storage driver | to be filled in |
-| `live-restore` across a deploy and a reboot | to be filled in |
+| `docker` VM test | 2026-10-23, Docker 29.9.1 under TCG (Tiny Code Generator) emulation, three machines: all 19 subtests pass in 546 s. Controls in the test: without each loopback setting the new port binds `0.0.0.0`; without the forward filter the LAN neighbour reaches the far host through the nuc. Deleting a setting from the module fails the test at its subtest: `ip` at the bare `docker run`, `default-network-opts` at the network created afterwards (each binding `0.0.0.0` and `[::]`), `filterForward` at "the nuc does not route" (the neighbour got through), the egress rules at "containers reach the LAN". Docker left `FORWARD` at `ACCEPT` with forwarding on. Storage driver in the VM, on ext4: `overlayfs` |
+| On the nuc after deploy | 2026-10-23, comin deployed #127 (`b643b97`) at 16:39:10 UTC as `comin-10`. `sudo docker run --rm hello-world`: `Hello from Docker!`. `id ops`: groups `users`, `wheel`; `getent group docker`: `docker:x:131:`, no members. `docker info`: `29.9.1 overlayfs /var/lib/docker journald`, driver type `io.containerd.snapshotter.v1`. `findmnt`: `/dev/mapper/cryptroot[/@docker] btrfs … compress=zstd:1`. So on btrfs too Docker 29 uses containerd's overlayfs snapshotter, not btrfs subvolumes per layer. `ip_forward` 1; Docker's `FORWARD` chain `policy accept`, NixOS's forward chain `policy drop` with the four allow rules. Nothing published. First prune: Mon 2026-10-26 00:00 UTC |
+| `live-restore` | 2026-10-23. Off, on the nuc: a daemon restart killed a `restart: no` container (exit 137) and restarted an `unless-stopped` one. Turned on (#22), in the VM test: the container kept its process (`pid 2442 -> true 2442`) and the LAN poll read `200x25 000x4 200x121`; with it off the container stopped (`pid 6273 -> false 0`, `200x57 000x93`). With containers running, a restarted daemon kept the built-in network's old address; with every container stopped, the next start applied `ip`. No reboot: the setting governs daemon restarts only |
