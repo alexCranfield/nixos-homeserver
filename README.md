@@ -157,7 +157,7 @@ hosts/installer/default.nix        live USB: latest kernel, survey tools, ops ke
 keys/ops.pub                       the admin SSH public key (private half on the workstation)
 modules/base/default.nix           config applied to every host; imports the files below
 modules/base/ssh.nix               the ops account and key-only sshd
-modules/base/firewall.nix          default-deny firewall on nftables
+modules/base/firewall.nix          default-deny firewall on nftables, forwarded traffic included
 modules/base/tailscale.nix         Tailscale, with SSH open on the tailnet
 modules/base/nix.nix               Nix settings and weekly garbage collection
 modules/base/system.nix            UTC clock, locale, boot menu retention, git and tmux

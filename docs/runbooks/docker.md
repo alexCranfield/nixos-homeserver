@@ -35,6 +35,11 @@ To publish a port to the LAN, name the address: `"0.0.0.0:25565:25565"`. From
 3.2 (#23), the port must also be declared in the stack's Nix module, and a
 flake check fails on a public port that is not.
 
+Traffic to a published port reaches the container through the firewall's
+forward chain, which lets it in because Docker redirected it; containers'
+own outgoing connections are allowed out of their bridges, and nothing else
+is forwarded ([network.md](network.md#forwarded-traffic)).
+
 Check what is listening, and on which address:
 
 ```bash
@@ -107,6 +112,6 @@ findmnt /var/lib/docker
 
 | Check | Result |
 |---|---|
-| `docker` VM test | 2026-10-23, Docker 29.9.1 under TCG (Tiny Code Generator) emulation: all 11 subtests pass in 244 s. Its two controls, switching to a configuration without each setting, bind the new port to `0.0.0.0`. With `ip` deleted from the module the test fails at the bare `docker run`, and with `default-network-opts` deleted at the network created afterwards, each binding `0.0.0.0` and `[::]`. Storage driver in the VM, on ext4: `overlayfs` |
+| `docker` VM test | 2026-10-23, Docker 29.9.1 under TCG (Tiny Code Generator) emulation, three machines: all 16 subtests pass in 328 s. Controls in the test: without each loopback setting the new port binds `0.0.0.0`; without the forward filter the LAN neighbour reaches the far host through the nuc. Deleting a setting from the module fails the test at its subtest: `ip` at the bare `docker run`, `default-network-opts` at the network created afterwards (each binding `0.0.0.0` and `[::]`), `filterForward` at "the nuc does not route" (the neighbour got through), the egress rules at "containers reach the LAN". Docker left `FORWARD` at `ACCEPT` with forwarding on. Storage driver in the VM, on ext4: `overlayfs` |
 | On the nuc after deploy: `sudo docker run --rm hello-world`, `id ops`, storage driver | to be filled in |
 | `live-restore` across a deploy and a reboot | to be filled in |
