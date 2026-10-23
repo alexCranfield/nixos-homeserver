@@ -85,6 +85,7 @@ drift and the server can be rebuilt from scratch.
 | Integration tests in VMs; every pull request shows its evidence, including the check broken on purpose and seen to fail | [`tests/`](tests), [pull request template](.github/pull_request_template.md), [closed pull requests](https://github.com/alexCranfield/nixos-homeserver/pulls?q=is%3Apr+is%3Amerged) |
 | Pull-based deployment from Git (GitOps) | [ADR 0003](docs/adr/0003-pull-deploy-comin.md), [deploy runbook](docs/runbooks/deploy.md) |
 | Secrets encrypted in Git, decrypted only on the host | [ADR 0004](docs/adr/0004-secrets-sops.md), [secrets runbook](docs/runbooks/secrets.md) |
+| Container ports private unless declared: loopback by default, forwarded traffic dropped | [ADR 0006](docs/adr/0006-docker-vs-podman.md), [Docker runbook](docs/runbooks/docker.md) |
 | No admin ports on the LAN: SSH by key, over Tailscale only | [ADR 0005](docs/adr/0005-tailscale.md), [Tailscale runbook](docs/runbooks/tailscale.md) |
 | Full-disk encryption unlocked by the TPM (Trusted Platform Module) | [ADR 0009](docs/adr/0009-disk-encryption.md), [install runbook](docs/runbooks/install.md) |
 | Automated dependency updates with a supply-chain cooldown | [updates runbook](docs/runbooks/updates.md) |
@@ -106,7 +107,7 @@ flowchart LR
         ts["Tailscale → SSH, key only"]
         comin["comin: deploys main"]
         notify["Alerting · weekly reboot window"]
-        subgraph docker["Docker Compose stacks (phase 3)"]
+        subgraph docker["Docker: running · Compose stacks from phase 3"]
             games["Minecraft · Palworld · Satisfactory<br/>(phase 4)"]
             llm["Ollama + Open WebUI<br/>(phase 5)"]
             grafana["Grafana<br/>(phase 3)"]
@@ -123,7 +124,6 @@ flowchart LR
     restic -.->|"encrypted backups"| nas
     classDef planned stroke-dasharray: 5 5,color:#888,stroke:#888
     class games,llm,grafana,prom,restic,nas planned
-    style docker stroke-dasharray: 5 5,stroke:#888,color:#888
 ```
 
 Solid boxes run today; dashed boxes are planned, with the phase that builds
@@ -265,7 +265,7 @@ does not re-encrypt anything on its own.
 | [0. Workstation and repo foundations](https://github.com/alexCranfield/nixos-homeserver/milestone/1) | Done; the machine user for bot pull requests (#61) remains |
 | [1. Bare-metal install and base OS](https://github.com/alexCranfield/nixos-homeserver/milestone/2) | Done: installed 2026-10-18, wiped and reinstalled from the runbook 2026-10-19; follow-ups open |
 | [2. GitOps, updates, rollback](https://github.com/alexCranfield/nixos-homeserver/milestone/3) | Live: self-deploy (#16), weekly updates (#17), reboot window (#18), rollback drill (#19) and alerting (#20). Open: whether to auto-merge update pull requests (#17, due late November) and two comin bugs (#110, #123) |
-| [3. Containers, observability, backups](https://github.com/alexCranfield/nixos-homeserver/milestone/4) | Planned |
+| [3. Containers, observability, backups](https://github.com/alexCranfield/nixos-homeserver/milestone/4) | Started: Docker is live (#22), publishing ports on loopback unless told otherwise, with forwarded traffic filtered. Next: Compose stacks as systemd units (#23) |
 | [4. Game servers](https://github.com/alexCranfield/nixos-homeserver/milestone/5) | Planned |
 | [5. Local LLMs](https://github.com/alexCranfield/nixos-homeserver/milestone/6) | Planned |
 | [6. Development environment](https://github.com/alexCranfield/nixos-homeserver/milestone/7) | Planned |
