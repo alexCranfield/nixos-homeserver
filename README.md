@@ -46,10 +46,11 @@ flowchart TD
   passes.
 - **The server pulls its changes.** [comin](https://github.com/nlewo/comin)
   on the server notices the merge within a minute and switches to it, so no
-  CI system holds SSH or other credentials for the server; only what merges to
-  `main` reaches it ([ADR (Architecture Decision Record) 0003](docs/adr/0003-pull-deploy-comin.md)).
-  An emergency `just deploy` over SSH exists, and comin replaces it at the
-  next merge ([deploy runbook](docs/runbooks/deploy.md)).
+  CI system holds SSH or other credentials for the server
+  ([ADR (Architecture Decision Record) 0003](docs/adr/0003-pull-deploy-comin.md)).
+  Apart from an emergency `just deploy` over SSH, which comin replaces at the
+  next merge ([deploy runbook](docs/runbooks/deploy.md)), only what merges to
+  `main` reaches it.
 - **Both ways back are drilled.** A failed service or deploy posts to Discord
   within a minute (54 s in the drill). A bad change is undone with
   `git revert` (a revert of the latest deploy currently also needs comin
@@ -64,7 +65,8 @@ same commit always produces the same system, so there is no configuration
 drift and the server can be rebuilt from scratch.
 
 - **Generations.** Each deploy is a new, complete system version, a
-  generation, next to the old one, and switching between them is atomic. The last ten stay in the boot menu.
+  generation, next to the old one, and switching between them is atomic.
+  The last ten stay in the boot menu.
 - **Pinned dependencies.** `flake.lock` fixes the exact revision of every
   input. It changes only through the weekly update pull request, which lists
   the changes and the CVE (Common Vulnerabilities and Exposures) report and
@@ -109,7 +111,7 @@ flowchart LR
             llm["Ollama + Open WebUI<br/>(phase 5)"]
             grafana["Grafana<br/>(phase 3)"]
         end
-        prom["Prometheus, node-exporter:<br/>metrics for Grafana (phase 3)"]
+        prom["Prometheus and<br/>node-exporter:<br/>metrics for Grafana<br/>(phase 3)"]
         restic["restic, nightly<br/>(phase 3)"]
     end
     discord["Discord #nuc-alerts"]
@@ -175,7 +177,7 @@ tests/network.nix                  VM test: reserved address on lan0, nuc.home.a
 tests/network.py                   its test script
 tests/tailscale.nix                VM test: ops logs in over the tailnet from another network, which sees only SSH
 tests/tailscale.py                 its test script
-tests/notify.nix                   VM test: failures, deploys, boot and shutdown post to a stand-in webhook, with the cooldown
+tests/notify.nix                   VM test: failed units and deploys, boot and shutdown post to a stand-in webhook, with the cooldown
 tests/notify.py                    its test script
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
