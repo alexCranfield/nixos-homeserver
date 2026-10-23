@@ -1,21 +1,135 @@
 # nixos-homeserver
 
 [![CI](https://github.com/alexCranfield/nixos-homeserver/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alexCranfield/nixos-homeserver/actions/workflows/ci.yml)
+[![flake.lock update](https://github.com/alexCranfield/nixos-homeserver/actions/workflows/update-flake-lock.yml/badge.svg)](https://github.com/alexCranfield/nixos-homeserver/actions/workflows/update-flake-lock.yml)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-Declarative NixOS configuration for a home server on an ASRock Industrial NUC BOX-358H
-(Intel Core Ultra X7 358H, 96 GB DDR5, 1 TB NVMe). It runs Docker Compose game servers
-(Minecraft, Palworld, Satisfactory), local LLMs (Ollama + Open WebUI) and development
-shells for Shopify admin scripting.
+A home server run the way production infrastructure is run: every change is a
+reviewed pull request, tested in virtual machines, and deployed by the server
+itself; failures alert a phone, and every way back has been drilled. The
+machine is an ASRock Industrial NUC BOX-358H (Intel Core Ultra X7 358H, 96 GB
+DDR5, 1 TB NVMe) running NixOS, and will host game servers, local LLMs (large
+language models) and development shells.
 
-## How it works
+## How a change reaches the server
 
+```mermaid
+flowchart TD
+    subgraph github["GitHub"]
+        direction LR
+        bot["A change, or the weekly<br/>dependency update"]
+        pr["Pull request"]
+        ci["CI: lint, 7 VM tests,<br/>build the whole OS"]
+        main["main<br/>(protected)"]
+        bot --> pr --> ci -->|"green:<br/>squash merge"| main
+    end
+    subgraph nuc["The server"]
+        direction LR
+        comin["comin pulls main<br/>within 60 s"]
+        switch["Switch to the<br/>new generation"]
+        alert["Discord alert"]
+        back["Way back: git revert,<br/>or the boot menu's<br/>previous generation"]
+        comin --> switch -->|"a unit or the<br/>deploy fails"| alert -.-> back
+    end
+    github -->|"new commit on main"| nuc
 ```
-pull request ──▶ GitHub Actions: just check (flake check, build closure, fmt)
-merge to main ──▶ comin on the server polls, runs nixos-rebuild switch
+
+- **Nothing is changed by hand.** The server's whole operating system is
+  described by the files in this repo, and the only way to change it is a pull
+  request to `main`.
+- **CI (continuous integration) proves the change first.** It builds the
+  complete system and boots it in seven virtual-machine tests: SSH, disk
+  encryption, network, Tailscale, the deploy agent, the reboot window and
+  alerting. `main` only accepts a merge once that passes.
+- **The server pulls; nothing pushes to it.** [comin](https://github.com/nlewo/comin)
+  on the server notices the merge within a minute and switches to it. No CI
+  system holds a key to the server ([ADR 0003](docs/adr/0003-pull-deploy-comin.md)).
+- **Every way back is tested.** A failure posts to Discord within a minute.
+  A bad change is undone with `git revert`, and a change that breaks booting
+  by choosing the previous generation in the boot menu
+  ([rollback drill](docs/runbooks/rollback.md)).
+
+## How the host is built
+
+[NixOS](https://nixos.org) builds the whole operating system, from disk layout
+and kernel to users, firewall and services, from this repo as one unit. The
+same commit always produces the same system, so there is no configuration
+drift and the server can be rebuilt from scratch.
+
+- **Generations.** Each deploy is a new, complete system next to the old one,
+  and switching between them is atomic. The last ten stay in the boot menu.
+- **Pinned dependencies.** `flake.lock` fixes the exact revision of every
+  input. It changes only through the weekly update pull request, which lists
+  the changes and the CVE (Common Vulnerabilities and Exposures) report and
+  goes through CI like any other change ([updates](docs/runbooks/updates.md)).
+- **Modules.** `modules/base` holds what every host gets (SSH, firewall,
+  Tailscale, deploy agent, alerting); `hosts/nuc` holds what is particular to
+  this machine. [Layout](#layout) lists every file.
+
+## Practices
+
+| Practice | Evidence |
+|---|---|
+| Infrastructure as code, reproducible builds | [ADR 0001](docs/adr/0001-nixos.md), `flake.nix`, `flake.lock` |
+| Protected `main`: pull requests only, required CI, reviewed changes | [CI runbook](docs/runbooks/ci.md), [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
+| Integration tests in VMs; every pull request shows its evidence, including the check broken on purpose and seen to fail | [`tests/`](tests), [pull request template](.github/pull_request_template.md), [closed pull requests](https://github.com/alexCranfield/nixos-homeserver/pulls?q=is%3Apr+is%3Amerged) |
+| Pull-based GitOps deployment | [ADR 0003](docs/adr/0003-pull-deploy-comin.md), [deploy runbook](docs/runbooks/deploy.md) |
+| Secrets encrypted in Git, decrypted only on the host | [ADR 0004](docs/adr/0004-secrets-sops.md), [secrets runbook](docs/runbooks/secrets.md) |
+| No admin ports on the LAN: SSH by key, over Tailscale only | [ADR 0005](docs/adr/0005-tailscale.md), [Tailscale runbook](docs/runbooks/tailscale.md) |
+| Full-disk encryption unlocked by the TPM (Trusted Platform Module) | [ADR 0009](docs/adr/0009-disk-encryption.md), [install runbook](docs/runbooks/install.md) |
+| Automated dependency updates with a supply-chain cooldown | [updates runbook](docs/runbooks/updates.md) |
+| Kernel reboots only in a weekly maintenance window | [updates runbook](docs/runbooks/updates.md) |
+| Alerting on failures, boots and shutdowns | [notifications runbook](docs/runbooks/notifications.md) |
+| Rollback drilled on the real machine, with timings | [rollback runbook](docs/runbooks/rollback.md) |
+| Disaster recovery: a full wipe and reinstall, timed | [reinstall runbook](docs/runbooks/reinstall.md) |
+| Decisions and procedures written down | [ADRs](docs/adr/), [runbooks](docs/runbooks/), [build plan](docs/PLAN.md) |
+
+## What runs on it
+
+```mermaid
+flowchart LR
+    admin["Admin's devices"]
+    gh["GitHub: main"]
+    players["Players"]
+    subgraph nuc["nuc: NixOS 26.05 · encrypted disk, TPM unlock · firewall default deny"]
+        direction TB
+        ts["Tailscale → SSH, key only"]
+        comin["comin: deploys main"]
+        notify["Alerting · weekly reboot window"]
+        subgraph docker["Docker Compose stacks (phase 3)"]
+            games["Minecraft · Palworld · Satisfactory<br/>(phase 4)"]
+            llm["Ollama + Open WebUI<br/>(phase 5)"]
+            grafana["Prometheus + Grafana<br/>(phase 3)"]
+        end
+        restic["restic, nightly<br/>(phase 3)"]
+    end
+    discord["Discord #nuc-alerts"]
+    nas["NAS<br/>(phase 3)"]
+    admin -->|"tailnet only"| ts
+    gh -->|"comin pulls"| comin
+    players -.->|"game ports"| games
+    notify -->|webhook| discord
+    restic -.->|"encrypted backups"| nas
+    classDef planned stroke-dasharray: 5 5,color:#888,stroke:#888
+    class games,llm,grafana,restic,nas planned
+    style docker stroke-dasharray: 5 5,stroke:#888,color:#888
 ```
 
-The server is installed from this repo with `nixos-anywhere` and `disko`, updates itself
-from `main`, backs up to the NAS (network-attached storage) with restic, and is reachable for admin only over Tailscale.
+Solid boxes run today; dashed boxes are planned, with the phase that builds
+them. See [docs/PLAN.md](docs/PLAN.md).
+
+## Reproduce it
+
+The server is built from nothing by following
+[docs/runbooks/reinstall.md](docs/runbooks/reinstall.md): boot a NixOS live
+USB, run `nixos-anywhere` from a workstation to partition, encrypt and install
+in one step, then enrol the TPM. On first boot the server decrypts its own
+secrets, joins the tailnet and from then on deploys itself from `main`. The
+runbook was followed end to end on 2026-10-19, a full wipe, in about 73
+minutes of work; the record is at its end.
+
+To try the configuration without the hardware, `just vm` boots it in a local
+VM, and `just check` runs everything CI runs (see [Tasks](#tasks)).
 
 ## Layout
 
@@ -127,26 +241,21 @@ does not re-encrypt anything on its own.
 
 ## Status
 
-Phase 0 (workstation and repo foundations) is done apart from the machine user
-(#61). CI (continuous integration) is live and required on `main`, and ADRs
-(Architecture Decision Records) 0001 to 0007 and 0009 are written. The hardware
-arrived on 2026-10-01 and was assembled and surveyed on 2026-10-04 (#8). The
-disk layout is declared, with LUKS2 (Linux Unified Key Setup) encryption and a
-TPM (Trusted Platform Module) unlock tested in a VM (#9, ADR 0009). The nuc was
-installed on 2026-10-18 (#13): it boots NixOS 26.05 from its encrypted disk and
-unlocks with the TPM, unattended. It decrypts its own secrets and joins the
-tailnet by itself, and SSH is reachable over the tailnet only (#14). On
-2026-10-19 it was wiped and reinstalled following
-[docs/runbooks/reinstall.md](docs/runbooks/reinstall.md) (#15), the last
-planned phase 1 ticket; follow-ups #75 and #95 remain open. In phase 2, the
-nuc deploys itself, with comin pulling `main` about a minute after each merge
-(#16, [docs/runbooks/deploy.md](docs/runbooks/deploy.md)); a weekly pull
-request updates its pinned inputs (#17); new kernels wait for a Tuesday reboot
-window (#18); failures post to Discord within a minute (#20,
-[docs/runbooks/notifications.md](docs/runbooks/notifications.md)); and both
-ways back from a bad change have been drilled on the nuc (#19,
-[docs/runbooks/rollback.md](docs/runbooks/rollback.md)). See the
-[milestones](https://github.com/alexCranfield/nixos-homeserver/milestones).
+| Phase | State |
+|---|---|
+| [0. Workstation and repo foundations](https://github.com/alexCranfield/nixos-homeserver/milestone/1) | Done; the machine user for bot pull requests (#61) remains |
+| [1. Bare-metal install and base OS](https://github.com/alexCranfield/nixos-homeserver/milestone/2) | Done: installed 2026-10-18, wiped and reinstalled from the runbook 2026-10-19; follow-ups open |
+| [2. GitOps, updates, rollback](https://github.com/alexCranfield/nixos-homeserver/milestone/3) | Nearly done: self-deploy (#16), weekly updates (#17), reboot window (#18), rollback drill (#19) and alerting (#20) are live |
+| [3. Containers, observability, backups](https://github.com/alexCranfield/nixos-homeserver/milestone/4) | Planned |
+| [4. Game servers](https://github.com/alexCranfield/nixos-homeserver/milestone/5) | Planned |
+| [5. Local LLMs](https://github.com/alexCranfield/nixos-homeserver/milestone/6) | Planned |
+| [6. Development environment](https://github.com/alexCranfield/nixos-homeserver/milestone/7) | Planned |
+| [7. Hardening, disaster recovery, write-up](https://github.com/alexCranfield/nixos-homeserver/milestone/8) | Planned |
+| [8. Kubernetes (stretch)](https://github.com/alexCranfield/nixos-homeserver/milestone/9) | Planned |
+
+Each ticket is a GitHub issue under its phase's milestone, closed by a pull
+request with its evidence; [docs/PLAN.md](docs/PLAN.md) records how each was
+built.
 
 ## License
 
