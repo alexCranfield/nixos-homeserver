@@ -120,6 +120,33 @@ nuc:
 sudo nft list chain inet nixos-fw input-allow
 ```
 
+### Forwarded traffic
+
+The nuc routes for nothing, and the firewall drops forwarded traffic by
+default (`networking.firewall.filterForward`), from 3.1 (#22). It matters
+because Docker turns IPv4 forwarding on: NixOS sets the sysctl at boot, so
+Docker finds it on and leaves its own `FORWARD` policy at accept. Without the
+filter, a neighbour could route through the nuc between the LAN, the tailnet
+and the container bridges. Allowed through:
+
+- replies to connections already allowed;
+- traffic Docker has redirected to a published port (`ct status dnat`);
+- connections containers start, out of `docker0` and the `br-<id>` bridges
+  (`modules/containers/docker.nix`);
+- ICMPv6, NixOS's own rule, which forwards nothing while IPv6 forwarding is
+  off.
+
+Making the nuc a Tailscale subnet router or exit node would need a forward
+rule for `tailscale0` as well.
+
+The `docker` VM test proves the three cases with a neighbour on the LAN and a
+host on a second network, and that the neighbour reaches the far host once
+the filter is off. To see the rules on the nuc:
+
+```bash
+sudo nft list chain inet nixos-fw forward-allow
+```
+
 Check from the LAN with a full scan. A default-deny firewall drops probes
 rather than refusing them, so nmap gets no answer on any port and keeps
 slowing itself down; a fixed minimum rate keeps it to about two minutes. nmap

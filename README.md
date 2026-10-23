@@ -20,7 +20,7 @@ flowchart TD
         direction LR
         bot["A change, or the weekly<br/>dependency update"]
         pr["Pull request"]
-        ci["CI: lint, 7 VM tests,<br/>build the whole OS"]
+        ci["CI: lint, 8 VM tests,<br/>build the whole OS"]
         main["main<br/>(protected)"]
         bot --> pr --> ci -->|"green:<br/>merge"| main
     end
@@ -41,8 +41,8 @@ flowchart TD
   described by the files in this repo, and changes reach it as pull requests
   to `main`.
 - **CI proves the change first.** It builds the complete system and boots it
-  in seven VM tests: SSH, disk encryption, network, Tailscale, the deploy
-  agent, the reboot window and alerting. `main` only accepts a merge once that
+  in eight VM tests: SSH, disk encryption, network, Tailscale, the deploy
+  agent, the reboot window, alerting and Docker. `main` only accepts a merge once that
   passes.
 - **The server pulls its changes.** [comin](https://github.com/nlewo/comin)
   on the server notices the merge within a minute and switches to it, so no
@@ -157,7 +157,7 @@ hosts/installer/default.nix        live USB: latest kernel, survey tools, ops ke
 keys/ops.pub                       the admin SSH public key (private half on the workstation)
 modules/base/default.nix           config applied to every host; imports the files below
 modules/base/ssh.nix               the ops account and key-only sshd
-modules/base/firewall.nix          default-deny firewall on nftables
+modules/base/firewall.nix          default-deny firewall on nftables, forwarded traffic included
 modules/base/tailscale.nix         Tailscale, with SSH open on the tailnet
 modules/base/nix.nix               Nix settings and weekly garbage collection
 modules/base/system.nix            UTC clock, locale, boot menu retention, git and tmux
@@ -165,6 +165,7 @@ modules/base/comin.nix             comin: the host deploys itself from `main`
 modules/base/reboot-window.nix     weekly window that reboots only for a new kernel or kernel parameters
 modules/base/notify.nix            Discord alerts: failed units and deploys, boot, shutdown
 modules/base/vm.nix                SSH into `just vm` on 127.0.0.1:2222; no effect on a real host
+modules/containers/docker.nix      rootful Docker: ports on loopback unless named, nobody in the docker group
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
 tests/comin.nix                    VM test: comin runs, fetches `main`, ignores a testing branch
@@ -179,6 +180,8 @@ tests/tailscale.nix                VM test: ops logs in over the tailnet from an
 tests/tailscale.py                 its test script
 tests/notify.nix                   VM test: failed units and deploys, boot and shutdown post to a stand-in webhook, with the cooldown
 tests/notify.py                    its test script
+tests/docker.nix                   VM test: published ports bind to loopback on every network; controls without each setting
+tests/docker.py                    its test script
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
 scripts/tickets.py                 ticket definitions; file_issues.py files them
