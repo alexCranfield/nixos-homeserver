@@ -38,7 +38,9 @@
       # does whenever Docker or these settings change. Off, every container
       # stops then, and only those with `restart: unless-stopped` or `always`
       # come back (measured on the nuc, 2026-10-23). A reboot stops them
-      # either way. Not compatible with Docker Swarm, which is not used.
+      # either way. Published ports still miss new connections until the
+      # daemon is back (docs/runbooks/docker.md). Docker supports it across
+      # patch releases only. Not compatible with Docker Swarm, not used here.
       live-restore = true;
     };
     # `docker system prune --force` once a week: stopped containers, unused

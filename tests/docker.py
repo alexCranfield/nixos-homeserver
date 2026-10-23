@@ -18,31 +18,45 @@ def published(port):
     return listeners(port)
 
 
-def restart_daemon(name, port):
-    """Restart dockerd with container `name` publishing `port` to the LAN,
-    while `lan` polls the port every 0.1 s. Return whether the container
-    kept its process, and the poll's failures out of its attempts."""
-    pid = nuc.succeed(f"docker inspect -f '{{{{.State.Pid}}}}' {name}").strip()
-    lan.succeed(
-        f"(for i in $(seq 150); do curl -s -o /dev/null --max-time 1 -w '%{{http_code}}\\n' "
-        f"http://{NUC_LAN}:{port}/hostname || true; sleep 0.1; done > /tmp/poll) >/dev/null 2>&1 &"
+def poll(machine, url, out):
+    """Start polling `url` from `machine` every 0.1 s, 150 times, in the
+    background, one HTTP status per line in `out` (000: no answer)."""
+    machine.succeed(
+        f"rm -f {out}; (for i in $(seq 150); do curl -s -o /dev/null --max-time 1 "
+        f"-w '%{{http_code}}\\n' {url} || true; sleep 0.1; done > {out}) >/dev/null 2>&1 &"
     )
+
+
+def runs(machine, out):
+    """Wait for the poll in `out` to finish; return its failures and the
+    codes as runs, e.g. 200x40 000x4 200x106: where the gap fell."""
+    machine.wait_until_succeeds(f"test $(wc -l < {out}) -ge 150", timeout=240)
+    codes = machine.succeed(f"cat {out}").split()
+    rs = []
+    for c in codes:
+        if rs and rs[-1][0] == c:
+            rs[-1][1] += 1
+        else:
+            rs.append([c, 1])
+    return sum(c != "200" for c in codes), " ".join(f"{c}x{n}" for c, n in rs)
+
+
+def restart_daemon(name, port):
+    """Restart dockerd while container `name` publishes `port`, polled from
+    the LAN through NAT and from the nuc itself through loopback, which
+    docker-proxy serves. Return whether the container kept its process, and
+    the failed polls on each path."""
+    pid = nuc.succeed(f"docker inspect -f '{{{{.State.Pid}}}}' {name}").strip()
+    poll(lan, f"http://{NUC_LAN}:{port}/hostname", f"/tmp/poll-{name}")
+    poll(nuc, f"http://127.0.0.1:{port}/hostname", f"/tmp/poll-{name}")
     time.sleep(2)
     nuc.succeed("systemctl restart docker.service")
     nuc.wait_until_succeeds("docker info >/dev/null", timeout=60)
-    lan.wait_until_succeeds("test $(wc -l < /tmp/poll) -ge 150", timeout=240)
-    codes = lan.succeed("cat /tmp/poll").split()
-    failures = sum(c != "200" for c in codes)
+    lan_failures, lan_runs = runs(lan, f"/tmp/poll-{name}")
+    local_failures, local_runs = runs(nuc, f"/tmp/poll-{name}")
     after = nuc.succeed(f"docker inspect -f '{{{{.State.Running}}}} {{{{.State.Pid}}}}' {name}").split()
-    # The poll as runs, e.g. 200x40 000x4 200x106: where the gap fell.
-    runs = []
-    for c in codes:
-        if runs and runs[-1][0] == c:
-            runs[-1][1] += 1
-        else:
-            runs.append([c, 1])
-    print(f"{name}: pid {pid} -> {after}; polls " + " ".join(f"{c}x{n}" for c, n in runs))
-    return after == ["true", pid], failures, len(codes)
+    print(f"{name}: pid {pid} -> {after}; LAN polls {lan_runs}; loopback polls {local_runs}")
+    return after == ["true", pid], lan_failures, local_failures
 
 
 def switch(name):
@@ -154,22 +168,25 @@ with subtest("the nuc does not route between its networks"):
 with subtest("live-restore: a container outlives a daemon restart"):
     nuc.succeed("docker run -d --name live -p 0.0.0.0:8091:8080 probe:test")
     published(8091)
-    kept, failures, polls = restart_daemon("live", 8091)
+    kept, lan_failures, local_failures = restart_daemon("live", 8091)
     assert kept, "the container did not keep running"
-    # New connections from the LAN fail for a moment while the daemon
-    # restarts; the number is printed, not asserted, since emulation
-    # stretches it. The port must answer again afterwards.
+    # New connections fail for a while as the daemon restarts, through
+    # loopback (docker-proxy exits with dockerd) as well as from the LAN;
+    # the gaps are printed, not asserted, since emulation stretches them.
+    # The port must answer again afterwards on both paths.
     lan.succeed(f"curl -sf --max-time 10 http://{NUC_LAN}:8091/hostname")
+    nuc.succeed("curl -sf --max-time 10 http://127.0.0.1:8091/hostname")
 
 with subtest("control: without default-network-opts, a new network binds everywhere"):
     switch("noNetworkDefault")
     nuc.succeed("docker network create later")
     nuc.succeed("docker run -d --name onlater --network later -p 8083:8080 probe:test")
     assert "0.0.0.0" in published(8083), listeners(8083)
-    # A network keeps the address it was created with (docs/runbooks/docker.md):
-    # `onmade`, kept running through the daemon restart by live-restore, is
-    # still on loopback.
-    nuc.succeed("docker start onmade")
+    # The switch took the path a comin deploy takes (docker.service and
+    # docker.socket stopped, then started again); with live-restore,
+    # `onmade` is still running, and its network kept the address it was
+    # created with (docs/runbooks/docker.md).
+    assert nuc.succeed("docker inspect -f '{{.State.Running}}' onmade").strip() == "true"
     assert published(8081) == ["127.0.0.1"], listeners(8081)
     # `ip` is unchanged, so the built-in network is still on loopback.
     nuc.succeed("docker rm -f bare")
@@ -186,7 +203,7 @@ with subtest("control: without ip, a bare docker run binds everywhere"):
     nuc.succeed("docker run -d --name bare -p 8080:8080 probe:test")
     assert published(8080) == ["127.0.0.1"], listeners(8080)
     # With every container stopped, the next daemon start applies it.
-    nuc.succeed("docker stop $(docker ps -q)")
+    nuc.succeed("docker ps -q | xargs -r docker stop")
     nuc.succeed("docker rm bare")
     nuc.succeed("systemctl restart docker.service")
     nuc.wait_until_succeeds("docker info >/dev/null", timeout=60)
@@ -206,6 +223,7 @@ with subtest("control: without live-restore, a daemon restart stops the containe
     switch("noLiveRestore")
     nuc.succeed("docker run -d --name unkept -p 0.0.0.0:8092:8080 probe:test")
     published(8092)
-    kept, failures, polls = restart_daemon("unkept", 8092)
+    kept, lan_failures, local_failures = restart_daemon("unkept", 8092)
     assert not kept, "the container survived without live-restore"
-    assert failures > 0, "no poll failed without live-restore"
+    # Implied by the line above; it checks the poll records a failure.
+    assert lan_failures > 0, "no poll failed without live-restore"
