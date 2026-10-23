@@ -566,3 +566,46 @@ line containing `@everyone` stays text; checked against the real Discord, which
 recorded the test message as not mentioning everyone.
 
 </details>
+
+### Is Docker's live-restore a security risk, given its gaps?
+
+*2026-10-23*
+
+> What it doesn't cover: their published ports still miss new connections
+> until the daemon is back, and loopback ports are down longer than LAN ones,
+> because docker-proxy exits with the daemon. Docker supports live-restore
+> across patch releases only. - Is this a potential security risk?
+
+<details>
+<summary>Answer</summary>
+
+Mostly it is about availability, with two narrow security edges.
+
+**Missed connections fail closed.** While the daemon restarts, a client gets
+no answer; nothing is exposed that was not before. Docker rewrites its own
+firewall rules as it comes back, but the forward filter
+(`networking.firewall.filterForward`) lives in NixOS's own nftables table,
+which a Docker restart does not touch, so traffic to container addresses is
+still dropped unless Docker redirected it to a published port. That is
+defence in depth for exactly this moment.
+
+**The loopback gap allows port squatting.** A port on `127.0.0.1` is served
+by `docker-proxy`, which exits with the daemon. Until it is back the port is
+free, and on Linux any local user may bind an unprivileged port, so a process
+already running on the host could take it. Whatever forwards to that port,
+such as Tailscale Serve in front of an admin interface, would then talk to
+the impostor, and `docker-proxy` would fail to bind. It needs an attacker
+already executing code on the host, inside a window of seconds per deploy:
+low risk, but a reason to alert when a stack's port fails to bind, and to
+weigh how admin interfaces are reached (3.2, #23; 3.4, #25).
+
+**Skipping releases can orphan containers.** Docker supports live-restore
+across patch releases. After a larger jump the new daemon may fail to
+reconnect to the running containers; they keep running, unmanaged, and drop
+out of `docker ps`. A stack believed updated or stopped could keep running an
+old image. The stable branch does take minor versions (Docker went from
+29.7.2 to 29.9.1 within 26.05), so when the weekly update moves Docker by a
+minor or major version, compare `sudo docker ps` with the
+`containerd-shim` processes after the deploy (docs/runbooks/updates.md).
+
+</details>

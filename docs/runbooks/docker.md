@@ -104,7 +104,11 @@ Removing a network does not touch data in bind mounts.
   under emulation; the container kept its process, and the configuration
   switch, which takes a deploy's path, left a container running. Docker
   supports this across patch releases; after a deploy that moves Docker by a
-  minor or major version, check `sudo docker ps`. After a deploy that changes
+  minor or major version, check that `sudo docker ps` lists every running
+  container, since one the daemon failed to reconnect to keeps running
+  unmanaged ([updates.md](updates.md)). While `docker-proxy` is down, any
+  local process could bind a free loopback port first; see the
+  [Q&A](../q-and-a/security.md). After a deploy that changes
   `ip`, the built-in network keeps its old address while any container runs
   (above). Without it, measured on the nuc on 2026-10-23,
   every container stops at a daemon restart, and only those with `restart:`

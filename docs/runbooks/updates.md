@@ -58,7 +58,12 @@ run.
    is unchecked.
 3. **Read the package changes** (`nix store diff-closures` between the running
    system and the new one). A kernel series change (7.2 to 7.3, say) needs a
-   reboot to take effect, which is #18's.
+   reboot to take effect, which is #18's. A Docker change beyond a patch
+   release (29.7 to 29.9, say) needs a check after the deploy: `live-restore`
+   is supported across patch releases only, and a daemon that cannot reconnect
+   leaves its containers running unmanaged. Compare `sudo docker ps` with the
+   containers actually running (`pgrep -a containerd-shim`); see
+   [docker.md](docker.md).
 4. **Read the CVE (Common Vulnerabilities and Exposures) change.** vulnix lists
    the CVE ids reported against the nuc's runtime closure before and after.
    It matches package names against the NVD (National Vulnerability Database)
