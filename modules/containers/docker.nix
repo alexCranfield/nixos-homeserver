@@ -37,12 +37,21 @@
       no-new-privileges = true;
     };
     # `docker system prune --force` once a week: stopped containers, unused
-    # networks, dangling images and build cache. Not volumes, and not images
-    # a container still uses. Stack data lives in bind mounts under
+    # networks, dangling images and dangling build cache. Not volumes, and not
+    # tagged images, used or not. Stack data lives in bind mounts under
     # /srv/data (3.3, #24), which prune never touches.
     autoPrune = {
       enable = true;
       dates = "weekly";
     };
   };
+
+  # The firewall drops forwarded traffic (modules/base/firewall.nix). Let
+  # containers start connections out through their bridges, `docker0` and the
+  # `br-<id>` of each network created later: pulling, updates, the NAS.
+  # Replies and published ports need no rule here.
+  networking.firewall.extraForwardRules = ''
+    iifname "docker0" accept
+    iifname "br-*" accept
+  '';
 }

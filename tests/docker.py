@@ -1,5 +1,6 @@
-# Test script for tests/docker.nix. `nuc` is the test driver's machine; IMAGE
-# and COMPOSE are defined by the Nix file in front of it.
+# Test script for tests/docker.nix. `nuc`, `lan` and `far` are the test
+# driver's machines; IMAGE, COMPOSE and the addresses are defined by the Nix
+# file in front of it.
 
 import json
 
@@ -25,13 +26,18 @@ def switch(name):
     nuc.wait_until_succeeds("docker info >/dev/null", timeout=60)
 
 
+start_all()
 nuc.wait_for_unit("docker.service")
+for m in (lan, far):
+    m.wait_for_unit("static-web-server.service")
+    m.wait_for_open_port(80)
 
 with subtest("nobody is in the docker group, and ops needs sudo"):
     members = nuc.succeed("getent group docker").strip().split(":")[3]
     assert members == "", f"docker group members: {members!r}"
     assert "docker" not in nuc.succeed("id -nG ops").split()
-    nuc.fail("runuser -u ops -- docker info")
+    out = nuc.fail("runuser -u ops -- docker info 2>&1")
+    assert "permission denied" in out, out
 
 with subtest("the image loads, and sudo docker runs it"):
     nuc.succeed(f"docker load < {IMAGE}")
@@ -50,6 +56,11 @@ with subtest("daemon: data root, journald logs, live-restore off"):
 with subtest("no-new-privileges is on in every container"):
     out = nuc.succeed("docker run --rm probe:test grep NoNewPrivs /proc/self/status")
     assert out.split() == ["NoNewPrivs:", "1"], out
+    # The per-container opt-out the runbook offers.
+    out = nuc.succeed(
+        "docker run --rm --security-opt no-new-privileges=false probe:test grep NoNewPrivs /proc/self/status"
+    )
+    assert out.split() == ["NoNewPrivs:", "0"], out
 
 with subtest("container output reaches the journal"):
     nuc.succeed("docker run --name logprobe probe:test echo marker-in-the-journal")
@@ -78,6 +89,32 @@ with subtest("prune runs weekly"):
     cal = nuc.succeed("systemctl show docker-prune.timer -p TimersCalendar --value")
     # systemd stores "weekly" expanded.
     assert "OnCalendar=Mon *-*-* 00:00:00" in cal, cal
+    # What the runbook says it removes: no --all (tagged images) and no
+    # --volumes.
+    cmd = nuc.succeed("systemctl show docker-prune.service -p ExecStart --value")
+    assert "system prune -f" in cmd, cmd
+    assert "--all" not in cmd and "--volumes" not in cmd, cmd
+
+with subtest("Docker turns forwarding on and leaves its FORWARD policy at accept"):
+    # Why the firewall filters forwarded traffic (modules/base/firewall.nix).
+    assert nuc.succeed("cat /proc/sys/net/ipv4/ip_forward").strip() == "1"
+    print("FORWARD:", nuc.succeed("iptables -S FORWARD | head -1").strip())
+
+with subtest("a port published on 0.0.0.0 is reachable from the LAN"):
+    nuc.succeed("docker run -d --name public -p 0.0.0.0:8090:8080 probe:test")
+    published(8090)
+    lan.succeed(f"curl -sf --max-time 10 http://{NUC_LAN}:8090/hostname")
+    # And one published without an address is not.
+    lan.fail(f"curl -sf --max-time 5 http://{NUC_LAN}:8081/hostname")
+
+with subtest("containers reach the LAN, from the built-in and a created network"):
+    for net in ("bridge", "made"):
+        out = nuc.succeed(f"docker run --rm --network {net} probe:test wget -qO- http://{LAN}/")
+        assert out.strip() == "lan", (net, out)
+
+with subtest("the nuc does not route between its networks"):
+    lan.fail(f"curl -sf --max-time 5 http://{FAR}/")
+    far.fail(f"curl -sf --max-time 5 http://{LAN}/")
 
 with subtest("control: without default-network-opts, a new network binds everywhere"):
     switch("noNetworkDefault")
@@ -103,3 +140,8 @@ with subtest("control: without ip, a bare docker run binds everywhere"):
     nuc.succeed("docker network create again")
     nuc.succeed("docker run -d --name onagain --network again -p 8084:8080 probe:test")
     assert published(8084) == ["127.0.0.1"], listeners(8084)
+
+with subtest("control: without the forward filter, the LAN routes through the nuc"):
+    switch("noForwardFilter")
+    out = lan.succeed(f"curl -sf --max-time 10 http://{FAR}/")
+    assert out.strip() == "far", out

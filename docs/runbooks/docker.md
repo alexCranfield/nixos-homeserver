@@ -69,19 +69,26 @@ Removing a network does not touch data in bind mounts.
   journalctl CONTAINER_NAME=<container> -f
   ```
 
-  Retention is journald's: by default up to 10% of the root filesystem,
-  capped at 4 GB, shared with every other unit. Docker's own `log-opts` do
+  Retention is journald's: by default 10% of the btrfs filesystem holding
+  `/var/log`, at most 4 GB, and less when free space falls under 15%, shared
+  with every other unit. Docker's own `log-opts` do
   not apply.
 - **Weekly prune.** `docker-prune.timer` runs `docker system prune --force`:
-  stopped containers, unused networks, dangling images and the build cache go.
-  Volumes and images a container still uses stay. Stack data lives in bind
+  stopped containers, unused networks, dangling images and dangling build
+  cache go. Volumes stay, and so do tagged images, used or not, so images a
+  stack no longer uses build up until removed with `sudo docker image prune
+  --all`. Stack data lives in bind
   mounts under `/srv/data` (3.3, #24), which prune never touches. A stack
   stopped with `docker compose stop` loses its containers at the next prune,
   and `up -d` recreates them.
-- **`live-restore` is off**, the default. With it off, restarting the daemon
-  (a Docker update deployed by comin) stops every container, and Compose's
-  restart policies start them again. Whether to turn it on is decided by
-  trying both across a deploy and a reboot on the nuc; see the record below.
+- **`live-restore` is off**, the default. With it off, every restart of the
+  daemon stops every container: a Docker update, or any change to its
+  settings, deployed by comin. Only containers whose `restart:` is
+  `unless-stopped` or `always` start again by themselves; Compose's default is
+  `"no"`, and an `on-failure` container stopped cleanly stays down too. The
+  stack units of 3.2 (#23) have to account for that. Whether to turn
+  `live-restore` on is decided by trying both across a deploy and a reboot on
+  the nuc; see the record below.
 
 ## Storage
 
