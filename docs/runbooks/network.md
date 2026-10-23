@@ -132,7 +132,12 @@ and the container bridges. Allowed through:
 - replies to connections already allowed;
 - traffic Docker has redirected to a published port (`ct status dnat`);
 - connections containers start, out of `docker0` and the `br-<id>` bridges
-  (`modules/containers/docker.nix`).
+  (`modules/containers/docker.nix`);
+- ICMPv6, NixOS's own rule, which forwards nothing while IPv6 forwarding is
+  off.
+
+Making the nuc a Tailscale subnet router or exit node would need a forward
+rule for `tailscale0` as well.
 
 The `docker` VM test proves the three cases with a neighbour on the LAN and a
 host on a second network, and that the neighbour reaches the far host once

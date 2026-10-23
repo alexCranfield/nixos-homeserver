@@ -48,7 +48,8 @@
 
   # The firewall drops forwarded traffic (modules/base/firewall.nix). Let
   # containers start connections out through their bridges, `docker0` and the
-  # `br-<id>` of each network created later: pulling, updates, the NAS.
+  # `br-<id>` of each network created later: pulling, updates, the NAS. A
+  # network given its own `com.docker.network.bridge.name` is not covered.
   # Replies and published ports need no rule here.
   networking.firewall.extraForwardRules = ''
     iifname "docker0" accept

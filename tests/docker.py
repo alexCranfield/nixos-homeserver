@@ -98,7 +98,8 @@ with subtest("prune runs weekly"):
 with subtest("Docker turns forwarding on and leaves its FORWARD policy at accept"):
     # Why the firewall filters forwarded traffic (modules/base/firewall.nix).
     assert nuc.succeed("cat /proc/sys/net/ipv4/ip_forward").strip() == "1"
-    print("FORWARD:", nuc.succeed("iptables -S FORWARD | head -1").strip())
+    policy = nuc.succeed("iptables -S FORWARD | head -1").strip()
+    assert policy == "-P FORWARD ACCEPT", policy
 
 with subtest("a port published on 0.0.0.0 is reachable from the LAN"):
     nuc.succeed("docker run -d --name public -p 0.0.0.0:8090:8080 probe:test")
@@ -111,6 +112,12 @@ with subtest("containers reach the LAN, from the built-in and a created network"
     for net in ("bridge", "made"):
         out = nuc.succeed(f"docker run --rm --network {net} probe:test wget -qO- http://{LAN}/")
         assert out.strip() == "lan", (net, out)
+
+with subtest("containers on one network reach each other by name"):
+    nuc.succeed("docker run -d --name peer --network made probe:test")
+    out = nuc.succeed("docker run --rm --network made probe:test wget -qO- http://peer:8080/hostname")
+    assert out.strip(), out
+    nuc.succeed("docker rm -f peer")
 
 with subtest("the nuc does not route between its networks"):
     lan.fail(f"curl -sf --max-time 5 http://{FAR}/")
