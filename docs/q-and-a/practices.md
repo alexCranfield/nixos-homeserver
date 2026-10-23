@@ -94,31 +94,3 @@ minutes; a service alerts when it stops) or a monitor elsewhere that checks the
 nuc. That is #112.
 
 </details>
-
-### Should the README have a section on the NixOS setup itself?
-
-*2026-10-23*
-
-> Should we have a section on the nixos setup itself
-
-<details>
-<summary>Answer</summary>
-
-Yes, but written for the reader the README is for, a hiring manager, and not
-for someone learning Nix. They do not need flakes or modules explained; they
-need to see why NixOS is a familiar practice taken further: infrastructure as
-code that reaches all the way down to the operating system.
-
-So the section makes three points in a few lines. The whole machine, from
-disk layout and kernel to users and services, is one build from the repo, so
-the same commit gives the same system and nothing drifts. Each deploy is a new
-generation beside the old one, which is what makes rollback a switch and not
-a repair. And `flake.lock` pins every dependency, changing only through a
-reviewed pull request.
-
-It sits straight after the pipeline diagram because it is the reason the
-pipeline is safe: every arrow moves a complete, reproducible system, not a
-script editing a live machine. The file-by-file layout stays further down for
-the readers who want it.
-
-</details>
