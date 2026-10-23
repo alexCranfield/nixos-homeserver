@@ -1,7 +1,8 @@
 # The nuc host: an ASRock Industrial NUC BOX-358H.
 #
 # Everything host-specific lives here: identity, hardware, and the state
-# version. Shared policy lives in ../../modules/base.
+# version. Shared policy lives in ../../modules/base; Docker, which only a
+# host that runs containers needs, in ../../modules/containers.
 { inputs, pkgs, ... }:
 {
   imports = [

@@ -100,6 +100,6 @@ findmnt /var/lib/docker
 
 | Check | Result |
 |---|---|
-| `docker` VM test | to be filled in |
+| `docker` VM test | 2026-10-23, Docker 29.9.1 under TCG (Tiny Code Generator) emulation: all 11 subtests pass in 244 s. Its two controls, switching to a configuration without each setting, bind the new port to `0.0.0.0`. With `ip` deleted from the module the test fails at the bare `docker run`, and with `default-network-opts` deleted at the network created afterwards, each binding `0.0.0.0` and `[::]`. Storage driver in the VM, on ext4: `overlayfs` |
 | On the nuc after deploy: `sudo docker run --rm hello-world`, `id ops`, storage driver | to be filled in |
 | `live-restore` across a deploy and a reboot | to be filled in |
