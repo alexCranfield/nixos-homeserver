@@ -42,8 +42,8 @@ flowchart TD
   to `main`.
 - **CI proves the change first.** It builds the complete system and boots it
   in nine VM tests: SSH, disk encryption, network, Tailscale, the deploy
-  agent, the reboot window, alerting, Docker and Compose stacks. `main` only accepts a merge once that
-  passes.
+  agent, the reboot window, alerting, Docker and Compose stacks. `main` only
+  accepts a merge once that passes.
 - **The server pulls its changes.** [comin](https://github.com/nlewo/comin)
   on the server notices the merge within a minute and switches to it, so no
   CI system holds SSH or other credentials for the server
@@ -185,10 +185,10 @@ tests/notify.nix                   VM test: failed units and deploys, boot and s
 tests/notify.py                    its test script
 tests/docker.nix                   VM test: published ports bind to loopback on every network; controls without each setting
 tests/docker.py                    its test script
-tests/compose-stack.nix            VM test: stacks as units, slices and limits, public ports enforced, crash alerts; controls
+tests/compose-stack.nix            VM test: stacks as units, slices and limits, public ports enforced, crash alerts; controls without each firewall layer
 tests/compose-stack.py             its test script
 tests/compose-check.nix            flake check: compose files under stacks/ against ADR 0006, with a failing fixture per rule
-tests/compose-check/               the fixtures
+tests/compose-check/               one compose file per rule the check must reject, and one it must pass
 tests/stack-watch.nix              flake check: the crash watcher's quiet posts and pings at several crash rates
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
