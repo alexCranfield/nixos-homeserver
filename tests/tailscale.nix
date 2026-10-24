@@ -58,6 +58,9 @@ pkgs.testers.runNixOSTest {
         ../hosts/nuc
         trustCert
       ];
+      # The host's stacks pull images, and the build sandbox has no internet;
+      # tests/compose-stack.nix covers them.
+      homeserver.stacks = lib.mkForce { };
 
       # One port on the LAN, renamed lan0 as on the real machine, with a fixed
       # address in place of the router's reservation (tests/network.nix covers

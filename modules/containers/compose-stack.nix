@@ -18,6 +18,13 @@
 #    Docker restarts docker.service, and `Requires=` would stop each stack
 #    with it, which runs `down`. With `live-restore` (modules/containers/
 #    docker.nix) the containers outlive the restart, so the stacks do too.
+#  - Public ports are enforced on the forward path. Docker redirects a
+#    published port before the NixOS input rules see it, and NixOS's forward
+#    chain accepts whatever Docker redirected. The `stack-ports` table runs
+#    first and drops any redirected connection to a port no stack declares,
+#    or arriving anywhere but `publicInterface`, logging each new connection
+#    either way. The input rules list the declared ports too, so the NixOS
+#    firewall configuration still reads as the list of what is public.
 #  - Limits go on a slice, not on the unit. Docker starts containers under
 #    containerd, so `MemoryMax=` on the unit would limit only the `docker
 #    compose` client. `stack-<name>.slice` carries them, and the override's
@@ -128,6 +135,41 @@ let
       }
     );
 
+  ports = lib.concatLists (lib.mapAttrsToList (_: s: s.publicPorts) cfg);
+
+  # Two rules per declared port, as nft limits: the first logs (at most 10
+  # a minute, bursts of 5), the second accepts. A limit that runs out only
+  # stops the logging.
+  portRules =
+    p:
+    let
+      match =
+        ''ct state new ct status dnat iifname "${config.homeserver.publicInterface}"''
+        + " meta l4proto ${p.protocol} ct original proto-dst ${toString p.port}"
+        + lib.optionalString (
+          p.allowedSources != null
+        ) " ip saddr { ${lib.concatStringsSep ", " p.allowedSources} }";
+    in
+    ''
+      ${match} limit rate 10/minute burst 5 packets log prefix "stack-port accept ${toString p.port}/${p.protocol} "
+      ${match} counter accept
+    '';
+
+  # After `up`: each declared port is listening on every IPv4 address, or
+  # the unit fails, so a port that did not bind is reported.
+  checkPorts =
+    name: stack:
+    pkgs.writeShellScript "stack-${name}-ports" (
+      lib.concatMapStrings (p: ''
+        if ! ${pkgs.iproute2}/bin/ss -Hln${
+          if p.protocol == "tcp" then "t" else "u"
+        } 'sport = :${toString p.port}' | grep -q ' 0\.0\.0\.0:${toString p.port} '; then
+          echo "${toString p.port}/${p.protocol} is declared public but not listening on 0.0.0.0" >&2
+          exit 1
+        fi
+      '') stack.publicPorts
+    );
+
   compose =
     name: verb:
     "${lib.getExe pkgs.docker} compose --project-name ${name} --project-directory ${dir name}"
@@ -218,6 +260,7 @@ in
           # healthcheck, so one that exits at once fails the unit. First
           # starts pull images.
           ExecStart = compose name "up --detach --remove-orphans --wait";
+          ExecStartPost = lib.mkIf (stack.publicPorts != [ ]) (checkPorts name stack);
           ExecStop = compose name "down";
           TimeoutStartSec = "15min";
         };
@@ -229,6 +272,25 @@ in
         _: stack: lib.optional (stack.dataDir != null) "d ${stack.dataDir} 0750 root root - -"
       ) cfg
     );
+
+    networking.firewall.interfaces.${config.homeserver.publicInterface} = {
+      allowedTCPPorts = map (p: p.port) (lib.filter (p: p.protocol == "tcp") ports);
+      allowedUDPPorts = map (p: p.port) (lib.filter (p: p.protocol == "udp") ports);
+    };
+
+    # Before NixOS's own forward chain (priority filter), whose accept for
+    # redirected traffic cannot undo a drop here.
+    networking.nftables.tables.stack-ports = lib.mkIf (cfg != { }) {
+      family = "inet";
+      content = ''
+        chain forward {
+          type filter hook forward priority filter - 10; policy accept;
+          ${lib.concatMapStrings portRules ports}
+          ct state new ct status dnat limit rate 10/minute burst 5 packets log prefix "stack-port drop "
+          ct state new ct status dnat counter drop
+        }
+      '';
+    };
 
     homeserver.notify.units = map (name: "stack-${name}") (lib.attrNames cfg);
   };

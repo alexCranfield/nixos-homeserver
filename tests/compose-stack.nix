@@ -51,6 +51,7 @@ let
             - "0.0.0.0:8081:8080"
             - "8082:8080"
             - "0.0.0.0:8083:8080"
+            - "0.0.0.0:8084:8084/udp"
     '';
 
   stacks = {
@@ -58,7 +59,13 @@ let
       composeFile = fixtureCompose "one";
       services = [ "web" ];
       envSecret = "fixture-env";
-      publicPorts = [ { port = 8081; } ];
+      publicPorts = [
+        { port = 8081; }
+        {
+          port = 8084;
+          protocol = "udp";
+        }
+      ];
       resources.memoryMax = "64M";
       after = [ "test-setup.service" ];
     };
@@ -112,7 +119,8 @@ pkgs.testers.runNixOSTest {
 
     # Never decrypted (above); declared so the stack can name it.
     sops.secrets.fixture-env.sopsFile = ../secrets/test.yaml;
-    homeserver.stacks = stacks;
+    # Only the test's stacks: the host's pull images, and there is no internet.
+    homeserver.stacks = lib.mkForce stacks;
 
     # What the registry and sops-nix do on the real host.
     systemd.services.test-setup = {
@@ -130,12 +138,36 @@ pkgs.testers.runNixOSTest {
       '';
     };
 
-    specialisation.changed.configuration.homeserver.stacks.fixture.composeFile = lib.mkForce (
-      fixtureCompose "two"
+    # Each replaces the whole set, above the mkForce before it.
+    specialisation.changed.configuration.homeserver.stacks = lib.mkOverride 10 (
+      lib.recursiveUpdate stacks { fixture.composeFile = fixtureCompose "two"; }
     );
-    specialisation.withoutOther.configuration.homeserver.stacks = lib.mkForce (
+    specialisation.withoutOther.configuration.homeserver.stacks = lib.mkOverride 10 (
       builtins.removeAttrs stacks [ "other" ]
     );
+    specialisation.withoutFixture.configuration.homeserver.stacks = lib.mkOverride 10 (
+      builtins.removeAttrs stacks [ "fixture" ]
+    );
+    # 192.0.2.1 is a documentation address: anyone but the client.
+    specialisation.restricted.configuration.homeserver.stacks = lib.mkOverride 10 (
+      lib.recursiveUpdate stacks {
+        fixture.publicPorts = [
+          {
+            port = 8081;
+            allowedSources = [ "192.0.2.1/32" ];
+          }
+          {
+            port = 8084;
+            protocol = "udp";
+          }
+        ];
+      }
+    );
+    # Negative controls, as in tests/docker.nix.
+    specialisation.noNetworkDefault.configuration.virtualisation.docker.daemon.settings.default-network-opts =
+      lib.mkForce { };
+    specialisation.noStackFirewall.configuration.networking.nftables.tables.stack-ports.enable =
+      lib.mkForce false;
   };
 
   nodes.client = {
@@ -147,6 +179,8 @@ pkgs.testers.runNixOSTest {
     { nodes, ... }:
     ''
       NUC = "${nodes.nuc.networking.primaryIPAddress}"
+      NUC6 = "${nodes.nuc.networking.primaryIPv6Address}"
+      CLIENT = "${nodes.client.networking.primaryIPAddress}"
       ENV_RESTARTS = ${builtins.toJSON nodes.nuc.sops.secrets.fixture-env.restartUnits}
     ''
     + builtins.readFile ./compose-stack.py;

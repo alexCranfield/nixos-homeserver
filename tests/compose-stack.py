@@ -1,6 +1,6 @@
 # Test script for tests/compose-stack.nix. `nuc` and `client` are the test
-# driver's machines; NUC and ENV_RESTARTS are defined by the Nix file in front
-# of it.
+# driver's machines; the addresses and ENV_RESTARTS are defined by the Nix
+# file in front of it.
 
 
 def containers(project):
@@ -10,6 +10,26 @@ def containers(project):
         " | xargs -r docker inspect -f '{{.Name}} {{.Id}} {{.State.Pid}}'"
     )
     return {n.lstrip("/"): (i, p) for n, i, p in (l.split() for l in out.splitlines())}
+
+
+def wait_running(name):
+    """Wait for container `name` to be running, not between restarts."""
+    nuc.wait_until_succeeds(
+        f"test \"$(docker inspect -f '{{{{.State.Running}}}} {{{{.State.Restarting}}}}' {name})\" = 'true false'",
+        timeout=60,
+    )
+
+
+def curl(url):
+    """curl's exit code fetching `url` from the client: 0 answered, 7
+    refused, 28 timed out."""
+    return client.execute(f"curl -s -o /dev/null --max-time 5 '{url}'")[0]
+
+
+def listening(port, proto="t"):
+    """The addresses the nuc listens on for `port`, TCP or (proto="u") UDP."""
+    out = nuc.succeed(f"ss -Hln{proto} 'sport = :{port}'")
+    return sorted({line.split()[3].rsplit(":", 1)[0] for line in out.splitlines()})
 
 
 def switch(name):
@@ -63,6 +83,9 @@ with subtest("MemoryMax reaches the containers"):
     print(f"exit {code}; {events}")
     assert code != 0, code
     assert int(dict(l.split() for l in events.splitlines())["oom_kill"]) >= 1, events
+    # The kernel picks what to kill in the slice, sometimes the web server
+    # too; Docker then restarts the container.
+    wait_running("fixture-web-1")
 
 with subtest("a Docker restart leaves stacks up and their containers running"):
     before = containers("fixture")
@@ -91,3 +114,68 @@ with subtest("removing a stack stops it and takes its containers down"):
     assert left == "", left
     switch(None)
     nuc.wait_for_unit("stack-other.service")
+
+with subtest("the client reaches the declared port over IPv4, and it is logged"):
+    nuc.wait_for_unit("stack-fixture.service")
+    assert curl(f"http://{NUC}:8081/hostname") == 0
+    nuc.wait_until_succeeds(
+        f"journalctl -k --grep 'stack-port accept 8081/tcp' | grep -q 'SRC={CLIENT} '", timeout=30
+    )
+
+with subtest("a declared UDP port gets through, and is logged"):
+    assert listening(8084, "u") == ["0.0.0.0"], listening(8084, "u")
+    client.succeed(f"echo hi > /dev/udp/{NUC}/8084")
+    nuc.wait_until_succeeds(
+        f"journalctl -k --grep 'stack-port accept 8084/udp' | grep -q 'SRC={CLIENT} '", timeout=30
+    )
+
+with subtest("an undeclared port with no address binds loopback, and times out"):
+    assert listening(8082) == ["127.0.0.1"], listening(8082)
+    codes = curl(f"http://{NUC}:8082/"), curl(f"http://[{NUC6}]:8082/")
+    print(f"8082 over IPv4, IPv6: curl exits {codes}")
+    assert codes == (28, 28), codes
+
+with subtest("an undeclared 0.0.0.0 port is dropped by the firewall, and logged"):
+    assert listening(8083) == ["0.0.0.0"], listening(8083)
+    assert curl(f"http://{NUC}:8083/") == 28
+    # Logged after Docker's redirect, so the port shown is the container's.
+    nuc.wait_until_succeeds(f"journalctl -k --grep 'stack-port drop' | grep -q 'SRC={CLIENT} '", timeout=30)
+
+with subtest("a declared port that does not bind fails the unit"):
+    nuc.fail("systemctl start stack-unbound.service")
+    nuc.succeed("systemctl is-failed stack-unbound.service")
+    nuc.succeed("journalctl -u stack-unbound.service --grep '8090/tcp'")
+
+with subtest("allowedSources keeps everyone else out"):
+    switch("restricted")
+    assert curl(f"http://{NUC}:8081/hostname") == 28
+    switch(None)
+    assert curl(f"http://{NUC}:8081/hostname") == 0
+
+with subtest("a removed stack's port is closed in the firewall"):
+    switch("withoutFixture")
+    table = nuc.succeed("nft list table inet stack-ports")
+    assert "8081" not in table, table
+    switch(None)
+    nuc.wait_for_unit("stack-fixture.service")
+
+with subtest("control: without default-network-opts, the no-address port binds everywhere"):
+    switch("noNetworkDefault")
+    nuc.wait_until_succeeds("docker info >/dev/null", timeout=60)
+    # A network keeps the address it was created with: recreate it.
+    nuc.succeed("systemctl restart stack-fixture.service")
+    print(f"8082 listens on {listening(8082)}")
+    assert listening(8082) == ["0.0.0.0", "[::]"], listening(8082)
+    # The firewall still holds it: undeclared, and over IPv6 never forwarded.
+    codes = curl(f"http://{NUC}:8082/"), curl(f"http://[{NUC6}]:8082/")
+    print(f"8082 over IPv4, IPv6 without the default: curl exits {codes}")
+    assert codes == (28, 28), codes
+    switch(None)
+    nuc.wait_until_succeeds("docker info >/dev/null", timeout=60)
+    nuc.succeed("systemctl restart stack-fixture.service")
+
+with subtest("control: without the stack-ports table, the undeclared 0.0.0.0 port is reachable"):
+    switch("noStackFirewall")
+    assert curl(f"http://{NUC}:8083/") == 0
+    switch(None)
+    assert curl(f"http://{NUC}:8083/") == 28

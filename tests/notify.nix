@@ -64,6 +64,9 @@ pkgs.testers.runNixOSTest {
 
   nodes.nuc = {
     imports = [ ../hosts/nuc ];
+    # The host's stacks pull images, and the build sandbox has no internet;
+    # tests/compose-stack.nix covers them.
+    homeserver.stacks = lib.mkForce { };
     # As in base-ssh.nix: the sops secrets cannot be decrypted here. Copied
     # out of the store at boot instead, as sops-nix would put them, since a
     # store path fails the assertion in modules/base/notify.nix.
