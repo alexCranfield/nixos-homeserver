@@ -1,0 +1,10 @@
+{
+  "minecraft": {
+    "composeFile": "elsewhere.yml",
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  }
+}

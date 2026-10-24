@@ -162,6 +162,27 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 3.2 (#23): a stack becomes a systemd unit, keeps its
+        # containers in its slice, survives a Docker restart and restarts
+        # alone when its files change.
+        compose-stack = import ./tests/compose-stack.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
+        # Ticket 3.2 (#23): compose files under stacks/ publish only declared
+        # ports, and mount neither the Docker socket nor anything outside
+        # their stack's data directory (ADR 0006).
+        compose-check = import ./tests/compose-check.nix {
+          inherit pkgs;
+          manifest = self.nixosConfigurations.nuc.config.homeserver.stacksManifest;
+          stacks = ./stacks;
+        };
+
+        # Ticket 3.2 (#23): the crash watcher posts at least once per window
+        # and pings at most once, at the crash cadences it lists.
+        stack-watch = import ./tests/stack-watch.nix { inherit pkgs; };
+
         # Fails `nix flake check` if the server stops using the dev shell's Nix,
         # for example after a `nix.package` override on the host.
         devshell-nix-matches-server =

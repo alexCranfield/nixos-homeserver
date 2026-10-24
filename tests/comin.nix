@@ -27,6 +27,9 @@ pkgs.testers.runNixOSTest {
 
   nodes.nuc = {
     imports = [ ../hosts/nuc ];
+    # The host's stacks pull images, and the build sandbox has no internet;
+    # tests/compose-stack.nix covers them.
+    homeserver.stacks = lib.mkForce { };
     # As in base-ssh.nix: the sops secret cannot be decrypted here.
     services.tailscale.authKeyFile = lib.mkForce null;
     # The real remote with a local URL and a 2 s poll, so the test does not

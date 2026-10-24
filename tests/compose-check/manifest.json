@@ -1,0 +1,256 @@
+{
+  "good": {
+    "composeFile": null,
+    "services": [
+      "game",
+      "web"
+    ],
+    "publicPorts": [
+      {
+        "port": 25565,
+        "protocol": "tcp"
+      },
+      {
+        "port": 8211,
+        "protocol": "udp"
+      },
+      {
+        "port": 8212,
+        "protocol": "udp"
+      }
+    ],
+    "dataDir": "/srv/data/good"
+  },
+  "no-address--short": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "no-address--bare": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "no-address--range": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "no-address--long": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "no-address--int": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "undeclared-public--short": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "undeclared-public--range": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [
+      {
+        "port": 8211,
+        "protocol": "udp"
+      },
+      {
+        "port": 8212,
+        "protocol": "udp"
+      }
+    ],
+    "dataDir": null
+  },
+  "undeclared-public--long": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "undeclared-public--protocol": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [
+      {
+        "port": 25565,
+        "protocol": "tcp"
+      }
+    ],
+    "dataDir": null
+  },
+  "host-binding-opt": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "host-network": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "docker-socket--short": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "docker-socket--long": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "bind-outside-data--relative": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": "/srv/data/x"
+  },
+  "bind-outside-data--elsewhere": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": "/srv/data/x"
+  },
+  "bind-outside-data--prefix": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": "/srv/data/x"
+  },
+  "bind-outside-data--no-data-dir": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "declared-unused": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [
+      {
+        "port": 7777,
+        "protocol": "tcp"
+      }
+    ],
+    "dataDir": null
+  },
+  "interpolated-port": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "services-mismatch": {
+    "composeFile": null,
+    "services": [
+      "app"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "interpolated-volume--short": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "interpolated-volume--long": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "undeclared-public--docker-picks-short": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "undeclared-public--docker-picks-long": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "ipv6-public": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [
+      {
+        "port": 25565,
+        "protocol": "tcp"
+      }
+    ],
+    "dataDir": null
+  },
+  "ipv6-public--undeclared": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  }
+}

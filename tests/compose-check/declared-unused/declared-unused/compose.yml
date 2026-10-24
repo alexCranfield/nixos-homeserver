@@ -1,0 +1,5 @@
+services:
+  web:
+    image: probe:test
+    ports:
+      - "127.0.0.1:7777:7777"

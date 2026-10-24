@@ -20,7 +20,7 @@ flowchart TD
         direction LR
         bot["A change, or the weekly<br/>dependency update"]
         pr["Pull request"]
-        ci["CI: lint, 8 VM tests,<br/>build the whole OS"]
+        ci["CI: lint, 9 VM tests,<br/>build the whole OS"]
         main["main<br/>(protected)"]
         bot --> pr --> ci -->|"green:<br/>merge"| main
     end
@@ -41,9 +41,9 @@ flowchart TD
   described by the files in this repo, and changes reach it as pull requests
   to `main`.
 - **CI proves the change first.** It builds the complete system and boots it
-  in eight VM tests: SSH, disk encryption, network, Tailscale, the deploy
-  agent, the reboot window, alerting and Docker. `main` only accepts a merge once that
-  passes.
+  in nine VM tests: SSH, disk encryption, network, Tailscale, the deploy
+  agent, the reboot window, alerting, Docker and Compose stacks. `main` only
+  accepts a merge once that passes.
 - **The server pulls its changes.** [comin](https://github.com/nlewo/comin)
   on the server notices the merge within a minute and switches to it, so no
   CI system holds SSH or other credentials for the server
@@ -85,7 +85,7 @@ drift and the server can be rebuilt from scratch.
 | Integration tests in VMs; every pull request shows its evidence, including the check broken on purpose and seen to fail | [`tests/`](tests), [pull request template](.github/pull_request_template.md), [closed pull requests](https://github.com/alexCranfield/nixos-homeserver/pulls?q=is%3Apr+is%3Amerged) |
 | Pull-based deployment from Git (GitOps) | [ADR 0003](docs/adr/0003-pull-deploy-comin.md), [deploy runbook](docs/runbooks/deploy.md) |
 | Secrets encrypted in Git, decrypted only on the host | [ADR 0004](docs/adr/0004-secrets-sops.md), [secrets runbook](docs/runbooks/secrets.md) |
-| Container ports private unless declared: loopback by default, forwarded traffic dropped | [ADR 0006](docs/adr/0006-docker-vs-podman.md), [Docker runbook](docs/runbooks/docker.md) |
+| Container ports private unless declared in Nix: loopback by default, undeclared ports dropped by the firewall, compose files checked in CI | [ADR 0006](docs/adr/0006-docker-vs-podman.md), [Docker runbook](docs/runbooks/docker.md), [stacks runbook](docs/runbooks/stacks.md) |
 | No admin ports on the LAN: SSH by key, over Tailscale only | [ADR 0005](docs/adr/0005-tailscale.md), [Tailscale runbook](docs/runbooks/tailscale.md) |
 | Full-disk encryption unlocked by the TPM (Trusted Platform Module) | [ADR 0009](docs/adr/0009-disk-encryption.md), [install runbook](docs/runbooks/install.md) |
 | Automated dependency updates with a supply-chain cooldown | [updates runbook](docs/runbooks/updates.md) |
@@ -107,7 +107,7 @@ flowchart LR
         ts["Tailscale → SSH, key only"]
         comin["comin: deploys main"]
         notify["Alerting · weekly reboot window"]
-        subgraph docker["Docker: running · Compose stacks from phase 3"]
+        subgraph docker["Docker: Compose stacks, each a systemd unit"]
             games["Minecraft · Palworld · Satisfactory<br/>(phase 4)"]
             llm["Ollama + Open WebUI<br/>(phase 5)"]
             grafana["Grafana<br/>(phase 3)"]
@@ -166,6 +166,9 @@ modules/base/reboot-window.nix     weekly window that reboots only for a new ker
 modules/base/notify.nix            Discord alerts: failed units and deploys, boot, shutdown
 modules/base/vm.nix                SSH into `just vm` on 127.0.0.1:2222; no effect on a real host
 modules/containers/docker.nix      rootful Docker: ports on loopback unless named, nobody in the docker group
+modules/containers/compose-stack.nix   homeserver.stacks: a compose file becomes stack-<name>.service; public ports, limits, crash alerts
+modules/containers/stack-watch.sh  the crash watcher's loop: posts container crashes to Discord
+stacks/hello/                      the example stack: compose.yml, and default.nix declaring it
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
 tests/comin.nix                    VM test: comin runs, fetches `main`, ignores a testing branch
@@ -182,9 +185,15 @@ tests/notify.nix                   VM test: failed units and deploys, boot and s
 tests/notify.py                    its test script
 tests/docker.nix                   VM test: published ports bind to loopback on every network; controls without each setting
 tests/docker.py                    its test script
+tests/compose-stack.nix            VM test: stacks as units, slices and limits, public ports enforced, crash alerts; controls without each firewall layer
+tests/compose-stack.py             its test script
+tests/compose-check.nix            flake check: compose files under stacks/ against ADR 0006, with a failing fixture per rule
+tests/compose-check/               one compose file per rule the check must reject, and one it must pass
+tests/stack-watch.nix              flake check: the crash watcher's quiet posts and pings at several crash rates
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
 scripts/tickets.py                 ticket definitions; file_issues.py files them
+scripts/check_compose.py           the compose checker the flake check runs
 scripts/flake_update.py            the weekly flake.lock update: cooldown, report, checks on the new lock
 scripts/firmware-boot-loop.sh      measures whether local KVM (Kernel-based Virtual Machine) boots the disk-tpm firmware reliably (#80)
 .github/workflows/ci.yml           CI (continuous integration): runs just check on every pull request and push to main
@@ -265,7 +274,7 @@ does not re-encrypt anything on its own.
 | [0. Workstation and repo foundations](https://github.com/alexCranfield/nixos-homeserver/milestone/1) | Done; the machine user for bot pull requests (#61) remains |
 | [1. Bare-metal install and base OS](https://github.com/alexCranfield/nixos-homeserver/milestone/2) | Done: installed 2026-10-18, wiped and reinstalled from the runbook 2026-10-19; follow-ups open |
 | [2. GitOps, updates, rollback](https://github.com/alexCranfield/nixos-homeserver/milestone/3) | Live: self-deploy (#16), weekly updates (#17), reboot window (#18), rollback drill (#19) and alerting (#20). Open: whether to auto-merge update pull requests (#17, due late November) and two comin bugs (#110, #123) |
-| [3. Containers, observability, backups](https://github.com/alexCranfield/nixos-homeserver/milestone/4) | Started: Docker is live (#22), publishing ports on loopback unless told otherwise, with forwarded traffic filtered. Next: Compose stacks as systemd units (#23) |
+| [3. Containers, observability, backups](https://github.com/alexCranfield/nixos-homeserver/milestone/4) | Started: Docker is live (#22); Compose stacks run as systemd units, with public ports declared in Nix and enforced by the firewall (#23). Next: the data layout (#24) |
 | [4. Game servers](https://github.com/alexCranfield/nixos-homeserver/milestone/5) | Planned |
 | [5. Local LLMs](https://github.com/alexCranfield/nixos-homeserver/milestone/6) | Planned |
 | [6. Development environment](https://github.com/alexCranfield/nixos-homeserver/milestone/7) | Planned |

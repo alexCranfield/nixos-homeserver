@@ -1,0 +1,8 @@
+services:
+  web:
+    image: probe:test
+    networks: [lan]
+networks:
+  lan:
+    driver_opts:
+      com.docker.network.bridge.host_binding_ipv4: "0.0.0.0"

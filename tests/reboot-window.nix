@@ -20,6 +20,9 @@ pkgs.testers.runNixOSTest {
 
   nodes.nuc = {
     imports = [ ../hosts/nuc ];
+    # The host's stacks pull images, and the build sandbox has no internet;
+    # tests/compose-stack.nix covers them.
+    homeserver.stacks = lib.mkForce { };
     # As in base-ssh.nix: the sops secret cannot be decrypted here.
     services.tailscale.authKeyFile = lib.mkForce null;
     # Nor can any other: the VM has no key. At boot that failure is silent,

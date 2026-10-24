@@ -56,6 +56,9 @@ pkgs.testers.runNixOSTest {
 
   nodes.nuc = {
     imports = [ ../hosts/nuc ];
+    # The host's stacks pull images, and the build sandbox has no internet;
+    # tests/compose-stack.nix covers them.
+    homeserver.stacks = lib.mkForce { };
     virtualisation.vlans = [
       1
       2

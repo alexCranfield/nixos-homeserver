@@ -172,6 +172,20 @@ access; the test itself is not at fault. Locally, without KVM access,
 the test falls back to software emulation and takes about four minutes;
 `docs/runbooks/workstation.md` has the udev rule that fixes that.
 
+**Two builds at a time.** The runner has 16 GB of memory and four CPUs, and
+Nix's default would build four derivations at once, which with the VM tests
+means four tests booting together. On 2026-10-24 (#133) that happened twice:
+`tailscale`, `docker`, `reboot-window` and `base-ssh` started within nine
+seconds, about ten VMs asking for 10 GB, and a few minutes later GitHub
+stopped the runner ("The runner has received a shutdown signal", the build
+killed by signal 9). The same commit's tests had passed on `main` only because
+they happened to start minutes apart. `max-jobs = 2` (the `extra_nix_config`
+of `install-nix-action`) keeps it to two tests, at most about 7 GB with the
+largest two (`docker`, 4 GB; `compose-stack`, 3 GB); the job timeout went from
+30 to 45 minutes to allow for the slower run. A runner killed this way shows no
+test failure in the log, only the shutdown message: look at which VM tests
+started just before it.
+
 **Actions pinned by commit hash.** `uses: owner/action@<40-character hash> #
 vX.Y.Z`. A tag can be moved to point at different code after it was reviewed; a
 commit hash cannot. Bumping an action means looking up the new release's commit

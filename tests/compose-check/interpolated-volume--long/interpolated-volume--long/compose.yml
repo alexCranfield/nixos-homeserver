@@ -1,0 +1,7 @@
+services:
+  web:
+    image: probe:test
+    volumes:
+      - type: bind
+        source: $HOME/x
+        target: /y
