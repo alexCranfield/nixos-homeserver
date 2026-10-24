@@ -29,6 +29,13 @@ jobs:
     runs-on: ubuntu-latest
     # Two builds at a time (below) makes the run longer than it was with four.
     timeout-minutes: 45
+    # Whether this run may use the Nix store cache (#137): pushes to main, and
+    # pull requests from branches of this repository. Not pull requests from
+    # forks: an early commit's run could save outputs that were never built,
+    # and a later commit's run would restore them and pass checks it never
+    # ran. Main's own caches are out of a pull request's reach either way.
+    env:
+      USE_CACHE: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       # Actions are pinned by commit, not tag: a tag can be moved to different
       # code after review, a commit hash cannot. The comment records the tag.
@@ -56,6 +63,7 @@ jobs:
       # caches per branch, so a pull request reads main's but cannot write it.
       - name: Restore Nix store
         id: nix-cache
+        if: ${{ env.USE_CACHE == 'true' }}
         uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
           primary-key: nix-${{ runner.os }}-${{ github.sha }}
@@ -87,12 +95,15 @@ jobs:
       # repo's 10 GB limit does not evict main's. The derivations come from
       # `nix flake check`'s own log ("checking derivation <name>" then
       # "derivation evaluated to <drv>"), since evaluating the flake again
-      # takes three minutes. If the log changes shape and none are found, the
-      # step fails and nothing is saved, so the next run is a full one, never a
-      # wrong one.
+      # takes three minutes. If a Nix update changes those lines and none are
+      # found, the step warns and nothing is saved: later runs keep restoring
+      # the last cache saved, and rerun whatever changed since. A check whose
+      # name contains a dot is never matched, so it is never cached. The check
+      # devshell-nix-matches-server always shows "not built": it does its work
+      # while the flake is evaluated, and its empty output is not built here.
       - name: Keep only built checks
         id: keep
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.USE_CACHE == 'true' }}
         shell: bash
         run: |
           roots="$RUNNER_TEMP/check-roots"
@@ -111,8 +122,8 @@ jobs:
             }
           ' "$RUNNER_TEMP/check.log" > "$RUNNER_TEMP/check-drvs"
           if [ ! -s "$RUNNER_TEMP/check-drvs" ]; then
-            echo "no check derivations found in the log" >&2
-            exit 1
+            echo "::warning::no check derivations found in the nix flake check log; not saving the Nix store cache"
+            exit 0
           fi
           while read -r name drv; do
             path=$(nix-store --query --outputs "$drv")

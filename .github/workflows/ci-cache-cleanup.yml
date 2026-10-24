@@ -1,0 +1,45 @@
+# Deletes a pull request's Nix store caches (#137, docs/runbooks/ci.md), so
+# they do not crowd main's out of the repo's 10 GB. Each CI run that builds
+# something saves about 1.6 GB under the pull request's ref. When the pull
+# request gets a new push, only the newest cache is kept, the one the new run
+# restores; when it is closed or merged, all of them go.
+#
+# A separate workflow because deleting caches needs `actions: write`, which the
+# CI job, running the pull request's code, must not hold. This job runs no code
+# from the pull request: only `gh`, against the API. Pull requests from forks
+# never use the cache (ci.yml), and their token could not delete anyway.
+name: CI cache cleanup
+
+on:
+  pull_request:
+    types: [synchronize, closed]
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete older caches of this pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          ACTION: ${{ github.event.action }}
+        run: |
+          ref="refs/pull/$NUMBER/merge"
+          ids=$(gh api --paginate \
+            "repos/$REPO/actions/caches?ref=$ref&key=nix-Linux-&sort=created_at&direction=desc" \
+            --jq '.actions_caches[].id')
+          # Newest first. On a new push, keep the first; on close, keep none.
+          if [ "$ACTION" = synchronize ]; then
+            ids=$(echo "$ids" | tail -n +2)
+          fi
+          for id in $ids; do
+            gh api -X DELETE "repos/$REPO/actions/caches/$id"
+            echo "deleted cache $id from $ref"
+          done
+          echo "done: $ACTION on $ref"
