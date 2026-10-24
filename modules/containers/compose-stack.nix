@@ -44,6 +44,11 @@
 # `up`. `stack-<name>-watch.service` follows Docker's events instead and posts
 # to Discord through modules/base/notify.nix (stack-watch.sh for the rules).
 #
+# Data: a stack with a `dataDir` gets its own btrfs subvolume and a fixed user
+# and group, set up by `stack-<name>-data.service` (stack-data.nix, ticket 3.3,
+# #24). The unit passes the ids to Compose as STACK_UID and STACK_GID, for
+# `user:` in the file.
+#
 # Day-to-day use: docs/runbooks/stacks.md.
 {
   config,
@@ -53,6 +58,7 @@
 }:
 let
   cfg = config.homeserver.stacks;
+  idType = lib.types.nullOr (lib.types.ints.between 40000 40999);
 
   portType = lib.types.submodule {
     options = {
@@ -106,7 +112,44 @@ let
         type = lib.types.nullOr lib.types.str;
         default = null;
         example = "/srv/data/minecraft";
-        description = "The stack's data directory; bind mounts must sit under it.";
+        description = ''
+          The stack's data directory, a btrfs subvolume made before the stack
+          starts; bind mounts must sit under it. Must be /srv/data/<name>, and
+          needs `uid` and `gid`.
+        '';
+      };
+      uid = lib.mkOption {
+        type = idType;
+        default = null;
+        example = 40010;
+        description = ''
+          Owner of the data directory, and of the host user `stack-<name>`.
+          Compose gets it as STACK_UID. In 40000-40999, which NixOS leaves
+          alone (it keeps 30000-31000 for the nix build users); unique across
+          stacks.
+        '';
+      };
+      gid = lib.mkOption {
+        type = idType;
+        default = null;
+        example = 40010;
+        description = "Group of the data directory; STACK_GID. As `uid`.";
+      };
+      snapshot = {
+        preCommand = lib.mkOption {
+          type = lib.types.nullOr lib.types.lines;
+          default = null;
+          example = "docker exec minecraft rcon-cli save-off";
+          description = ''
+            Shell run on the host as root just before each snapshot, such as
+            to flush a running server's data to disk.
+          '';
+        };
+        postCommand = lib.mkOption {
+          type = lib.types.nullOr lib.types.lines;
+          default = null;
+          description = "Shell run as root after each snapshot, to undo the pre-command.";
+        };
       };
       autoStart = lib.mkOption {
         type = lib.types.bool;
@@ -204,6 +247,8 @@ let
     + " --file ${dir name}/compose.yml --file ${dir name}/override.yml ${verb}";
 in
 {
+  imports = [ ./stack-data.nix ];
+
   options.homeserver = {
     stacks = lib.mkOption {
       type = lib.types.attrsOf stackType;
@@ -276,8 +321,14 @@ in
             "docker.service"
             "network-online.target"
           ]
-          ++ stack.after;
+          ++ stack.after
+          ++ lib.optional (stack.dataDir != null) "stack-${name}-data.service";
+          requires = lib.optional (stack.dataDir != null) "stack-${name}-data.service";
           wantedBy = lib.optional stack.autoStart "multi-user.target";
+          environment = lib.optionalAttrs (stack.dataDir != null) {
+            STACK_UID = toString stack.uid;
+            STACK_GID = toString stack.gid;
+          };
           reloadIfChanged = true;
           restartTriggers = [
             stack.composeFile
@@ -338,12 +389,6 @@ in
       ))
     ];
 
-    systemd.tmpfiles.rules = lib.concatLists (
-      lib.mapAttrsToList (
-        _: stack: lib.optional (stack.dataDir != null) "d ${stack.dataDir} 0750 root root - -"
-      ) cfg
-    );
-
     # Before NixOS's own forward chain (priority filter), whose accept for
     # redirected traffic cannot undo a drop here.
     networking.nftables.tables.stack-ports = lib.mkIf (cfg != { }) {
@@ -358,6 +403,10 @@ in
       '';
     };
 
-    homeserver.notify.units = map (name: "stack-${name}") (lib.attrNames cfg);
+    homeserver.notify.units =
+      map (name: "stack-${name}") (lib.attrNames cfg)
+      ++ lib.optionals (notify.webhookFile != null) (
+        lib.mapAttrsToList (name: _: "stack-${name}-data") (lib.filterAttrs (_: s: s.dataDir != null) cfg)
+      );
   };
 }

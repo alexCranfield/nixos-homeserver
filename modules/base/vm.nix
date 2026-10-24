@@ -16,6 +16,10 @@
 # comin is off in the VM: `just vm` has internet through QEMU, so comin would
 # otherwise pull `main` and switch the VM to the real host's configuration,
 # which is not a VM build.
+#
+# No stacks: a stack with data needs the btrfs `/srv` and `/.snapshots` of the
+# installed layout, and `just vm` has neither. Its stacks would also pull
+# images, which a VM build should not need.
 { lib, ... }:
 {
   virtualisation.vmVariant = {
@@ -30,5 +34,6 @@
     networking.interfaces.eth0.useDHCP = true;
     networking.firewall.interfaces.eth0.allowedTCPPorts = [ 22 ];
     services.comin.enable = lib.mkForce false;
+    homeserver.stacks = lib.mkForce { };
   };
 }
