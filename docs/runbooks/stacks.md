@@ -57,15 +57,19 @@ generated override, so the compose file needs neither.
 
 ## Public ports
 
-A port reachable from outside the nuc takes three things, and the check
-fails if they disagree:
+A port reachable from outside the nuc takes two things, and the check fails
+if they disagree:
 
 - the compose file publishes it on `0.0.0.0`: `"0.0.0.0:25565:25565"`, or
   `/udp` for UDP (User Datagram Protocol);
-- the stack declares it in `publicPorts`;
-- the router forwards it, for anything meant for the internet.
+- the stack declares it in `publicPorts`.
 
-Public ports are IPv4 only (ADR, Architecture Decision Record, 0006). A port
+"Public" here means reachable from another machine, not from the internet:
+the router forwards nothing, and game servers reach friends over the tailnet,
+on ports declared for `tailscale0` (ADR, Architecture Decision Record, 0011;
+ticket 4.0, #135).
+
+Public ports are IPv4 only (ADR 0006). A port
 published with no address binds to `127.0.0.1` ([docker.md](docker.md)), and
 one published on `127.0.0.1` is for the nuc alone, as admin interfaces are
 behind Tailscale Serve.

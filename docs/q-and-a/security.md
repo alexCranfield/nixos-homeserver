@@ -673,3 +673,48 @@ The compose-stack module can still restrict a port to listed sources
 are stable.
 
 </details>
+
+### How much trouble is Tailscale for friends who just want to play?
+
+*2026-10-24*
+
+> How much of a hassle would tailscale be for users?
+
+<details>
+<summary>Answer</summary>
+
+For a friend on a PC or phone it is a one-time setup of a few minutes: install
+the Tailscale app, sign in with an existing Google, Microsoft, Apple or GitHub
+account, and accept the share invite. After that they connect to the
+server's tailnet name, which never changes, unlike a home IP address.
+
+The ongoing costs:
+
+- Tailscale has to be running while they play. On a PC it sits in the
+  background; on a phone it takes the single VPN (virtual private network)
+  slot, so it cannot run beside another VPN, such as a work one.
+- When a friend cannot connect, the usual cause is Tailscale being off, and
+  the server's owner is their first line of support.
+
+Where it does not work:
+
+- Consoles (Xbox, PlayStation, Switch) cannot run Tailscale, so a console
+  player cannot join this way.
+- On a Steam Deck it works, but SteamOS has a read-only system, so the
+  install is a one-off terminal job in Desktop Mode rather than an app
+  store install.
+- Locked-down devices, such as a work laptop or school Chromebook, may not
+  allow the install.
+
+On the owner's side, sharing one machine (not the whole tailnet) plus an
+access rule keeps share recipients to the game ports, away from SSH and
+admin interfaces. Tailscale's plans limit sharing, and the limits have
+changed over time, so check them against the number of players.
+
+The trade against a public port with a whitelist: friends do a little setup,
+and in return nothing on the server faces the internet. Mixing the two buys
+little, since one public port makes the server public. Here every player was
+on a PC, phone or Steam Deck, so Tailscale won (ADR, Architecture Decision
+Record, 0011).
+
+</details>

@@ -43,3 +43,8 @@ Join the server to a Tailscale tailnet. SSH, Grafana, Open WebUI and any future 
   to it. The peer API is the exception to both: `tailscaled` lets any of the
   nuc's peers connect to it whatever the policy says, and checks each request
   against the asking device's permissions instead.
+- Note, 2026-10-24 (ADR 0011): the game port forwards are dropped. Friends
+  reach every game server through Tailscale's machine sharing, limited by the
+  access policy to the game ports, and nothing on the nuc is public. So
+  "friends do not need Tailscale" and "game server ports are the only public
+  attack surface" above no longer hold. Admin access is unchanged.
