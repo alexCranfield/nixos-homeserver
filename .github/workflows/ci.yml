@@ -70,8 +70,8 @@ jobs:
           echo "installer: $(nix --version)"
           echo "dev shell: $(nix develop --command nix --version)"
 
-      # No extra binary cache. Everything except about 36 small configuration
-      # derivations comes from cache.nixos.org already; see docs/runbooks/ci.md.
+      # Checks restored above are skipped; the rest build, fetching what they
+      # can from cache.nixos.org. See docs/runbooks/ci.md.
       - name: just check
         run: nix develop --command just check
 

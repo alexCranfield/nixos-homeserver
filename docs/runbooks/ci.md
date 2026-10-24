@@ -148,18 +148,48 @@ default and calls upstream Nix unsupported and possibly removed later. The
 upstream installer keeps third-party distributions out of the pipeline that
 gates the server.
 
-**No extra binary cache.** The ticket also named `magic-nix-cache-action`. A
-dry run of the closure against an empty store shows 628 paths fetched from
-cache.nixos.org (1.2 GiB) and only 36 derivations built locally, all of them
-configuration glue (`/etc` entries, systemd units, the initrd). A cache would
-save building those, which takes seconds. Revisit if a run takes more than about
-ten minutes, for example once the config pulls in a package that is not cached
-upstream. To repeat the measurement:
+**Checks that have not changed are not rerun (#137).** Nix names each
+check's output after everything that goes into it, so a change that touches
+none of a check's inputs leaves its output path the same, and `nix flake
+check` skips any check whose output is already in the store. Every run used
+to start with an empty store and rerun all 14 checks, VM (virtual machine)
+tests included, whatever changed: a docs-only pull request took 24 minutes,
+and so did the run on `main` after it merged, though none of its checks had
+changed. Editing a comment in a `.nix` file changes no check either, because
+the comment never reaches a derivation.
 
-```sh
-nix build --dry-run --store "$(mktemp -d)" --option substituters https://cache.nixos.org \
-  '.#nixosConfigurations.nuc.config.system.build.toplevel'
-```
+The workflow now carries the store between runs in GitHub's Actions cache,
+with `nix-community/cache-nix-action`:
+
+- **Restore**, before `just check`: the cache saved under this commit if
+  there is one (a re-run), otherwise the newest this branch can see. GitHub
+  looks on the pull request's own branch first, then on `main`.
+- **Trim**, after it, even when a check failed: every check whose output
+  exists is made a garbage-collection root, and everything else is deleted
+  from the store. A failed check has no output, so it runs again next time.
+  Build inputs and the dev shell are fetched from cache.nixos.org again, which
+  keeps the cache small.
+- **Save** the trimmed store under `nix-Linux-<commit>`.
+
+GitHub keeps a branch's caches to that branch: a pull request can read
+`main`'s cache but writes only its own, so code under review cannot plant a
+result that `main` later trusts. comin builds on the nuc and never reads this
+cache; it only decides which checks CI reruns.
+
+The trade-off: a check that passed once is not rerun until its inputs
+change, so a flaky test that passed by luck stays passed, which is what
+#130 was. To rerun everything, delete the caches (Actions, Caches, or
+`gh cache delete --all`) and re-run the job.
+
+The repo gets 10 GB of cache. GitHub deletes the least recently used caches
+past that, and any cache not used for seven days. Each pull request run
+restores `main`'s newest cache, which keeps it in use. If it is evicted
+anyway, the next run is a full one, as before #137, and saves a new cache.
+
+Paths filters are not used. `on.pull_request.paths-ignore` skips the whole
+workflow, so the required check `check` never reports, and GitHub holds the
+pull request at "Expected — waiting for status". A filter would also need a
+hand-kept list of paths that cannot affect a check; Nix already knows.
 
 **VM (virtual machine) tests run in CI.** Since #10, `nix flake check` also runs
 `base-ssh`, a NixOS test that boots two VMs and logs in over SSH. NixOS tests
