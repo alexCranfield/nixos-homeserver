@@ -344,8 +344,13 @@ in
             ExecStartPost = lib.mkIf (stack.publicPorts != [ ]) (checkPorts name stack);
             ExecReload = [
               "${config.systemd.package}/bin/systemctl start docker.service"
-              (compose name "up --detach --remove-orphans --wait")
             ]
+            # A reload does not pull in what the unit requires, so a stack that
+            # has just been given a dataDir needs its data unit started here.
+            ++ lib.optional (
+              stack.dataDir != null
+            ) "${config.systemd.package}/bin/systemctl start stack-${name}-data.service"
+            ++ [ (compose name "up --detach --remove-orphans --wait") ]
             ++ lib.optional (stack.publicPorts != [ ]) (checkPorts name stack);
             ExecStop = compose name "down";
             TimeoutStartSec = "15min";

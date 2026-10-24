@@ -31,10 +31,44 @@ with subtest("a plain directory at dataDir fails the data unit"):
     machine.succeed("systemctl start stack-keeper.service")
     machine.succeed("btrfs subvolume show /srv/data/keeper")
 
+def stamp(unit):
+    """When `unit` last became active; changes if it was restarted."""
+    return machine.succeed(f"systemctl show -p ActiveEnterTimestampMonotonic {unit}").strip()
+
+
+with subtest("reloading the data unit keeps the stack running"):
+    before = stamp("stack-keeper.service")
+    machine.succeed("systemctl reload stack-keeper-data.service")
+    assert stamp("stack-keeper.service") == before
+    machine.succeed("btrfs subvolume show /srv/data/keeper")
+
+with subtest("reloading the data unit over a plain directory fails"):
+    machine.succeed("systemctl stop stack-keeper.service")
+    machine.succeed("btrfs subvolume delete /srv/data/keeper")
+    machine.succeed("mkdir /srv/data/keeper")
+    machine.fail("systemctl reload stack-keeper-data.service")
+    journal = machine.succeed("journalctl -u stack-keeper-data.service --no-pager")
+    assert "/srv/data/keeper exists but is not a btrfs subvolume" in journal, journal
+    machine.succeed("rmdir /srv/data/keeper")
+    machine.succeed("systemctl reload stack-keeper-data.service")
+    machine.succeed("btrfs subvolume show /srv/data/keeper")
+    machine.succeed("systemctl start stack-keeper.service")
+
+with subtest("a stack given a dataDir while running gets it without a restart"):
+    machine.wait_for_unit("stack-late.service")
+    machine.fail("test -e /srv/data/late")
+    before = stamp("stack-late.service")
+    machine.succeed("/run/booted-system/specialisation/lateData/bin/switch-to-configuration test")
+    machine.succeed("btrfs subvolume show /srv/data/late")
+    assert machine.succeed("stat -c '%u:%g %a' /srv/data/late").strip() == "40020:40020 750"
+    machine.succeed("systemctl is-active stack-late-data.service")
+    assert stamp("stack-late.service") == before
+
 with subtest("the evaluation rules hold"):
     assert CASES["valid"] == [], CASES["valid"]
     assert any("must be /srv/data/a" in m for m in CASES["wrongPath"]), CASES["wrongPath"]
     assert any("uid and gid" in m for m in CASES["noOwner"]), CASES["noOwner"]
     assert any("uid" in m and "40010" in m for m in CASES["sharedUid"]), CASES["sharedUid"]
     assert any("gid" in m and "40010" in m for m in CASES["sharedGid"]), CASES["sharedGid"]
-    assert CASES["uid1000Accepted"] is False
+    assert CASES["uid1000Rejected"] is True
+    assert CASES["gid41000Rejected"] is True

@@ -20,7 +20,11 @@
 #
 # A changed unit is reloaded, not restarted: `Requires=` passes a restart on to
 # the stack, which would run `down` on a deploy that only moved btrfs-progs'
-# store path. The reload does the same work again, so a changed uid is applied.
+# store path. The reload runs the same script again, which sets the owner and mode
+# of the top directory only (no recursive chown), so files already inside keep
+# their owner when a uid changes. The unit is also wanted by multi-user.target,
+# and the stack's own reload starts it, so a stack given its first dataDir by a
+# deploy gets its subvolume before `up` runs.
 {
   config,
   lib,
@@ -129,6 +133,12 @@ in
       lib.nameValuePair "stack-${name}-data" {
         description = "Data directory of the ${name} stack";
         after = [ "local-fs.target" ];
+        wantedBy = [ "multi-user.target" ];
+        # Never make /srv/data on the root filesystem because /srv is not mounted.
+        unitConfig.RequiresMountsFor = [
+          "/srv"
+          "/.snapshots"
+        ];
         reloadIfChanged = true;
         restartIfChanged = false;
         serviceConfig = {

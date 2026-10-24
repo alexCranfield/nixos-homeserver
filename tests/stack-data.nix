@@ -48,6 +48,20 @@ let
     after = [ "test-setup.service" ];
   };
 
+  # Starts without a dataDir; the `lateData` specialisation gives it one while
+  # it runs, as a deploy gives the live hello stack its first.
+  stacks.late = {
+    composeFile = pkgs.writeText "compose.yml" ''
+      services:
+        app:
+          image: probe:test
+          pull_policy: never
+          command: ["sleep", "100000"]
+    '';
+    services = [ "app" ];
+    after = [ "test-setup.service" ];
+  };
+
   # Evaluation cases: a stack set each, and what the test script expects.
   # The module is evaluated inside a bare NixOS configuration; only the
   # messages of this module's assertions are read.
@@ -121,8 +135,8 @@ let
       };
     };
     # The type check throws when the value is read.
-    uid1000Accepted =
-      (builtins.tryEval (
+    uid1000Rejected =
+      !(builtins.tryEval (
         (evaluate {
           a = stub // {
             dataDir = "/srv/data/a";
@@ -130,6 +144,16 @@ let
             gid = 40001;
           };
         }).homeserver.stacks.a.uid
+      )).success;
+    gid41000Rejected =
+      !(builtins.tryEval (
+        (evaluate {
+          a = stub // {
+            dataDir = "/srv/data/a";
+            uid = 40001;
+            gid = 41000;
+          };
+        }).homeserver.stacks.a.gid
       )).success;
   };
 in
@@ -190,6 +214,12 @@ pkgs.testers.runNixOSTest {
     };
 
     homeserver.stacks = stacks;
+
+    specialisation.lateData.configuration.homeserver.stacks.late = {
+      dataDir = "/srv/data/late";
+      uid = 40020;
+      gid = 40020;
+    };
 
     # Loads the image, as the registry would.
     systemd.services.test-setup = {
