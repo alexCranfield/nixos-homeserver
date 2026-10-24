@@ -5,9 +5,11 @@
 # restores; when it is closed or merged, all of them go.
 #
 # A separate workflow because deleting caches needs `actions: write`, which the
-# CI job, running the pull request's code, must not hold. This job runs no code
-# from the pull request: only `gh`, against the API. Pull requests from forks
-# never use the cache (ci.yml), and their token could not delete anyway.
+# CI job, running the pull request's code, must not hold. This job runs only
+# `gh`, against the API. Its token can write only for branches of this
+# repository, whose authors already have write access; a fork's token is
+# read-only, and forks are skipped below. Caches a fork's run saves (only if it
+# edits ci.yml) are left for GitHub to expire after seven days.
 name: CI cache cleanup
 
 on:
@@ -31,9 +33,11 @@ jobs:
           ACTION: ${{ github.event.action }}
         run: |
           ref="refs/pull/$NUMBER/merge"
+          # The API filters by ref and key; the select checks both again, so a
+          # change in the API cannot widen this to main's caches.
           ids=$(gh api --paginate \
             "repos/$REPO/actions/caches?ref=$ref&key=nix-Linux-&sort=created_at&direction=desc" \
-            --jq '.actions_caches[].id')
+            --jq ".actions_caches[] | select(.ref == \"$ref\" and (.key | startswith(\"nix-Linux-\"))) | .id")
           # Newest first. On a new push, keep the first; on close, keep none.
           if [ "$ACTION" = synchronize ]; then
             ids=$(echo "$ids" | tail -n +2)

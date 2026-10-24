@@ -188,7 +188,9 @@ trust, though: the code a run executes outside Nix's sandbox (the `justfile`,
 the workflow, the dev shell) could mark outputs as built that never were, and
 a later push that reverts those files would restore them and pass. Pull
 requests from forks therefore never use the cache, and run in full every time.
-Branches of this repository, pushed only by Alex or Claude, do. comin builds
+Branches of this repository do: they are pushed only by Alex, Claude, and the
+flake.lock workflow's bot (`update/flake-lock`, a lock written and checked by
+`scripts/flake_update.py`). comin builds
 on the nuc and never reads this cache; it only decides which checks CI
 reruns.
 
@@ -205,7 +207,9 @@ something adds another 1.6 GB under the pull request (three pushes to #138
 made 4.7 GB), and `main`'s cache, the least recently used, would be the one
 deleted. `.github/workflows/ci-cache-cleanup.yml` deletes all but the newest of
 a pull request's caches on each push, and all of them when it closes, so each
-open pull request holds at most one. If `main`'s is evicted anyway, the next
+open pull request holds at most two: the one its latest run restored and the
+one it saved. A fork's run saves nothing unless the fork edits `ci.yml`; such
+caches are not cleaned up, and GitHub expires them after seven days. If `main`'s is evicted anyway, the next
 run is a full one, as before #137, and saves a new cache. To see what is
 stored: Actions, Caches, or `gh cache list`.
 
@@ -248,8 +252,9 @@ and updating both the hash and the comment.
 can open a PR, and the job never needs to write to the repository. (Saving
 the Nix store cache uses the runner's own cache token, which `permissions`
 does not govern. Deleting caches needs `actions: write`, so that is a separate
-workflow, `ci-cache-cleanup.yml`, which runs none of the pull request's
-code.) The workflow uses
+workflow, `ci-cache-cleanup.yml`, which runs only `gh`. Its token can write
+only for branches of this repository, whose authors have write access
+already.) The workflow uses
 `pull_request`, never `pull_request_target`, which would run fork code with the
 repository's secrets.
 
