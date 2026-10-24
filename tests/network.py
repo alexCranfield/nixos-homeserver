@@ -24,6 +24,7 @@ with subtest("the server port is named lan0, matched by its MAC address"):
     print("\n".join(links))
     names = [line.split()[0] for line in links if line]
     assert "lan0" in names, names
+    assert "lo" in names, names  # temporary: #137 one-test CI measurement
     # Renamed, not duplicated: the kernel's name for it is gone.
     assert "eth1" not in names, names
 
