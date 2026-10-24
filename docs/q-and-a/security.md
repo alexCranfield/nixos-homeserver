@@ -94,7 +94,7 @@ nothing.
 No. The instinct is right but the remedy costs more than it buys.
 
 - **It breaks the deploy model.** The server pulls a public repo with no
-  credentials (ADR 0003). A private secrets repo means a deploy key on an
+  credentials (ADR, Architecture Decision Record, 0003). A private secrets repo means a deploy key on an
   unattended machine that rebuilds itself from the network.
 - **It breaks reproducibility.** The private repo becomes a flake input, so
   public CI (continuous integration) cannot evaluate the flake and nobody can
@@ -146,7 +146,8 @@ key, token or password must be replaced regardless of history, because you can
 never prove nobody copied it. Nothing here met that bar: what leaked was a
 non-routable hostname, an account name on a machine with no internet-facing
 SSH, some paths, and a personal data flow, all reachable only by reading a
-closed pull request and constructing an API call by hash. Not worth a Support
+closed pull request and constructing an API (application programming
+interface) call by hash. Not worth a Support
 request.
 
 What *was* worth fixing was a personal email address in commit authorship,
@@ -709,9 +710,10 @@ Where it does not work:
 On the owner's side, sharing one machine (not the whole tailnet) plus an
 access rule keeps share recipients to the game ports, away from SSH and
 admin interfaces. One exception the rule cannot close: a share makes each
-friend's device a peer, and Tailscale answers its peer API (application
-programming interface) to any peer, checking each request itself. Tailscale's plans limit sharing, and the limits have
-changed over time, so check them against the number of players.
+friend's device a peer, and `tailscaled` on the server answers its own peer
+API to any peer, checking each request itself. Tailscale's plans limit
+sharing, and the limits have changed over time, so check them against the
+number of players.
 
 The trade against a public port with a whitelist: friends do a little setup,
 and in return nothing on the server faces the internet. Mixing the two buys

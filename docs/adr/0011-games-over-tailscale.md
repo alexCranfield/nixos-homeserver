@@ -36,7 +36,7 @@ install method it may need redoing after a SteamOS update.
 3. **Share recipients reach the game ports, not SSH or admin interfaces.**
    The tailnet's access policy allows them the declared game ports on the
    nuc and nothing else it controls. Alex's own devices get the game ports
-   too, since the LAN path is closed to games (4, below). One thing the
+   too, since the LAN (local area network) path is closed to games (4, below). One thing the
    policy cannot close: sharing makes each friend's device a peer of the
    nuc, and `tailscaled` answers its peer API (application programming
    interface) to any peer, checking each request against the asking device's
@@ -48,7 +48,7 @@ install method it may need redoing after a SteamOS update.
 4. **Game ports keep the public-port machinery of ADR 0006, on the tailnet
    interface.** A game stack publishes its ports on `0.0.0.0` and declares
    them in Nix; the `stack-ports` table admits them from `tailscale0` only,
-   not from the LAN (local area network) port. Tailscale Serve is not used
+   not from the LAN port. Tailscale Serve is not used
    for games: it forwards TCP only (as of 2026-10), and Palworld and
    Satisfactory need UDP.
    The module gains a per-port choice of interface for this (ticket 4.0).
