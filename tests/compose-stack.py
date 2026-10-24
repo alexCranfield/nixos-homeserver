@@ -2,6 +2,9 @@
 # driver's machines; the addresses and ENV_RESTARTS are defined by the Nix
 # file in front of it.
 
+import json
+import time
+
 
 def containers(project):
     """{container name: (id, pid)} for the running containers of `project`."""
@@ -30,6 +33,21 @@ def listening(port, proto="t"):
     """The addresses the nuc listens on for `port`, TCP or (proto="u") UDP."""
     out = nuc.succeed(f"ss -Hln{proto} 'sport = :{port}'")
     return sorted({line.split()[3].rsplit(":", 1)[0] for line in out.splitlines()})
+
+
+def crash_posts(name):
+    """The posts so far about container `name` crashing, as message text."""
+    files = nuc.succeed("ls /tmp/webhook | grep '[.]json$' || true").split()
+    posts = [json.loads(nuc.succeed(f"cat /tmp/webhook/{f}"))["content"] for f in files]
+    return [p for p in posts if f"{name} crashed" in p]
+
+
+def kill(name):
+    """Kill container `name`'s process as a crash would, and wait for Docker
+    to restart it. Not `docker kill`, which Docker counts as stopping it on
+    purpose, and does not restart."""
+    nuc.succeed(f"kill -KILL $(docker inspect -f '{{{{.State.Pid}}}}' {name})")
+    wait_running(name)
 
 
 def switch(name):
@@ -179,3 +197,46 @@ with subtest("control: without the stack-ports table, the undeclared 0.0.0.0 por
     assert curl(f"http://{NUC}:8083/") == 0
     switch(None)
     assert curl(f"http://{NUC}:8083/") == 28
+
+with subtest("a crash restarts the container and posts quietly"):
+    kill("other-web-1")
+    nuc.wait_until_succeeds("grep -l 'other-web-1 crashed' /tmp/webhook/*.json", timeout=60)
+    posts = crash_posts("other-web-1")
+    print(f"posts: {posts}")
+    assert len(posts) == 1, posts
+    assert "(exit 137)" in posts[0] and "<@&" not in posts[0], posts[0]
+
+with subtest("a third crash within the window pings, once"):
+    kill("other-web-1")
+    kill("other-web-1")
+    nuc.wait_until_succeeds("test $(grep -l 'other-web-1 crashed' /tmp/webhook/*.json | wc -l) -ge 2", timeout=60)
+    kill("other-web-1")
+    time.sleep(10)
+    posts = crash_posts("other-web-1")
+    print(f"posts: {posts}")
+    assert len(posts) == 2, posts
+    assert posts[1].startswith(f"<@&{ROLE}>") and "3 times in 10 min" in posts[1], posts[1]
+
+with subtest("stopping a stack is not a crash"):
+    nuc.succeed("systemctl stop stack-other.service")
+    nuc.succeed("systemctl start stack-other.service")
+    nuc.succeed("systemctl is-active stack-other-watch.service")
+    time.sleep(10)
+    assert len(crash_posts("other-web-1")) == 2, crash_posts("other-web-1")
+
+with subtest("the watcher survives a Docker restart"):
+    # A fresh window, so the next crash posts again.
+    nuc.succeed("rm /var/lib/stack-watch/other/other-web-1")
+    restarts = int(nuc.succeed("systemctl show -P NRestarts stack-other-watch.service"))
+    nuc.succeed("systemctl restart docker.service")
+    nuc.wait_until_succeeds("docker info >/dev/null", timeout=60)
+    nuc.wait_until_succeeds(
+        f"test $(systemctl show -P NRestarts stack-other-watch.service) -gt {restarts}"
+        " && systemctl is-active stack-other-watch.service",
+        timeout=60,
+    )
+    time.sleep(5)
+    kill("other-web-1")
+    nuc.wait_until_succeeds("test $(grep -l 'other-web-1 crashed' /tmp/webhook/*.json | wc -l) -ge 3", timeout=60)
+    posts = crash_posts("other-web-1")
+    assert len(posts) == 3 and "<@&" not in posts[2], posts

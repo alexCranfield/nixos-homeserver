@@ -54,6 +54,31 @@ let
             - "0.0.0.0:8084:8084/udp"
     '';
 
+  # Stands in for Discord, as in tests/notify.nix, keeping each post in
+  # /tmp/webhook inside the VM.
+  port = 8099;
+  role = "123456789012345678";
+  receiver = pkgs.writers.writePython3 "webhook-receiver" { } ''
+    import http.server
+    import pathlib
+
+    out = pathlib.Path("/tmp/webhook")
+    out.mkdir(exist_ok=True)
+
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            n = len(list(out.glob("*.json")))
+            (out / f"{n:03}.tmp").write_bytes(body)
+            (out / f"{n:03}.tmp").rename(out / f"{n:03}.json")
+            self.send_response(204)
+            self.end_headers()
+
+
+    http.server.HTTPServer(("127.0.0.1", ${toString port}), Handler).serve_forever()
+  '';
+
   stacks = {
     fixture = {
       composeFile = fixtureCompose "one";
@@ -116,6 +141,19 @@ pkgs.testers.runNixOSTest {
     # test-instrumentation.nix), including one inside a cgroup, which the
     # memory limit subtest causes on purpose. The nuc leaves it at 0.
     boot.kernel.sysctl."vm.panic_on_oom" = 0;
+
+    # Crash alerts go to the receiver above. Files outside the store, as
+    # sops-nix would put them (modules/base/notify.nix refuses store paths).
+    homeserver.notify.webhookFile = lib.mkForce "/run/notify-test/webhook";
+    homeserver.notify.roleFile = lib.mkForce "/run/notify-test/role";
+    systemd.tmpfiles.rules = [
+      "C /run/notify-test/webhook 0400 root root - ${pkgs.writeText "webhook" "http://127.0.0.1:${toString port}/api/webhooks/1/token"}"
+      "C /run/notify-test/role 0400 root root - ${pkgs.writeText "role" role}"
+    ];
+    systemd.services.webhook-receiver = {
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig.ExecStart = receiver;
+    };
 
     # Never decrypted (above); declared so the stack can name it.
     sops.secrets.fixture-env.sopsFile = ../secrets/test.yaml;
@@ -181,6 +219,7 @@ pkgs.testers.runNixOSTest {
       NUC = "${nodes.nuc.networking.primaryIPAddress}"
       NUC6 = "${nodes.nuc.networking.primaryIPv6Address}"
       CLIENT = "${nodes.client.networking.primaryIPAddress}"
+      ROLE = "${role}"
       ENV_RESTARTS = ${builtins.toJSON nodes.nuc.sops.secrets.fixture-env.restartUnits}
     ''
     + builtins.readFile ./compose-stack.py;

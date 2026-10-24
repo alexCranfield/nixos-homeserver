@@ -31,6 +31,11 @@
 #    `cgroup_parent` puts the containers in it. A dash in the name nests the
 #    slice: stack-fixture.slice sits under stack.slice.
 #
+# Crashes: Docker restarts a crashed container (the override's restart
+# policy), and systemd never sees it, since the unit's own process ended after
+# `up`. `stack-<name>-watch.service` follows Docker's events instead and posts
+# to Discord through modules/base/notify.nix (stack-watch.sh for the rules).
+#
 # Day-to-day use: docs/runbooks/stacks.md.
 {
   config,
@@ -170,6 +175,21 @@ let
       '') stack.publicPorts
     );
 
+  notify = config.homeserver.notify;
+
+  watch = pkgs.writeShellApplication {
+    name = "stack-watch";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.docker
+      pkgs.gawk
+      pkgs.jq
+      pkgs.systemd
+      notify.sender
+    ];
+    text = builtins.readFile ./stack-watch.sh;
+  };
+
   compose =
     name: verb:
     "${lib.getExe pkgs.docker} compose --project-name ${name} --project-directory ${dir name}"
@@ -235,37 +255,74 @@ in
       }
     ) cfg;
 
-    systemd.services = lib.mapAttrs' (
-      name: stack:
-      lib.nameValuePair "stack-${name}" {
-        description = "Compose stack ${name}";
-        wants = [
-          "docker.service"
-          "network-online.target"
-        ];
-        after = [
-          "docker.service"
-          "network-online.target"
-        ]
-        ++ stack.after;
-        wantedBy = lib.optional stack.autoStart "multi-user.target";
-        restartTriggers = [
-          stack.composeFile
-          (override name stack)
-        ];
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          # `--wait`: until each container runs, or is healthy if it has a
-          # healthcheck, so one that exits at once fails the unit. First
-          # starts pull images.
-          ExecStart = compose name "up --detach --remove-orphans --wait";
-          ExecStartPost = lib.mkIf (stack.publicPorts != [ ]) (checkPorts name stack);
-          ExecStop = compose name "down";
-          TimeoutStartSec = "15min";
-        };
-      }
-    ) cfg;
+    systemd.services = lib.mkMerge [
+      (lib.mapAttrs' (
+        name: stack:
+        lib.nameValuePair "stack-${name}" {
+          description = "Compose stack ${name}";
+          wants = [
+            "docker.service"
+            "network-online.target"
+          ];
+          after = [
+            "docker.service"
+            "network-online.target"
+          ]
+          ++ stack.after;
+          wantedBy = lib.optional stack.autoStart "multi-user.target";
+          restartTriggers = [
+            stack.composeFile
+            (override name stack)
+          ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            # `--wait`: until each container runs, or is healthy if it has a
+            # healthcheck, so one that exits at once fails the unit. First
+            # starts pull images.
+            ExecStart = compose name "up --detach --remove-orphans --wait";
+            ExecStartPost = lib.mkIf (stack.publicPorts != [ ]) (checkPorts name stack);
+            ExecStop = compose name "down";
+            TimeoutStartSec = "15min";
+          };
+        }
+      ) cfg)
+
+      # Bound to the stack: started with it, stopped before its `down`. Wants
+      # Docker rather than requiring it, as the stack does; its event stream
+      # ends when Docker restarts, and it starts again.
+      (lib.mkIf (notify.webhookFile != null) (
+        lib.mapAttrs' (
+          name: _:
+          lib.nameValuePair "stack-${name}-watch" {
+            description = "Post crashes in the ${name} stack to Discord";
+            bindsTo = [ "stack-${name}.service" ];
+            after = [
+              "stack-${name}.service"
+              "docker.service"
+            ];
+            wants = [ "docker.service" ];
+            wantedBy = [ "stack-${name}.service" ];
+            serviceConfig = {
+              # As root, reading the secrets where sops-nix put them, as
+              # notify-online does.
+              ExecStart = lib.escapeShellArgs [
+                (lib.getExe watch)
+                name
+                notify.webhookFile
+                (if notify.roleFile == null then "-" else notify.roleFile)
+                (toString notify.cooldown)
+                config.networking.hostName
+                notify.icons.wrong
+              ];
+              Restart = "always";
+              RestartSec = 5;
+              StateDirectory = "stack-watch/${name}";
+            };
+          }
+        ) cfg
+      ))
+    ];
 
     systemd.tmpfiles.rules = lib.concatLists (
       lib.mapAttrsToList (
