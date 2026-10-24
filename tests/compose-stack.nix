@@ -204,6 +204,12 @@ pkgs.testers.runNixOSTest {
     );
     # Only the unit file changes, as when a deploy moves Docker's store path.
     specialisation.unitOnly.configuration.systemd.services.stack-fixture.environment.UNIT_ONLY = "1";
+    # Docker and the stack change in the same switch, as when an update moves
+    # Docker's store path: Docker is stopped before the stack is reloaded.
+    specialisation.dockerAndUnit.configuration = {
+      systemd.services.docker.environment.UNIT_ONLY = "1";
+      systemd.services.stack-fixture.environment.UNIT_ONLY = "1";
+    };
     # Negative controls, as in tests/docker.nix.
     specialisation.noNetworkDefault.configuration.virtualisation.docker.daemon.settings.default-network-opts =
       lib.mkForce { };

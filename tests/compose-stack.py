@@ -133,6 +133,25 @@ with subtest("a change to the unit alone leaves the containers running"):
     assert containers("fixture") == fixture
     switch(None)
 
+with subtest("a switch that changes Docker and the stack together succeeds"):
+    fixture = containers("fixture")
+    switch("dockerAndUnit")
+    nuc.succeed("systemctl is-active stack-fixture.service docker.service")
+    print(f"fixture {fixture} -> {containers('fixture')}")
+    assert containers("fixture") == fixture
+    switch(None)
+    nuc.wait_until_succeeds("docker info >/dev/null", timeout=60)
+
+with subtest("a changed secret reaches the container on reload"):
+    # What sops-nix does when the secret's content changes: rewrite the file,
+    # then (restartUnits, which a unit that reloads takes as a reload) reload.
+    nuc.succeed("printf 'GREETING=two\\n' > /run/secrets/fixture-env")
+    nuc.succeed("systemctl reload stack-fixture.service")
+    out = nuc.succeed("docker exec fixture-web-1 env")
+    assert "GREETING=two" in out, out
+    nuc.succeed("printf 'GREETING=one\\n' > /run/secrets/fixture-env")
+    nuc.succeed("systemctl reload stack-fixture.service")
+
 with subtest("removing a stack stops it and takes its containers down"):
     switch("withoutOther")
     nuc.fail("systemctl is-active stack-other.service")
@@ -242,7 +261,7 @@ with subtest("stopping a stack is not a crash"):
 
 with subtest("the watcher survives a Docker restart"):
     # A fresh window, so the next crash posts again.
-    nuc.succeed("rm /var/lib/stack-watch/other/other-web-1")
+    nuc.succeed("rm /var/lib/stack-watch/other/other-web-1*")
     restarts = int(nuc.succeed("systemctl show -P NRestarts stack-other-watch.service"))
     nuc.succeed("systemctl restart docker.service")
     nuc.wait_until_succeeds("docker info >/dev/null", timeout=60)

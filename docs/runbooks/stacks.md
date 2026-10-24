@@ -86,7 +86,9 @@ process) stays closed over IPv6, and the check rejects `[::]` anyway. `allowedSo
 those sources; it is off unless set.
 
 After `up`, the unit checks that every declared port is listening on
-`0.0.0.0`, and fails, which posts to Discord, if one is not.
+`0.0.0.0`. When it starts, a port that is not fails the unit, which posts to
+Discord; when a deploy reloads it, the failure fails the deploy instead,
+which comin posts, and the unit stays active.
 
 One case is blocked by design: a container reaching another stack's public
 port through the nuc's own LAN address arrives from a Docker bridge, not
@@ -139,8 +141,9 @@ sudo systemctl stop stack-<name>      # down; comes back at the next boot or dep
 A deploy that changes a stack's unit reloads it rather than restarting it:
 `up` runs again, and Compose recreates only the services whose configuration
 changed, so an update that only moves Docker's store path leaves the
-containers running. A changed secret restarts the stack (sops-nix), which
-runs `down` then `up`. Removing a stack from the configuration stops its
+containers running. A changed secret reloads it as well, and the services
+that read the secret are recreated with the new values. A reload starts
+Docker first if a deploy stopped it. Removing a stack from the configuration stops its
 unit, which runs `down`; its data directory stays.
 
 A deploy that restarts Docker leaves stacks running: the unit wants Docker
@@ -153,9 +156,15 @@ Docker restarts a crashed container (`restart: unless-stopped`); systemd never
 sees it, since the unit's own process ended after `up`. The stack's watcher
 follows Docker's events and posts to Discord ([notifications.md](notifications.md)):
 
-- the first crash of a container in 10 minutes posts without pinging;
-- the third within those 10 minutes posts once, pinging the role;
-- others in the window are counted, not posted.
+- a crash that makes three or more in 10 minutes posts pinging the role, at
+  most once per 10 minutes;
+- any other crash posts without pinging, if nothing was posted about that
+  container in the last 10 minutes;
+- the rest are counted, not posted.
+
+So a container that keeps crashing is reported at least every 10 minutes,
+and pings you at most every 10 minutes while it crashes three times or more
+in that time.
 
 A stack stopped on purpose, or a deploy that restarts it, does not count. The
 watcher reconnects after Docker restarts; a crash during those seconds is

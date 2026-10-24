@@ -1,6 +1,19 @@
 # Compose-stack module design (ticket 3.2, #23)
 
-Date: 2026-10-24. Status: for Alex's approval.
+Date: 2026-10-24. Status: approved; built in #23. Where the build departed
+from this design, after review, the module and `docs/runbooks/stacks.md` are
+current:
+
+- A changed stack unit is **reloaded** (`up` again), not restarted, so a
+  Docker update does not take every stack down; a changed secret reloads it
+  too, and the reload starts Docker first.
+- Declared ports are **not** listed in `allowedTCPPorts`/`allowedUDPPorts`:
+  that opened them over IPv6 through `docker-proxy`. Only the `stack-ports`
+  table admits them.
+- The crash watcher posts at least once per window and pings at most once
+  per window when there are three or more crashes in it.
+- The checker also rejects IPv6 public ports, Docker-picked public host
+  ports, `${VAR}` in mounts, and compose files outside `stacks/`.
 
 ## Intent
 

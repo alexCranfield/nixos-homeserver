@@ -179,8 +179,8 @@
           stacks = ./stacks;
         };
 
-        # Ticket 3.2 (#23): the crash watcher posts quietly, then pings once
-        # per window, at any crash cadence.
+        # Ticket 3.2 (#23): the crash watcher posts at least once per window
+        # and pings at most once, at the crash cadences it lists.
         stack-watch = import ./tests/stack-watch.nix { inherit pkgs; };
 
         # Fails `nix flake check` if the server stops using the dev shell's Nix,

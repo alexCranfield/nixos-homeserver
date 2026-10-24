@@ -41,6 +41,20 @@ let
       count = 6;
       expected = "- role role";
     }
+    # Two deaths in every window, never three: a quiet post once per window,
+    # never silence.
+    {
+      name = "every 300 s";
+      cadence = 300;
+      count = 12;
+      expected = "- - - - - -";
+    }
+    {
+      name = "every 450 s";
+      cadence = 450;
+      count = 8;
+      expected = "- - - -";
+    }
     # Far apart: each crash is the first in its window.
     {
       name = "every 700 s";

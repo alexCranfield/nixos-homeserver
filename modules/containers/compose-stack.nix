@@ -21,8 +21,10 @@
 #  - A changed unit is reloaded, not restarted. Its text names Docker's store
 #    path, which most updates change, and a restart would run `down` on every
 #    stack. A reload runs `up` again, which recreates only services whose
-#    compose configuration changed. sops-nix still restarts a stack whose
-#    secret changed.
+#    compose configuration changed; a changed secret reloads it too (sops-nix
+#    asks for a restart, which switch-to-configuration makes a reload). The
+#    reload starts Docker first: a deploy that changes Docker stops it before
+#    reloading units and starts it only afterwards.
 #  - Public ports are enforced on the forward path. Docker redirects a
 #    published port before the NixOS input rules see it, and NixOS's forward
 #    chain accepts whatever Docker redirected. The `stack-ports` table runs
@@ -238,8 +240,8 @@ in
       }
     ) cfg;
 
-    # sops-nix restarts the stack when the secret's content changes, which
-    # restartTriggers cannot see: the content is decrypted at activation.
+    # sops-nix asks for the stack to restart (a reload, above) when the secret's
+    # content changes, which restartTriggers cannot see: it is decrypted at activation.
     sops.secrets = lib.concatMapAttrs (
       name: stack:
       lib.optionalAttrs (stack.envSecret != null) {
@@ -290,6 +292,7 @@ in
             ExecStart = compose name "up --detach --remove-orphans --wait";
             ExecStartPost = lib.mkIf (stack.publicPorts != [ ]) (checkPorts name stack);
             ExecReload = [
+              "${config.systemd.package}/bin/systemctl start docker.service"
               (compose name "up --detach --remove-orphans --wait")
             ]
             ++ lib.optional (stack.publicPorts != [ ]) (checkPorts name stack);
