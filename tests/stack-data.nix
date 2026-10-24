@@ -46,6 +46,15 @@ let
     uid = 40010;
     gid = 40010;
     after = [ "test-setup.service" ];
+    # Each hook logs its name and the time. The pre-command then waits, so the
+    # snapshot's creation time (whole seconds) falls strictly after it.
+    snapshot.preCommand = ''
+      echo "pre $(date +%s.%N)" >> /tmp/hooks
+      sleep 2
+    '';
+    snapshot.postCommand = ''
+      echo "post $(date +%s.%N)" >> /tmp/hooks
+    '';
   };
 
   # Starts without a dataDir; the `lateData` specialisation gives it one while
@@ -214,6 +223,10 @@ pkgs.testers.runNixOSTest {
     };
 
     homeserver.stacks = stacks;
+
+    # A pre-command that fails.
+    specialisation.failingPre.configuration.homeserver.stacks.keeper.snapshot.preCommand =
+      lib.mkForce "exit 1";
 
     specialisation.lateData.configuration.homeserver.stacks.late = {
       dataDir = "/srv/data/late";

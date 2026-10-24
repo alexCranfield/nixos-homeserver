@@ -241,6 +241,13 @@ let
     text = builtins.readFile ./stack-watch.sh;
   };
 
+  # `up` under the stack's lock, which the snapshot and the rollback also take,
+  # so a deploy waits for them (up to 15 minutes) rather than starting
+  # containers on data being swapped.
+  lockedUp =
+    name:
+    "${pkgs.util-linux}/bin/flock -w 900 /run/lock/stack-${name}.lock ${compose name "up --detach --remove-orphans --wait"}";
+
   compose =
     name: verb:
     "${lib.getExe pkgs.docker} compose --project-name ${name} --project-directory ${dir name}"
@@ -340,7 +347,7 @@ in
             # `--wait`: until each container runs, or is healthy if it has a
             # healthcheck, so one that exits at once fails the unit. First
             # starts pull images.
-            ExecStart = compose name "up --detach --remove-orphans --wait";
+            ExecStart = lockedUp name;
             ExecStartPost = lib.mkIf (stack.publicPorts != [ ]) (checkPorts name stack);
             ExecReload = [
               "${config.systemd.package}/bin/systemctl start docker.service"
@@ -350,7 +357,7 @@ in
             ++ lib.optional (
               stack.dataDir != null
             ) "${config.systemd.package}/bin/systemctl start stack-${name}-data.service"
-            ++ [ (compose name "up --detach --remove-orphans --wait") ]
+            ++ [ (lockedUp name) ]
             ++ lib.optional (stack.publicPorts != [ ]) (checkPorts name stack);
             ExecStop = compose name "down";
             TimeoutStartSec = "15min";
@@ -411,7 +418,10 @@ in
     homeserver.notify.units =
       map (name: "stack-${name}") (lib.attrNames cfg)
       ++ lib.optionals (notify.webhookFile != null) (
-        lib.mapAttrsToList (name: _: "stack-${name}-data") (lib.filterAttrs (_: s: s.dataDir != null) cfg)
+        lib.concatMap (name: [
+          "stack-${name}-data"
+          "stack-${name}-snapshot"
+        ]) (lib.attrNames (lib.filterAttrs (_: s: s.dataDir != null) cfg))
       );
   };
 }

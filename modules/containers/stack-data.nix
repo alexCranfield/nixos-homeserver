@@ -56,6 +56,18 @@ let
       install -d -m 0700 /.snapshots/stacks/${name}
     '';
 
+  snapshot = pkgs.writeShellApplication {
+    name = "stack-snapshot";
+    runtimeInputs = [
+      pkgs.btrfs-progs
+      pkgs.coreutils
+      pkgs.docker
+      pkgs.jq
+      pkgs.util-linux
+    ];
+    text = builtins.readFile ./stack-snapshot.sh;
+  };
+
   command =
     name: kind: text:
     pkgs.writeShellScript "stack-${name}-${kind}-snapshot" text;
@@ -128,7 +140,41 @@ in
       name: stack: lib.nameValuePair "stacks/${name}/snapshot.json" { source = settings name stack; }
     ) withData;
 
+    environment.systemPackages = lib.mkIf (withData != { }) [ snapshot ];
+
+    systemd.timers = lib.mapAttrs' (
+      name: _:
+      lib.nameValuePair "stack-${name}-snapshot" {
+        description = "Nightly snapshot of the ${name} stack";
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          # About 3:30am Mountain (2:30am in winter); Persistent runs a missed
+          # snapshot at the next boot.
+          OnCalendar = "*-*-* 09:30:00 UTC";
+          Persistent = true;
+        };
+      }
+    ) withData;
+
     systemd.services = lib.mapAttrs' (
+      name: stack:
+      lib.nameValuePair "stack-${name}-snapshot" {
+        description = "Snapshot of the ${name} stack's data";
+        after = [ "stack-${name}-data.service" ];
+        requires = [ "stack-${name}-data.service" ];
+        unitConfig.RequiresMountsFor = [
+          "/srv"
+          "/.snapshots"
+        ];
+        serviceConfig = {
+          Type = "oneshot";
+          ExecStart = "${lib.getExe snapshot} ${name}";
+          # Up to 15 minutes for the lock, then the hooks and the snapshot.
+          TimeoutStartSec = "30min";
+        };
+      }
+    ) withData
+    // lib.mapAttrs' (
       name: stack:
       lib.nameValuePair "stack-${name}-data" {
         description = "Data directory of the ${name} stack";
