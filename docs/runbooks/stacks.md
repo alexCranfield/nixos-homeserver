@@ -174,3 +174,4 @@ restarted but not posted.
 
 | Check | Result |
 |---|---|
+| First deploy | 2026-10-24, comin deployed #133 (`768d281`), with `stack-hello` active from 17:52:10 UTC and Docker 29.9.1. `docker ps`: `hello-web-1 traefik/whoami:v1.10.3 ... 127.0.0.1:8080->80/tcp`. `docker inspect`: cgroup parent `stack-hello.slice`, restart `unless-stopped`; the slice's `memory.max` is `67108864`. `ss -ltn`: 8080 on `127.0.0.1` only (`docker-proxy`). `curl 127.0.0.1:8080` answers. `nft list table inet stack-ports`: the drop rule, with 0 packets dropped. `stack-hello-watch` active, and no failed units |
