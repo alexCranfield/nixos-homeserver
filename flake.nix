@@ -162,6 +162,14 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 3.2 (#23): a stack becomes a systemd unit, keeps its
+        # containers in its slice, survives a Docker restart and restarts
+        # alone when its files change.
+        compose-stack = import ./tests/compose-stack.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
         # Fails `nix flake check` if the server stops using the dev shell's Nix,
         # for example after a `nix.package` override on the host.
         devshell-nix-matches-server =

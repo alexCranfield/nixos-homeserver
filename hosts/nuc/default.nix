@@ -15,6 +15,7 @@
     ./notify.nix
     ../../modules/base
     ../../modules/containers/docker.nix
+    ../../modules/containers/compose-stack.nix
   ];
 
   networking.hostName = "nuc";
