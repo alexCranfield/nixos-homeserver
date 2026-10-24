@@ -180,3 +180,8 @@ remember.
   - rootless Podman gains NixOS-native Quadlet support and cAdvisor parity.
 
   Switching then means migrating data-directory ownership stack by stack.
+- Note, 2026-10-24 (ADR 0011): nothing is forwarded from the router any more;
+  game ports are declared for the tailnet interface. Point 1's "the router
+  forwards IPv4" no longer applies, but public ports stay IPv4 only: the
+  check in 3 and the firewall still enforce it, and ADR 0011 notes the
+  tailnet's IPv6 address that game clients may try.

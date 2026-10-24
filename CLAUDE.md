@@ -11,9 +11,9 @@ Work is tracked as GitHub Issues, one per plan ticket, grouped by phase
 milestone. Issue numbers map to ticket ids in order: 0.1 is #1, 8.4 is #52.
 Numbers from #53 on are shared between pull requests and later issues; the
 tickets added after the original import are 0.8 (#56), 0.9 (#61), 1.0 (#57)
-and 4.0 (#135), none of which is in `scripts/tickets.py`, so re-running the filing script cannot
-duplicate them. The issues are the source of truth for status, not
-`docs/PLAN.md`.
+and 4.0 (#135), none of which is in `scripts/tickets.py`, so re-running the
+filing script cannot duplicate them. The issues are the source of truth for
+status, not `docs/PLAN.md`.
 
 ## Definition of done for an issue
 

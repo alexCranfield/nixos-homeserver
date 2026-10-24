@@ -686,7 +686,7 @@ are stable.
 For a friend on a PC or phone it is a one-time setup of a few minutes: install
 the Tailscale app, sign in with an existing Google, Microsoft, Apple or GitHub
 account, and accept the share invite. After that they connect to the
-server's tailnet name, which never changes, unlike a home IP address.
+server's tailnet name, which stays the same, unlike a home IP address.
 
 The ongoing costs:
 
@@ -702,19 +702,20 @@ Where it does not work:
   player cannot join this way.
 - On a Steam Deck it works, but SteamOS has a read-only system, so the
   install is a one-off terminal job in Desktop Mode rather than an app
-  store install.
+  store install, and may need redoing after a SteamOS update.
 - Locked-down devices, such as a work laptop or school Chromebook, may not
   allow the install.
 
 On the owner's side, sharing one machine (not the whole tailnet) plus an
 access rule keeps share recipients to the game ports, away from SSH and
-admin interfaces. Tailscale's plans limit sharing, and the limits have
+admin interfaces. One exception the rule cannot close: a share makes each
+friend's device a peer, and Tailscale answers its peer API (application
+programming interface) to any peer, checking each request itself. Tailscale's plans limit sharing, and the limits have
 changed over time, so check them against the number of players.
 
 The trade against a public port with a whitelist: friends do a little setup,
 and in return nothing on the server faces the internet. Mixing the two buys
 little, since one public port makes the server public. Here every player was
-on a PC, phone or Steam Deck, so Tailscale won (ADR, Architecture Decision
-Record, 0011).
+on a PC, phone or Steam Deck, so Tailscale won (ADR 0011).
 
 </details>

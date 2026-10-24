@@ -2,8 +2,8 @@
 #
 # Nothing is open here. A port is opened next to whatever needs it, on the
 # interface it is needed on: SSH on tailscale0 in modules/base/tailscale.nix,
-# for example. ADR 0005: admin access moves to Tailscale, and only game ports
-# are forwarded from the internet.
+# for example. ADR 0005: admin access moves to Tailscale; ADR 0011: nothing is
+# forwarded from the internet, and friends reach game servers over Tailscale.
 #
 # Docker's published ports bypass this firewall (ADR 0006), so it is not the
 # whole story once containers arrive.

@@ -66,8 +66,9 @@ if they disagree:
 
 "Public" here means reachable from another machine, not from the internet:
 the router forwards nothing, and game servers reach friends over the tailnet,
-on ports declared for `tailscale0` (ADR, Architecture Decision Record, 0011;
-ticket 4.0, #135).
+once ticket 4.0 (#135) lets a port be declared for `tailscale0` (ADR,
+Architecture Decision Record, 0011). Until then a declared port is admitted
+from `lan0` only, as below.
 
 Public ports are IPv4 only (ADR 0006). A port
 published with no address binds to `127.0.0.1` ([docker.md](docker.md)), and
