@@ -94,7 +94,7 @@ nothing.
 No. The instinct is right but the remedy costs more than it buys.
 
 - **It breaks the deploy model.** The server pulls a public repo with no
-  credentials (ADR 0003). A private secrets repo means a deploy key on an
+  credentials (ADR, Architecture Decision Record, 0003). A private secrets repo means a deploy key on an
   unattended machine that rebuilds itself from the network.
 - **It breaks reproducibility.** The private repo becomes a flake input, so
   public CI (continuous integration) cannot evaluate the flake and nobody can
@@ -146,7 +146,8 @@ key, token or password must be replaced regardless of history, because you can
 never prove nobody copied it. Nothing here met that bar: what leaked was a
 non-routable hostname, an account name on a machine with no internet-facing
 SSH, some paths, and a personal data flow, all reachable only by reading a
-closed pull request and constructing an API call by hash. Not worth a Support
+closed pull request and constructing an API (application programming
+interface) call by hash. Not worth a Support
 request.
 
 What *was* worth fixing was a personal email address in commit authorship,
@@ -671,5 +672,52 @@ software before anyone logs in. Cheaper measures cover most of that:
 The compose-stack module can still restrict a port to listed sources
 (`allowedSources`), off by default, for a case where the players' addresses
 are stable.
+
+</details>
+
+### How much trouble is Tailscale for friends who just want to play?
+
+*2026-10-24*
+
+> How much of a hassle would tailscale be for users?
+
+<details>
+<summary>Answer</summary>
+
+For a friend on a PC or phone it is a one-time setup of a few minutes: install
+the Tailscale app, sign in with an existing Google, Microsoft, Apple or GitHub
+account, and accept the share invite. After that they connect to the
+server's tailnet name, which stays the same, unlike a home IP address.
+
+The ongoing costs:
+
+- Tailscale has to be running while they play. On a PC it sits in the
+  background; on a phone it takes the single VPN (virtual private network)
+  slot, so it cannot run beside another VPN, such as a work one.
+- When a friend cannot connect, the usual cause is Tailscale being off, and
+  the server's owner is their first line of support.
+
+Where it does not work:
+
+- Consoles (Xbox, PlayStation, Switch) cannot run Tailscale, so a console
+  player cannot join this way.
+- On a Steam Deck it works, but SteamOS has a read-only system, so the
+  install is a one-off terminal job in Desktop Mode rather than an app
+  store install, and may need redoing after a SteamOS update.
+- Locked-down devices, such as a work laptop or school Chromebook, may not
+  allow the install.
+
+On the owner's side, sharing one machine (not the whole tailnet) plus an
+access rule keeps share recipients to the game ports, away from SSH and
+admin interfaces. One exception the rule cannot close: a share makes each
+friend's device a peer, and `tailscaled` on the server answers its own peer
+API to any peer, checking each request itself. Tailscale's plans limit
+sharing, and the limits have changed over time, so check them against the
+number of players.
+
+The trade against a public port with a whitelist: friends do a little setup,
+and in return nothing on the server faces the internet. Mixing the two buys
+little, since one public port makes the server public. Here every player was
+on a PC, phone or Steam Deck, so Tailscale won (ADR 0011).
 
 </details>

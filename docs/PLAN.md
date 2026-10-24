@@ -19,7 +19,7 @@ Every ticket below is filed as a GitHub Issue in this repo, grouped by phase mil
 | Containers | Docker + Compose stacks wrapped in systemd units from NixOS; K3s as final stretch phase | Game server docs assume compose; K8s later once base is stable |
 | Deploy | Public repo. GitHub-hosted Actions validate/build on PR. Server pulls `main` with **comin** and rebuilds itself (~60 s after push) | CV evidence, no self-hosted runner exposure on a public repo |
 | Secrets | `sops-nix` with an `age` key per host (replaces Ansible Vault) | Safe to commit encrypted secrets to a public repo |
-| Remote access | Tailscale for SSH/admin/LLM UIs; router port forwards only for game ports | Nothing admin-facing on the WAN, no fail2ban needed |
+| Remote access | Tailscale for SSH/admin/LLM UIs; friends reach game servers over Tailscale sharing, limited to the game ports; no router forwards (ADR 0011) | Nothing on the WAN at all, no fail2ban needed |
 | LLM | Ollama + Open WebUI on CPU (96 GB RAM fits 70B-class quants); Intel iGPU acceleration as a later trial ticket | Intel Level Zero on Panther Lake still has open init-crash bugs |
 | Backups | `restic` nightly to <nas-host> over SFTP (SSH File Transfer Protocol); NixOS `services.restic` | Reuses existing NAS |
 | Tickets | GitHub Issues + milestones per phase in this repo | Trackable, closable, visible |
@@ -41,7 +41,7 @@ NUC (NixOS 26.05, hostname: nuc)
 
 Backups: NUC ──restic/SFTP──▶ <nas-host>:<nas-backup-path>
 Admin:   WSL/laptop ──Tailscale──▶ nuc (SSH, Grafana, Open WebUI)
-Friends: WAN ──router port-forward──▶ game ports only
+Friends: their devices ──Tailscale share──▶ nuc (game ports only)
 ```
 
 ## Repo layout (`nixos-homeserver`)
@@ -107,9 +107,10 @@ Ticket bodies with tasks and acceptance criteria are in `scripts/tickets.py`; `s
 - **3.6** Alerting: Grafana or Prometheus alert rules for disk >85%, backup age >36h, unit failed. AC: one test alert delivered.
 
 ### Phase 4: Game servers
-- **4.1** Minecraft: `itzg/minecraft-server` compose stack, world on `/srv/data/minecraft`, RCON, memory limit, EULA via env, pre-backup `save-off/save-all` hook. Router forward TCP 25565. AC: a friend connects from outside the LAN.
-- **4.2** Palworld: `thijsvanloef/palworld-server-docker`, RCON, scheduled restarts, memory cap (Palworld leaks). Forward UDP 8211. AC: external connection.
-- **4.3** Satisfactory: `wolveix/satisfactory-server`, forward TCP/UDP 7777. AC: external connection.
+- **4.0** Friends' access over Tailscale sharing (#135, ADR 0011): the compose-stack module admits a declared port from a chosen interface (`tailscale0` for games); the tailnet policy lets share recipients, and the owner's devices, reach the game ports and not SSH or admin interfaces; a VM test of the same rule with a negative control (Headscale has no sharing, so the real share is checked on the live tailnet); each game client's behaviour with the IPv6 address the tailnet name also resolves to; a runbook for friends (Windows, macOS, Linux, phones, Steam Deck). AC: a test share reaches a game port and not SSH; nothing is forwarded from the router.
+- **4.1** Minecraft: `itzg/minecraft-server` compose stack, world on `/srv/data/minecraft`, RCON, memory limit, EULA via env, whitelist and `online-mode`, pre-backup `save-off/save-all` hook. TCP 25565 declared on `tailscale0` (4.0). AC: a friend connects over the Tailscale share.
+- **4.2** Palworld: `thijsvanloef/palworld-server-docker`, RCON, scheduled restarts, memory cap (Palworld leaks). UDP 8211 declared on `tailscale0` (4.0). AC: a friend connects over the Tailscale share.
+- **4.3** Satisfactory: `wolveix/satisfactory-server`, TCP and UDP 7777 declared on `tailscale0` (4.0); check whether the current release also needs TCP 8888. AC: a friend connects over the Tailscale share.
 - **4.4** Game ops runbook + maintenance-window hooks: RCON "server restarting in 5 min" broadcast tied into the Phase 2.3 reboot timer; per-game backup hooks wired into 3.5. AC: reboot timer fires the broadcast in a test.
 - **4.5** Resource policy: systemd `MemoryMax`/`CPUWeight` per stack so LLM jobs never starve game servers (LLM stacks get lower CPUWeight). AC: documented weights, `systemd-cgtop` shows enforcement.
 - **4.6** Template for adding a new game server (copy stack dir, add port, add backup path). AC: `docs/runbooks/new-game-server.md`.
@@ -158,4 +159,4 @@ Docker) was decided in ticket 0.6 (#6), and ADR 0009 (disk encryption) in 1.0
 
 - Hostname `nuc` and user `ops` are placeholders, change in ticket 1.3 if preferred.
 - Second M.2 slot stays empty for now; plan treats 1 TB as shared budget with per-stack quotas.
-- Router supports DHCP reservations and port forwarding.
+- Router supports DHCP reservations. (Port forwarding is no longer needed: ADR 0011.)

@@ -12,12 +12,13 @@ it, or supersede it with a new ADR, rather than editing it quietly (see
 | [0002](0002-compose-not-k8s.md) | Docker Compose stacks as systemd units; Kubernetes deferred to Phase 8 | Accepted |
 | [0003](0003-pull-deploy-comin.md) | GitHub-hosted CI (continuous integration) validates; the server pulls `main` with comin | Accepted |
 | [0004](0004-secrets-sops.md) | Secrets encrypted with sops and age, decrypted by sops-nix on the host | Accepted |
-| [0005](0005-tailscale.md) | Admin access over Tailscale only; router forwards game ports alone | Accepted |
+| [0005](0005-tailscale.md) | Admin access over Tailscale only; router forwards game ports alone | Accepted; game forwards replaced by 0011 |
 | [0006](0006-docker-vs-podman.md) | Rootful Docker, with published ports and the root daemon handled by fail-closed defaults and checks | Accepted |
 | [0007](0007-nix-distribution-policy.md) | Match flake inputs, not Nix versions; the dev shell carries the server's Nix | Accepted, amended 2026-09-27 |
 | 0008 | K3s or stay on Compose | Reserved: ticket 8.1 (#49) |
 | [0009](0009-disk-encryption.md) | Whole-root LUKS2 (Linux Unified Key Setup) unlocked by a TPM (Trusted Platform Module) key sealed to PCR (Platform Configuration Register) 7; Secure Boot (#47) extends it to partial theft protection | Accepted; TPM condition met 2026-10-04 |
 | 0010 | Security posture | Reserved: ticket 7.2 (#45) |
+| [0011](0011-games-over-tailscale.md) | Friends reach game servers over Tailscale sharing, limited to the game ports; nothing is public | Accepted |
 
 Numbers are claimed by the ticket that will write the ADR, which is why the
 sequence can run ahead of what exists. `docs/PLAN.md` lists the open decisions

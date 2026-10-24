@@ -87,6 +87,7 @@ drift and the server can be rebuilt from scratch.
 | Secrets encrypted in Git, decrypted only on the host | [ADR 0004](docs/adr/0004-secrets-sops.md), [secrets runbook](docs/runbooks/secrets.md) |
 | Container ports private unless declared in Nix: loopback by default, undeclared ports dropped by the firewall, compose files checked in CI | [ADR 0006](docs/adr/0006-docker-vs-podman.md), [Docker runbook](docs/runbooks/docker.md), [stacks runbook](docs/runbooks/stacks.md) |
 | No admin ports on the LAN: SSH by key, over Tailscale only | [ADR 0005](docs/adr/0005-tailscale.md), [Tailscale runbook](docs/runbooks/tailscale.md) |
+| Nothing exposed to the internet: friends reach game servers over Tailscale sharing, game ports only | [ADR 0011](docs/adr/0011-games-over-tailscale.md) |
 | Full-disk encryption unlocked by the TPM (Trusted Platform Module) | [ADR 0009](docs/adr/0009-disk-encryption.md), [install runbook](docs/runbooks/install.md) |
 | Automated dependency updates with a supply-chain cooldown | [updates runbook](docs/runbooks/updates.md) |
 | Kernel reboots only in a weekly maintenance window | [updates runbook](docs/runbooks/updates.md) |
@@ -119,7 +120,7 @@ flowchart LR
     nas["NAS<br/>(phase 3)"]
     admin -->|"over Tailscale only"| ts
     gh -->|"comin pulls"| comin
-    players -.->|"game ports"| games
+    players -.->|"Tailscale share:<br/>game ports only"| games
     notify -->|webhook| discord
     restic -.->|"encrypted backups"| nas
     classDef planned stroke-dasharray: 5 5,color:#888,stroke:#888
