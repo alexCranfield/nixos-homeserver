@@ -155,6 +155,23 @@ in
         failures are counted, not posted.
       '';
     };
+    sender = lib.mkOption {
+      type = lib.types.package;
+      readOnly = true;
+      default = send;
+      description = ''
+        The program that posts: `homeserver-notify WEBHOOK_FILE ROLE_FILE
+        ICON TITLE`, with the body on stdin and ROLE_FILE `-` to ping no one.
+        For posters outside this module, such as the stack watcher
+        (modules/containers/compose-stack.nix).
+      '';
+    };
+    icons = lib.mkOption {
+      type = lib.types.attrsOf lib.types.str;
+      readOnly = true;
+      default = icon;
+      description = "The icons that start each title: `up`, `down` and `wrong`.";
+    };
     units = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
