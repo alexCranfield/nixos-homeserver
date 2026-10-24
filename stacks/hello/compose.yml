@@ -4,5 +4,8 @@
 services:
   web:
     image: traefik/whoami:v1.10.3
+    # whoami prints this as "Name:", which shows an edit reached the nuc.
+    environment:
+      WHOAMI_NAME: hello
     ports:
       - "127.0.0.1:8080:80"
