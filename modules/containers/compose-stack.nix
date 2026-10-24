@@ -242,11 +242,12 @@ let
   };
 
   # `up` under the stack's lock, which the snapshot and the rollback also take,
-  # so a deploy waits for them (up to 15 minutes) rather than starting
+  # so a deploy waits for them (up to 10 minutes, leaving the unit's 15 for
+  # `up --wait`) rather than starting
   # containers on data being swapped.
   lockedUp =
     name:
-    "${pkgs.util-linux}/bin/flock -w 900 /run/lock/stack-${name}.lock ${compose name "up --detach --remove-orphans --wait"}";
+    "${pkgs.util-linux}/bin/flock -w 600 /run/lock/stack-${name}.lock ${compose name "up --detach --remove-orphans --wait"}";
 
   compose =
     name: verb:

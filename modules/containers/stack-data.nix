@@ -156,44 +156,45 @@ in
       }
     ) withData;
 
-    systemd.services = lib.mapAttrs' (
-      name: stack:
-      lib.nameValuePair "stack-${name}-snapshot" {
-        description = "Snapshot of the ${name} stack's data";
-        after = [ "stack-${name}-data.service" ];
-        requires = [ "stack-${name}-data.service" ];
-        unitConfig.RequiresMountsFor = [
-          "/srv"
-          "/.snapshots"
-        ];
-        serviceConfig = {
-          Type = "oneshot";
-          ExecStart = "${lib.getExe snapshot} ${name}";
-          # Up to 15 minutes for the lock, then the hooks and the snapshot.
-          TimeoutStartSec = "30min";
-        };
-      }
-    ) withData
-    // lib.mapAttrs' (
-      name: stack:
-      lib.nameValuePair "stack-${name}-data" {
-        description = "Data directory of the ${name} stack";
-        after = [ "local-fs.target" ];
-        wantedBy = [ "multi-user.target" ];
-        # Never make /srv/data on the root filesystem because /srv is not mounted.
-        unitConfig.RequiresMountsFor = [
-          "/srv"
-          "/.snapshots"
-        ];
-        reloadIfChanged = true;
-        restartIfChanged = false;
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          ExecStart = script name stack;
-          ExecReload = script name stack;
-        };
-      }
-    ) withData;
+    systemd.services =
+      lib.mapAttrs' (
+        name: stack:
+        lib.nameValuePair "stack-${name}-snapshot" {
+          description = "Snapshot of the ${name} stack's data";
+          after = [ "stack-${name}-data.service" ];
+          requires = [ "stack-${name}-data.service" ];
+          unitConfig.RequiresMountsFor = [
+            "/srv"
+            "/.snapshots"
+          ];
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = "${lib.getExe snapshot} ${name}";
+            # Up to 15 minutes for the lock, then the hooks and the snapshot.
+            TimeoutStartSec = "30min";
+          };
+        }
+      ) withData
+      // lib.mapAttrs' (
+        name: stack:
+        lib.nameValuePair "stack-${name}-data" {
+          description = "Data directory of the ${name} stack";
+          after = [ "local-fs.target" ];
+          wantedBy = [ "multi-user.target" ];
+          # Never make /srv/data on the root filesystem because /srv is not mounted.
+          unitConfig.RequiresMountsFor = [
+            "/srv"
+            "/.snapshots"
+          ];
+          reloadIfChanged = true;
+          restartIfChanged = false;
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = script name stack;
+            ExecReload = script name stack;
+          };
+        }
+      ) withData;
   };
 }

@@ -65,7 +65,7 @@ def names():
 
 
 def nightly():
-    return sorted(n for n in names() if re.fullmatch(r"[0-9]{8}T[0-9]{6}Z", n))
+    return sorted(n for n in names() if re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z", n))
 
 
 def hooks():
@@ -92,7 +92,7 @@ with subtest("a nightly snapshot runs pre, snapshot, post in order"):
     h = hooks()
     assert [n for n, _ in h] == ["pre", "post"], h
     made = created(snap)
-    assert int(h[0][1]) < made <= h[1][1], (h, made)
+    assert int(h[0][1]) < made and made + 1 <= h[1][1], (h, made)
     assert machine.succeed(f"btrfs property get {SNAPS}/{snap} ro").strip() == "ro=true"
     assert machine.succeed(f"ls -A {SNAPS}/{snap}.config").split() == ["compose.yml", "override.yml"]
 
@@ -127,10 +127,10 @@ with subtest("retention keeps the newest three nightly, never manual or before-r
         made += sorted(set(nightly()) - before)
     machine.sleep(1)
     machine.succeed("stack-snapshot keeper manual")
-    machine.succeed(f"btrfs subvolume snapshot -r /srv/data/keeper {SNAPS}/before-rollback-20200101T000000Z")
+    machine.succeed(f"btrfs subvolume snapshot -r /srv/data/keeper {SNAPS}/before-rollback-2020-01-01T000000Z")
     kept = names()
     assert len([n for n in kept if n.startswith("manual-") and not n.endswith(".config")]) == 1, kept
-    assert "before-rollback-20200101T000000Z" in kept, kept
+    assert "before-rollback-2020-01-01T000000Z" in kept, kept
     assert nightly() == made[-3:], (nightly(), made)
     for n in kept:
         if n.endswith(".config"):
@@ -142,7 +142,28 @@ with subtest("retention keeps the newest three nightly, never manual or before-r
     machine.succeed("systemctl start stack-keeper-snapshot.service")
     assert len(nightly()) == 3
     assert any(n.startswith("manual-") for n in names())
-    assert "before-rollback-20200101T000000Z" in names()
+    assert "before-rollback-2020-01-01T000000Z" in names()
+    final = names()
+    for n in final:
+        if n.endswith(".config"):
+            assert n[: -len(".config")] in final, ("orphaned config", n, final)
+    for n in nightly():
+        assert n + ".config" in final, (n, final)
+
+with subtest("a failing post-command fails the unit but leaves a whole snapshot and prunes"):
+    machine.succeed("/run/booted-system/specialisation/failingPost/bin/switch-to-configuration test")
+    before = nightly()
+    assert len(before) == 3, before
+    machine.sleep(1)
+    machine.fail("systemctl start stack-keeper-snapshot.service")
+    after = nightly()
+    assert len(after) == 3 and after[:2] == before[1:], (before, after)
+    assert after[-1] not in before
+    assert machine.succeed(f"ls -A {SNAPS}/{after[-1]}.config").split() == ["compose.yml", "override.yml"]
+    kept = names()
+    assert before[0] not in kept and before[0] + ".config" not in kept, kept
+    machine.succeed("/run/booted-system/bin/switch-to-configuration test")
+    machine.wait_for_unit("stack-keeper.service")
 
 with subtest("a reload waits for the lock, then succeeds"):
     machine.succeed("rm -f /tmp/reload.rc")

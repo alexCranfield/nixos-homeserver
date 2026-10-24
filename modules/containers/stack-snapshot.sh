@@ -13,7 +13,8 @@
 # pre-command was started, even when the snapshot fails, so a server is never
 # left with saving switched off. The whole run holds the stack's lock
 # (/run/lock/stack-STACK.lock, also taken by the stack unit's up and by
-# stack-rollback), waiting up to 15 minutes for it.
+# stack-rollback), waiting up to 15 minutes for it. (The stack unit's own wait
+# is 10 minutes, so its 15 minute start timeout leaves time for `up --wait`.)
 #
 # snapshot_names STACK prints the nightly snapshot names, oldest first. This
 # file can be sourced for it (stack-rollback does); nothing runs then.
@@ -24,7 +25,7 @@ snapshot_names() {
   for f in "$root/$1"/*; do
     [ -d "$f" ] || continue
     f=${f##*/}
-    [[ $f =~ ^[0-9]{8}T[0-9]{6}Z$ ]] && echo "$f"
+    [[ $f =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z$ ]] && echo "$f"
   done | sort
 }
 
@@ -72,7 +73,14 @@ main() {
 
   trap finish EXIT
 
-  if [ -n "$(docker compose -p "$stack" ps --status running -q)" ]; then
+  # A docker error must not read as "not running": that would snapshot a live
+  # server without its hooks.
+  local running
+  running=$(docker compose -p "$stack" ps --status running -q) || {
+    echo "could not ask docker whether $stack is running, no snapshot taken" >&2
+    exit 1
+  }
+  if [ -n "$running" ]; then
     hooked=1
     if [ -n "$pre" ]; then
       log "running the pre-snapshot command"
@@ -83,12 +91,15 @@ main() {
   fi
 
   local name
-  name=$(date -u +%Y%m%dT%H%M%SZ)
+  name=$(date -u +%Y-%m-%dT%H%M%SZ)
   [ "$mode" = manual ] && name=manual-$name
   local snap=$root/$stack/$name
   log "snapshotting $dir to $snap"
   btrfs subvolume snapshot -r "$dir" "$snap"
-  run_post
+  # A failing post-command still gets the configuration copy and the pruning,
+  # so no half-made snapshot is left; the run fails at the end.
+  local post_rc=0
+  run_post || post_rc=1
 
   log "copying the configuration to $snap.config"
   mkdir -p "$snap.config"
@@ -101,9 +112,10 @@ main() {
     for ((i = 0; i < excess; i++)); do
       log "deleting ${old[i]}"
       btrfs subvolume delete "$root/$stack/${old[i]}"
-      rm -r "$root/$stack/${old[i]}.config"
+      rm -rf "$root/$stack/${old[i]}.config"
     done
   fi
+  [ "$post_rc" -eq 0 ] || exit 1
   log "done: $name"
 }
 

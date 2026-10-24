@@ -47,12 +47,14 @@ let
     gid = 40010;
     after = [ "test-setup.service" ];
     # Each hook logs its name and the time. The pre-command then waits, so the
-    # snapshot's creation time (whole seconds) falls strictly after it.
+    # snapshot's creation time (whole seconds) falls strictly after it; the
+    # post-command waits before logging, so the snapshot is strictly before it.
     snapshot.preCommand = ''
       echo "pre $(date +%s.%N)" >> /tmp/hooks
       sleep 2
     '';
     snapshot.postCommand = ''
+      sleep 2
       echo "post $(date +%s.%N)" >> /tmp/hooks
     '';
   };
@@ -226,6 +228,9 @@ pkgs.testers.runNixOSTest {
 
     # A pre-command that fails.
     specialisation.failingPre.configuration.homeserver.stacks.keeper.snapshot.preCommand =
+      lib.mkForce "exit 1";
+
+    specialisation.failingPost.configuration.homeserver.stacks.keeper.snapshot.postCommand =
       lib.mkForce "exit 1";
 
     specialisation.lateData.configuration.homeserver.stacks.late = {
