@@ -27,7 +27,8 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Two builds at a time (below) makes the run longer than it was with four.
+    timeout-minutes: 45
     steps:
       # Actions are pinned by commit, not tag: a tag can be moved to different
       # code after review, a commit hash cannot. The comment records the tag.
@@ -39,6 +40,13 @@ jobs:
       # Upstream Nix, the same distribution the server runs, rather than
       # Determinate Nix. ADR 0007: CI checks what the server will evaluate.
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          # At most two builds at once, so at most two VM tests: the runner has
+          # 16 GB, and four tests booting together (about ten VMs, 10 GB of
+          # guest memory) got the runner killed twice on 2026-10-24 (#133,
+          # docs/runbooks/ci.md).
+          extra_nix_config: |
+            max-jobs = 2
 
       # The installer's Nix only enters the dev shell. The checks run with the
       # dev shell's Nix, which is the server's version; print both as evidence.
