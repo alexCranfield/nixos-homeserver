@@ -168,8 +168,13 @@ with `nix-community/cache-nix-action`:
   exists is made a garbage-collection root, and everything else is deleted
   from the store. A failed check has no output, so it runs again next time.
   Build inputs and the dev shell are fetched from cache.nixos.org again, which
-  keeps the cache small.
-- **Save** the trimmed store under `nix-Linux-<commit>`.
+  keeps the cache small. The checks' derivations are read from `nix flake
+  check`'s log rather than by evaluating the flake a second time, which took
+  three minutes. If none are found there (a Nix update that changes the log),
+  the step fails and nothing is saved: the next run is a full one, never a
+  wrong one.
+- **Save** the trimmed store under `nix-Linux-<commit>`, unless it holds
+  nothing the restored cache lacked, as after a docs-only change.
 
 GitHub keeps a branch's caches to that branch: a pull request can read
 `main`'s cache but writes only its own, so code under review cannot plant a
