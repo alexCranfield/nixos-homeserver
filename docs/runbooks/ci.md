@@ -43,7 +43,7 @@ If it passes locally but fails in CI, the difference is almost always one of:
   server's version. `nix develop -c just check` matches CI exactly.
 - **Formatting.** `just fmt`, commit, push.
 
-### A VM test that fails before Linux starts, on the workstation
+### A VM (virtual machine) test that fails before Linux starts, on the workstation
 
 On the workstation, `disk-tpm` often fails before the kernel prints anything
 (#80). The VM's console shows one of three forms after `starting vm`:
@@ -148,18 +148,75 @@ default and calls upstream Nix unsupported and possibly removed later. The
 upstream installer keeps third-party distributions out of the pipeline that
 gates the server.
 
-**No extra binary cache.** The ticket also named `magic-nix-cache-action`. A
-dry run of the closure against an empty store shows 628 paths fetched from
-cache.nixos.org (1.2 GiB) and only 36 derivations built locally, all of them
-configuration glue (`/etc` entries, systemd units, the initrd). A cache would
-save building those, which takes seconds. Revisit if a run takes more than about
-ten minutes, for example once the config pulls in a package that is not cached
-upstream. To repeat the measurement:
+**Checks that have not changed are not rerun (#137).** Nix names each
+check's output after everything that goes into it, so a change that touches
+none of a check's inputs leaves its output path the same, and `nix flake
+check` skips any check whose output is already in the store. Every run used
+to start with an empty store and rerun all 14 checks, VM tests
+included, whatever changed: a docs-only pull request took 24 minutes,
+and so did the run on `main` after it merged, though none of its checks had
+changed. Editing a comment in a `.nix` file that is only imported changes no
+check either, because the comment never reaches a derivation. (A file a
+derivation takes as a path, such as `src = ./.`, would be different: its text
+is an input. No check takes one today.)
 
-```sh
-nix build --dry-run --store "$(mktemp -d)" --option substituters https://cache.nixos.org \
-  '.#nixosConfigurations.nuc.config.system.build.toplevel'
-```
+The workflow now carries the store between runs in GitHub's Actions cache,
+with `nix-community/cache-nix-action`:
+
+- **Restore**, before `just check`: the cache saved under this commit if
+  there is one (a re-run), otherwise the newest this branch can see. GitHub
+  looks on the pull request's own branch first, then on `main`.
+- **Trim**, after it, even when a check failed: every check whose output
+  exists is made a garbage-collection root, and everything else is deleted
+  from the store. A failed check has no output, so it runs again next time.
+  Build inputs and the dev shell are fetched from cache.nixos.org again, which
+  keeps the cache small. The checks' derivations are read from `nix flake
+  check`'s log rather than by evaluating the flake a second time, which took
+  three minutes. If none are found there (a Nix update that changes the log),
+  the step warns and nothing is saved, and CI still reports the checks'
+  result. Later runs keep restoring the last cache saved and rerun whatever
+  changed since, more each time, until the parsing is fixed. A wrong parse
+  can only leave a check out of the cache, never make one pass: an output
+  exists only once its check has built.
+- **Save** the trimmed store under `nix-Linux-<commit>`, unless it holds
+  nothing the restored cache lacked, as after a docs-only change.
+
+GitHub keeps a branch's caches to that branch: a pull request can read
+`main`'s cache but writes only its own, so code under review cannot plant a
+result that `main` later trusts. It can plant one that its own later runs
+trust, though: the code a run executes outside Nix's sandbox (the `justfile`,
+the workflow, the dev shell) could mark outputs as built that never were, and
+a later push that reverts those files would restore them and pass. Pull
+requests from forks therefore never use the cache, and run in full every time.
+Branches of this repository do: they are pushed only by Alex, Claude, and the
+flake.lock workflow's bot (`update/flake-lock`, a lock written and checked by
+`scripts/flake_update.py`). comin builds
+on the nuc and never reads this cache; it only decides which checks CI
+reruns.
+
+The trade-off: a check that passed once is not rerun until its inputs
+change, so a flaky test that passed by luck stays passed, which is what
+#130 was. To rerun everything, delete the caches (Actions, Caches, or
+`gh cache delete --all`) and re-run the job.
+
+The repo gets 10 GB of cache. GitHub deletes the least recently used caches
+past that, and any cache not used for seven days. Each cache is about 1.6 GB,
+so about six fit. A pull request's first run restores `main`'s newest cache;
+its later pushes restore their own. Without cleanup, every push that builds
+something adds another 1.6 GB under the pull request (three pushes to #138
+made 4.7 GB), and `main`'s cache, the least recently used, would be the one
+deleted. `.github/workflows/ci-cache-cleanup.yml` deletes all but the newest of
+a pull request's caches on each push, and all of them when it closes, so each
+open pull request holds at most two: the one its latest run restored and the
+one it saved. A fork's run saves nothing unless the fork edits `ci.yml`; such
+caches are not cleaned up, and GitHub expires them after seven days. If `main`'s is evicted anyway, the next
+run is a full one, as before #137, and saves a new cache. To see what is
+stored: Actions, Caches, or `gh cache list`.
+
+Paths filters are not used. `on.pull_request.paths-ignore` skips the whole
+workflow, so the required check `check` never reports, and GitHub holds the
+pull request at "Expected — waiting for status". A filter would also need a
+hand-kept list of paths that cannot affect a check; Nix already knows.
 
 **VM (virtual machine) tests run in CI.** Since #10, `nix flake check` also runs
 `base-ssh`, a NixOS test that boots two VMs and logs in over SSH. NixOS tests
@@ -192,7 +249,12 @@ commit hash cannot. Bumping an action means looking up the new release's commit
 and updating both the hash and the comment.
 
 **Read-only token.** `permissions: contents: read`. The repo is public, anyone
-can open a PR, and the job never needs to write. The workflow uses
+can open a PR, and the job never needs to write to the repository. (Saving
+the Nix store cache uses the runner's own cache token, which `permissions`
+does not govern. Deleting caches needs `actions: write`, so that is a separate
+workflow, `ci-cache-cleanup.yml`, which runs only `gh`. Its token can write
+only for branches of this repository, whose authors have write access
+already.) The workflow uses
 `pull_request`, never `pull_request_target`, which would run fork code with the
 repository's secrets.
 

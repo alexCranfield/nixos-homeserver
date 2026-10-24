@@ -29,6 +29,13 @@ jobs:
     runs-on: ubuntu-latest
     # Two builds at a time (below) makes the run longer than it was with four.
     timeout-minutes: 45
+    # Whether this run may use the Nix store cache (#137): pushes to main, and
+    # pull requests from branches of this repository. Not pull requests from
+    # forks: an early commit's run could save outputs that were never built,
+    # and a later commit's run would restore them and pass checks it never
+    # ran. Main's own caches are out of a pull request's reach either way.
+    env:
+      USE_CACHE: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       # Actions are pinned by commit, not tag: a tag can be moved to different
       # code after review, a commit hash cannot. The comment records the tag.
@@ -48,16 +55,98 @@ jobs:
           extra_nix_config: |
             max-jobs = 2
 
+      # The store from an earlier run (#137), so a check whose derivation is
+      # unchanged is already built and `nix flake check` skips it: a docs-only
+      # change builds nothing, and a code change reruns only the checks it
+      # touches. Each run saves under its own key; the newest cache this ref
+      # can see is restored, its own branch's first, then main's. GitHub keeps
+      # caches per branch, so a pull request reads main's but cannot write it.
+      - name: Restore Nix store
+        id: nix-cache
+        if: ${{ env.USE_CACHE == 'true' }}
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+        with:
+          primary-key: nix-${{ runner.os }}-${{ github.sha }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+
       # The installer's Nix only enters the dev shell. The checks run with the
       # dev shell's Nix, which is the server's version; print both as evidence.
       # Entering the shell evaluates flake.nix, so a syntax error there fails
       # here, before `just check`.
+      # The store as restored, so the trim step below can tell whether this
+      # run added anything worth saving.
       - name: Enter dev shell (evaluates flake.nix)
         run: |
+          find /nix/store -mindepth 1 -maxdepth 1 -printf '%f\n' | sort > "$RUNNER_TEMP/restored-paths"
           echo "installer: $(nix --version)"
           echo "dev shell: $(nix develop --command nix --version)"
 
-      # No extra binary cache. Everything except about 36 small configuration
-      # derivations comes from cache.nixos.org already; see docs/runbooks/ci.md.
+      # Checks restored above are skipped; the rest build, fetching what they
+      # can from cache.nixos.org. See docs/runbooks/ci.md. The log is kept for
+      # the trim step, which reads the checks' derivations from it.
       - name: just check
-        run: nix develop --command just check
+        shell: bash
+        run: nix develop --command just check 2>&1 | tee "$RUNNER_TEMP/check.log"
+
+      # Keep what the next run needs and nothing else: every check that passed,
+      # with its closure. A failed check has no output, so it reruns next time.
+      # Everything else, such as build inputs and the dev shell, comes from
+      # cache.nixos.org again, which keeps the cache small enough that the
+      # repo's 10 GB limit does not evict main's. The derivations come from
+      # `nix flake check`'s own log ("checking derivation <name>" then
+      # "derivation evaluated to <drv>"), since evaluating the flake again
+      # takes three minutes. If a Nix update changes those lines and none are
+      # found, the step warns and nothing is saved: later runs keep restoring
+      # the last cache saved, and rerun whatever changed since. A check whose
+      # name contains a dot is never matched, so it is never cached. The check
+      # devshell-nix-matches-server always shows "not built": it does its work
+      # while the flake is evaluated, and its empty output is not built here.
+      - name: Keep only built checks
+        id: keep
+        if: ${{ !cancelled() && env.USE_CACHE == 'true' }}
+        shell: bash
+        run: |
+          roots="$RUNNER_TEMP/check-roots"
+          mkdir -p "$roots"
+          # The name from each "checking derivation checks.<system>.<name>..."
+          # line, paired with the "derivation evaluated to" line after it.
+          # Other outputs' lines (the dev shell, the formatter) clear the name.
+          awk '
+            match($0, /checking derivation checks\.x86_64-linux\.[^.]+\.\.\./) {
+              name = substr($0, RSTART + 40, RLENGTH - 43); next
+            }
+            /checking derivation / { name = ""; next }
+            match($0, /derivation evaluated to \/nix\/store\/[^ ]+\.drv/) {
+              if (name != "") print name, substr($0, RSTART + 24, RLENGTH - 24)
+              name = ""
+            }
+          ' "$RUNNER_TEMP/check.log" > "$RUNNER_TEMP/check-drvs"
+          if [ ! -s "$RUNNER_TEMP/check-drvs" ]; then
+            echo "::warning::no check derivations found in the nix flake check log; not saving the Nix store cache"
+            exit 0
+          fi
+          while read -r name drv; do
+            path=$(nix-store --query --outputs "$drv")
+            if [ -z "$(nix-store --check-validity --print-invalid "$path")" ]; then
+              nix-store --add-root "$roots/$name" --realise "$path" >/dev/null
+              echo "kept $name"
+            else
+              echo "not built: $name"
+            fi
+          done < "$RUNNER_TEMP/check-drvs"
+          nix store gc
+          echo "store: $(du -sh /nix/store | cut -f1)"
+          new=$(find /nix/store -mindepth 1 -maxdepth 1 -printf '%f\n' | sort | comm -23 - "$RUNNER_TEMP/restored-paths" | wc -l)
+          echo "paths not in the restored cache: $new"
+          if [ "$new" -gt 0 ]; then
+            echo "save=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Not after a failed step above: that store was never trimmed. Not when
+      # the trimmed store holds nothing the restored cache lacked, as after a
+      # docs-only change: the cache restored is still the one to use.
+      - name: Save Nix store
+        if: ${{ !cancelled() && steps.keep.outputs.save == 'true' }}
+        uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+        with:
+          primary-key: ${{ steps.nix-cache.outputs.primary-key }}

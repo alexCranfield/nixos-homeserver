@@ -197,7 +197,8 @@ scripts/tickets.py                 ticket definitions; file_issues.py files them
 scripts/check_compose.py           the compose checker the flake check runs
 scripts/flake_update.py            the weekly flake.lock update: cooldown, report, checks on the new lock
 scripts/firmware-boot-loop.sh      measures whether local KVM (Kernel-based Virtual Machine) boots the disk-tpm firmware reliably (#80)
-.github/workflows/ci.yml           CI (continuous integration): runs just check on every pull request and push to main
+.github/workflows/ci.yml           CI (continuous integration): runs just check on every pull request and push to main, caching the Nix store
+.github/workflows/ci-cache-cleanup.yml   deletes a pull request's older Nix store caches (docs/runbooks/ci.md)
 .github/workflows/update-flake-lock.yml   weekly pull request updating flake.lock (docs/runbooks/updates.md)
 .github/                           issue and pull request templates, CODEOWNERS
 .editorconfig                      whitespace and indentation for editors
