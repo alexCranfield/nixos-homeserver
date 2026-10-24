@@ -167,7 +167,7 @@ verified as a subvolume.)
 
 - **New options** on `homeserver.stacks.<name>`: `uid` and `gid`.
   - Required when `dataDir` is set.
-  - In the range 30000–30999, which NixOS's own user allocation doesn't
+  - In the range 40000–40999, which NixOS's own user allocation doesn't
     use.
   - Unique across stacks, enforced by an assertion.
   - The range is my call.

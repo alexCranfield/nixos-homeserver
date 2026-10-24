@@ -58,7 +58,7 @@ first; this plan does not repeat its reasons.
     never pruned;
   - the timer is `OnCalendar=*-*-* 09:30:00` with `Persistent=true` (the
     nuc's `time.timeZone` is UTC);
-  - user and group IDs are in 30000–30999 and unique;
+  - user and group IDs are in 40000–40999 and unique;
   - the module passes `STACK_UID` and `STACK_GID` into the stack unit's
     environment.
 - **Units that alert.** `stack-<name>-data` and `stack-<name>-snapshot`
@@ -101,7 +101,7 @@ first; this plan does not repeat its reasons.
 
 **Interfaces:**
 - **Produces options** on `homeserver.stacks.<name>`:
-  - `uid`, `gid`: `nullOr (ints.between 30000 30999)`, default `null`;
+  - `uid`, `gid`: `nullOr (ints.between 40000 40999)`, default `null`;
   - `snapshot.preCommand`, `snapshot.postCommand`: `nullOr lines`, default
     `null`. Shell run on the host as root; Task 2 uses them.
 - **Assertions,** for every stack with `dataDir != null`:
@@ -131,16 +131,16 @@ first; this plan does not repeat its reasons.
     `btrfs subvolume create`.
   - **The image:** the busybox `probe:test` image, loaded the way
     `tests/compose-stack.nix` loads it.
-  - **The stack `keeper`:** `dataDir = "/srv/data/keeper"`, `uid = 30010`,
-    `gid = 30010`. Its compose file mounts `/srv/data/keeper:/data` and
+  - **The stack `keeper`:** `dataDir = "/srv/data/keeper"`, `uid = 40010`,
+    `gid = 40010`. Its compose file mounts `/srv/data/keeper:/data` and
     runs as `user: "${STACK_UID}:${STACK_GID}"`, with a command that writes
     `/data/hello`.
   - **Subtests in `tests/stack-data.py`:**
     - `"the data directory is a subvolume owned by the stack"`:
       `btrfs subvolume show /srv/data/keeper` succeeds, and
-      `stat -c '%u:%g %a' /srv/data/keeper` is `30010:30010 750`;
+      `stat -c '%u:%g %a' /srv/data/keeper` is `40010:40010 750`;
     - `"the container writes as the stack's user"`:
-      `stat -c '%u' /srv/data/keeper/hello` is `30010`;
+      `stat -c '%u' /srv/data/keeper/hello` is `40010`;
     - `"a plain directory at dataDir fails the data unit"`:
       - stop `stack-keeper`;
       - `btrfs subvolume delete /srv/data/keeper`, then `mkdir` it;
@@ -172,7 +172,7 @@ first; this plan does not repeat its reasons.
     built in a let) for these:
     - a `dataDir` other than `/srv/data/<name>` fails;
     - `dataDir` without `uid` fails;
-    - two stacks sharing uid 30010 fail;
+    - two stacks sharing uid 40010 fail;
     - uid 1000 fails the type check.
 - [ ] **Step 6:** run `nix flake check --no-build` and `nix fmt`.
 - [ ] **Step 7: Commit:** "Give each stack a btrfs subvolume and a fixed
@@ -333,7 +333,7 @@ first; this plan does not repeat its reasons.
 **Files:**
 - Modify:
   - `stacks/hello/default.nix`: `dataDir = "/srv/data/hello"`,
-    `uid = 30000`, `gid = 30000`. Nothing is mounted; hello is where Alex
+    `uid = 40000`, `gid = 40000`. Nothing is mounted; hello is where Alex
     practises a rollback.
   - `justfile`, adding:
     - `snapshot stack:`, which runs
@@ -393,7 +393,7 @@ first; this plan does not repeat its reasons.
   "Document the data layout and rollback; hello gets data (#24)".
 - [ ] **Step 6: After the merge**, which is comin's job, verify on the nuc
   over the agent socket:
-  - `btrfs subvolume show /srv/data/hello`, and its owner `30000:30000`;
+  - `btrfs subvolume show /srv/data/hello`, and its owner `40000:40000`;
   - `systemctl list-timers 'stack-*-snapshot*'`;
   - after 09:30 UTC, the first snapshot exists;
   - Alex runs `just snapshot hello` and a `just rollback hello` with a
