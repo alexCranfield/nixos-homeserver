@@ -1,0 +1,23 @@
+services:
+  game:
+    image: probe:test
+    ports:
+      - "0.0.0.0:25565:25565"
+      - "0.0.0.0:8211-8212:8211-8212/udp"
+      - "127.0.0.1:25575:25575"
+    volumes:
+      - /srv/data/good/world:/data
+      - /etc/localtime:/etc/localtime:ro
+      - cache:/cache
+  web:
+    image: probe:test
+    ports:
+      - host_ip: 127.0.0.1
+        target: 80
+        published: 8080
+    volumes:
+      - type: bind
+        source: /srv/data/good/web
+        target: /srv
+volumes:
+  cache: {}

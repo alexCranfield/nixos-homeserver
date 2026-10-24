@@ -1,0 +1,6 @@
+services:
+  web:
+    image: probe:test
+    ports:
+      - target: 80
+        published: 8080

@@ -170,6 +170,15 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 3.2 (#23): compose files under stacks/ publish only declared
+        # ports, and mount neither the Docker socket nor anything outside
+        # their stack's data directory (ADR 0006).
+        compose-check = import ./tests/compose-check.nix {
+          inherit pkgs;
+          manifest = self.nixosConfigurations.nuc.config.homeserver.stacksManifest;
+          stacks = ./stacks;
+        };
+
         # Fails `nix flake check` if the server stops using the dev shell's Nix,
         # for example after a `nix.package` override on the host.
         devshell-nix-matches-server =

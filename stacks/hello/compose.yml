@@ -1,0 +1,8 @@
+# The example stack (ticket 3.2, #23): a small web server that answers with
+# details of each request, on the nuc's loopback only. It shows a stack
+# deploying through comin and exposes nothing to the LAN.
+services:
+  web:
+    image: traefik/whoami:v1.10.3
+    ports:
+      - "127.0.0.1:8080:80"
