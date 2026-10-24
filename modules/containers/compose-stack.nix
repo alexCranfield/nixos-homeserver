@@ -18,13 +18,19 @@
 #    Docker restarts docker.service, and `Requires=` would stop each stack
 #    with it, which runs `down`. With `live-restore` (modules/containers/
 #    docker.nix) the containers outlive the restart, so the stacks do too.
+#  - A changed unit is reloaded, not restarted. Its text names Docker's store
+#    path, which most updates change, and a restart would run `down` on every
+#    stack. A reload runs `up` again, which recreates only services whose
+#    compose configuration changed. sops-nix still restarts a stack whose
+#    secret changed.
 #  - Public ports are enforced on the forward path. Docker redirects a
 #    published port before the NixOS input rules see it, and NixOS's forward
 #    chain accepts whatever Docker redirected. The `stack-ports` table runs
 #    first and drops any redirected connection to a port no stack declares,
 #    or arriving anywhere but `publicInterface`, logging each new connection
-#    either way. The input rules list the declared ports too, so the NixOS
-#    firewall configuration still reads as the list of what is public.
+#    either way. The input rules open nothing for them: IPv4 traffic to a
+#    published port never takes the input path, and opening it there would
+#    let IPv6 in through docker-proxy (ADR 0006: public ports are IPv4 only).
 #  - Limits go on a slice, not on the unit. Docker starts containers under
 #    containerd, so `MemoryMax=` on the unit would limit only the `docker
 #    compose` client. `stack-<name>.slice` carries them, and the override's
@@ -270,6 +276,7 @@ in
           ]
           ++ stack.after;
           wantedBy = lib.optional stack.autoStart "multi-user.target";
+          reloadIfChanged = true;
           restartTriggers = [
             stack.composeFile
             (override name stack)
@@ -282,6 +289,10 @@ in
             # starts pull images.
             ExecStart = compose name "up --detach --remove-orphans --wait";
             ExecStartPost = lib.mkIf (stack.publicPorts != [ ]) (checkPorts name stack);
+            ExecReload = [
+              (compose name "up --detach --remove-orphans --wait")
+            ]
+            ++ lib.optional (stack.publicPorts != [ ]) (checkPorts name stack);
             ExecStop = compose name "down";
             TimeoutStartSec = "15min";
           };
@@ -329,11 +340,6 @@ in
         _: stack: lib.optional (stack.dataDir != null) "d ${stack.dataDir} 0750 root root - -"
       ) cfg
     );
-
-    networking.firewall.interfaces.${config.homeserver.publicInterface} = {
-      allowedTCPPorts = map (p: p.port) (lib.filter (p: p.protocol == "tcp") ports);
-      allowedUDPPorts = map (p: p.port) (lib.filter (p: p.protocol == "udp") ports);
-    };
 
     # Before NixOS's own forward chain (priority filter), whose accept for
     # redirected traffic cannot undo a drop here.

@@ -189,6 +189,7 @@ tests/compose-stack.nix            VM test: stacks as units, slices and limits, 
 tests/compose-stack.py             its test script
 tests/compose-check.nix            flake check: compose files under stacks/ against ADR 0006, with a failing fixture per rule
 tests/compose-check/               the fixtures
+tests/stack-watch.nix              flake check: the crash watcher's quiet posts and pings at several crash rates
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
 scripts/tickets.py                 ticket definitions; file_issues.py files them

@@ -2,9 +2,11 @@
 #
 # Posts each crash of a container in Compose project PROJECT to Discord
 # (modules/containers/compose-stack.nix). Docker restarts the container
-# itself; this only reports. Per container, within COOLDOWN seconds: the
-# first death posts without the role, the third posts with it, and the rest
-# are counted in the state file only.
+# itself; this only reports. Per container: a death with none other in the
+# last COOLDOWN seconds posts without the role; one that makes three or more
+# in that time posts with it, at most once per COOLDOWN; the rest are only
+# counted. The deaths are kept in the state file, the last ping in
+# <file>.pinged (tests/stack-watch.nix checks the cadences).
 project=$1
 webhook_file=$2
 role_file=$3
@@ -30,11 +32,17 @@ docker events --format '{{json .}}' --filter type=container --filter event=die \
     printf '%s\n' "$recent" > "$state.new"
     mv "$state.new" "$state"
     count=$(wc -l <<< "$recent")
-    case $count in
-      1) title="$host: $name crashed (exit $code)" role=- ;;
-      3) title="$host: $name crashed (exit $code), 3 times in $((cooldown / 60)) min" role=$role_file ;;
-      *) echo "$name died (exit $code), $count times in the window; not posted"; continue ;;
-    esac
+    pinged=$(cat "$state.pinged" 2>/dev/null || echo 0)
+    [[ $pinged =~ ^[0-9]+$ ]] || pinged=0
+    if [ "$count" -eq 1 ]; then
+      title="$host: $name crashed (exit $code)" role=-
+    elif [ "$count" -ge 3 ] && ! { [ $((now - pinged)) -ge 0 ] && [ $((now - pinged)) -lt "$cooldown" ]; }; then
+      title="$host: $name crashed (exit $code), $count times in $((cooldown / 60)) min" role=$role_file
+      echo "$now" > "$state.pinged"
+    else
+      echo "$name died (exit $code), $count times in the window; not posted"
+      continue
+    fi
     echo "$title"
     journalctl "CONTAINER_NAME=$name" --lines 20 --no-pager --quiet --output short-iso |
       homeserver-notify "$webhook_file" "$role" "$icon" "$title" ||

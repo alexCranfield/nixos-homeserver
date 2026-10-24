@@ -18,7 +18,8 @@ from pathlib import Path
 
 import yaml
 
-PUBLIC = {"0.0.0.0", "::", "[::]"}
+PUBLIC = {"0.0.0.0"}
+IPV6_ALL = {"::", "[::]"}
 SOCKETS = {"/var/run/docker.sock", "/run/docker.sock"}
 HOST_BINDING = "com.docker.network.bridge.host_binding_ipv4"
 # Read-only host files many game images mount for the time zone.
@@ -64,6 +65,14 @@ def parse_port(entry):
     return ip, published, protocol or "tcp"
 
 
+def volume_source(volume):
+    """The host side of a `volumes:` entry as written, or None if it has none."""
+    if isinstance(volume, dict):
+        return volume.get("source")
+    source, _, rest = str(volume).partition(":")
+    return source if rest else None
+
+
 def bind_source(volume):
     """The host path of a bind mount, with whether it is read-only, or None
     for a named volume."""
@@ -104,6 +113,10 @@ def check_file(path, name, stack):
                 continue
             if ip == "":
                 problems.append(("no-address", f"{where} port {entry!r} names no host address"))
+            elif ip in IPV6_ALL:
+                problems.append(("ipv6-public", f"{where} port {entry!r} is public over IPv6 (ADR 0006: IPv4 only)"))
+            elif ip in PUBLIC and not published:
+                problems.append(("undeclared-public", f"{where} port {entry!r} is public on a host port Docker picks"))
             elif ip in PUBLIC:
                 for port in published:
                     public.add((port, protocol))
@@ -112,6 +125,9 @@ def check_file(path, name, stack):
                             ("undeclared-public", f"{where} publishes {port}/{protocol} on {ip}, not declared by stack {name}")
                         )
         for volume in service.get("volumes") or []:
+            if "$" in str(volume_source(volume) or ""):
+                problems.append(("interpolated-volume", f"{where} mount {volume!r} uses a variable"))
+                continue
             bind = bind_source(volume)
             if bind is None:
                 continue
@@ -133,16 +149,33 @@ def check_file(path, name, stack):
     for port, protocol in sorted(declared - public):
         problems.append(("declared-unused", f"stack {name} declares {port}/{protocol}, which no service publishes on 0.0.0.0"))
 
-    if stack.get("composeFile") and Path(stack["composeFile"]).read_bytes() != path.read_bytes():
-        problems.append(("unlisted-file", f"stack {name} declares a different compose file"))
     return problems
 
 
+def declared_file(manifest_path, stack):
+    """The bytes of the compose file a stack declares, or None if it names
+    none (the fixtures). Relative to the manifest, for the fixtures."""
+    if not stack.get("composeFile"):
+        return None
+    path = manifest_path.parent / stack["composeFile"]
+    return path.read_bytes() if path.exists() else b""
+
+
 def main():
-    manifest = json.loads(Path(sys.argv[1]).read_text())
+    manifest_path = Path(sys.argv[1])
+    manifest = json.loads(manifest_path.read_text())
     root = Path(sys.argv[2])
     files = sorted(p for p in root.rglob("*") if p.name in COMPOSE_NAMES)
     failed = False
+    # Every stack's own compose file must be one of the files checked here,
+    # so a stack cannot skip the check by keeping its file elsewhere.
+    for name, stack in sorted(manifest.items()):
+        declared = declared_file(manifest_path, stack)
+        if declared is not None and not any(
+            p.parent.name == name and p.read_bytes() == declared for p in files
+        ):
+            print(f"{name}: unlisted-file: stack {name}'s compose file is not {root.name}/**/{name}/compose.yml")
+            failed = True
     for path in files:
         name = path.parent.name
         shown = path.relative_to(root)

@@ -179,6 +179,10 @@
           stacks = ./stacks;
         };
 
+        # Ticket 3.2 (#23): the crash watcher posts quietly, then pings once
+        # per window, at any crash cadence.
+        stack-watch = import ./tests/stack-watch.nix { inherit pkgs; };
+
         # Fails `nix flake check` if the server stops using the dev shell's Nix,
         # for example after a `nix.package` override on the host.
         devshell-nix-matches-server =

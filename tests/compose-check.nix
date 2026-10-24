@@ -31,7 +31,10 @@ pkgs.runCommand "compose-check"
       [ "$case" = good ] && continue
       # The rule a case breaks is its name, up to any `--variant`.
       rule=''${case%%--*}
-      if result=$(check $fixtures/manifest.json "$dir" 2>&1); then
+      # A case may bring its own declarations.
+      manifest=$fixtures/manifest.json
+      [ -e "$dir/manifest.json" ] && manifest=$dir/manifest.json
+      if result=$(check "$manifest" "$dir" 2>&1); then
         echo "$case: passed, but breaks $rule" >&2
         exit 1
       fi

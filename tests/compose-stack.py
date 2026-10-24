@@ -125,6 +125,14 @@ with subtest("editing one stack restarts only that stack"):
     switch(None)
     nuc.wait_for_unit("stack-fixture.service")
 
+with subtest("a change to the unit alone leaves the containers running"):
+    fixture = containers("fixture")
+    switch("unitOnly")
+    nuc.succeed("systemctl is-active stack-fixture.service")
+    print(f"fixture {fixture} -> {containers('fixture')}")
+    assert containers("fixture") == fixture
+    switch(None)
+
 with subtest("removing a stack stops it and takes its containers down"):
     switch("withoutOther")
     nuc.fail("systemctl is-active stack-other.service")
@@ -146,6 +154,14 @@ with subtest("a declared UDP port gets through, and is logged"):
     nuc.wait_until_succeeds(
         f"journalctl -k --grep 'stack-port accept 8084/udp' | grep -q 'SRC={CLIENT} '", timeout=30
     )
+
+with subtest("a declared port is not open over IPv6"):
+    # Docker publishes it on [::] through docker-proxy, a host process; the
+    # firewall's input rules must not open it (ADR 0006: IPv4 only).
+    assert "[::]" in listening(8081), listening(8081)
+    code = curl(f"http://[{NUC6}]:8081/hostname")
+    print(f"8081 over IPv6: curl exits {code}")
+    assert code == 28, code
 
 with subtest("an undeclared port with no address binds loopback, and times out"):
     assert listening(8082) == ["127.0.0.1"], listening(8082)

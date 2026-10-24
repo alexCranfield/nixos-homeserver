@@ -94,14 +94,6 @@
     "publicPorts": [],
     "dataDir": null
   },
-  "undeclared-public--ipv6": {
-    "composeFile": null,
-    "services": [
-      "web"
-    ],
-    "publicPorts": [],
-    "dataDir": null
-  },
   "undeclared-public--protocol": {
     "composeFile": null,
     "services": [
@@ -204,6 +196,59 @@
     "composeFile": null,
     "services": [
       "app"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "interpolated-volume--short": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "interpolated-volume--long": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "undeclared-public--docker-picks-short": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "undeclared-public--docker-picks-long": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [],
+    "dataDir": null
+  },
+  "ipv6-public": {
+    "composeFile": null,
+    "services": [
+      "web"
+    ],
+    "publicPorts": [
+      {
+        "port": 25565,
+        "protocol": "tcp"
+      }
+    ],
+    "dataDir": null
+  },
+  "ipv6-public--undeclared": {
+    "composeFile": null,
+    "services": [
+      "web"
     ],
     "publicPorts": [],
     "dataDir": null

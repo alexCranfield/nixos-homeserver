@@ -14,7 +14,7 @@ itself is in [docker.md](docker.md).
 | Its files | `/etc/stacks/<name>/`: `compose.yml` as written, `override.yml` generated, `.env` linked to the sops secret |
 | Its containers | named `<name>-<service>-1`, in `stack-<name>.slice`, which holds the memory and CPU (central processing unit) limits |
 | Its crash watcher | `stack-<name>-watch.service`, which posts container crashes to Discord |
-| Its public ports | the `stack-ports` nftables table, and `allowedTCPPorts`/`allowedUDPPorts` on `lan0` |
+| Its public ports | the `stack-ports` nftables table, on the forward path |
 
 ```bash
 systemctl status stack-<name>
@@ -80,7 +80,9 @@ each new connection Docker redirected:
 - anything else: dropped and logged.
 
 So a declared port is open on the LAN (local area network) port only, not on
-the tailnet. `allowedSources` (IPv4 addresses or ranges) restricts a port to
+the tailnet, and over IPv4 only: the input rules open nothing for it, so a
+port Docker also publishes on `[::]` (served by `docker-proxy`, a host
+process) stays closed over IPv6, and the check rejects `[::]` anyway. `allowedSources` (IPv4 addresses or ranges) restricts a port to
 those sources; it is off unless set.
 
 After `up`, the unit checks that every declared port is listening on
@@ -115,15 +117,17 @@ fixture in `tests/compose-check/` that must fail with it.
 | Rule | Rejects | Why |
 |---|---|---|
 | `no-address` | a published port with no host address, in any syntax | the loopback default makes it safe, but the file should say what it means |
-| `undeclared-public` | a port on `0.0.0.0` or `[::]` that the stack does not declare | the declaration is the list of what is public |
+| `undeclared-public` | a port on `0.0.0.0` that the stack does not declare, or whose host port Docker picks | the declaration is the list of what is public |
+| `ipv6-public` | a port on `::` or `[::]` | public ports are IPv4 only (ADR 0006) |
 | `declared-unused` | a declared port no service publishes on `0.0.0.0` | a removed game must not leave a hole open |
 | `interpolated-port` | `${VAR}` in a port | the check cannot see the value |
+| `interpolated-volume` | `${VAR}` or `$VAR` in a mount's host side | the value, perhaps the Docker socket, would come from `.env` unchecked |
 | `host-binding-opt` | `host_binding_ipv4` in a network's `driver_opts` | it would undo the loopback default |
 | `host-network` | `network_mode: host` | the container's ports would skip Docker's rules |
 | `docker-socket` | a mount of `/var/run/docker.sock` or `/run/docker.sock` | API (application programming interface) access to the socket is root on the host |
 | `bind-outside-data` | a relative bind mount, or an absolute one outside `dataDir`; read-only `/etc/localtime` and `/etc/timezone` are allowed | data belongs where it is snapshotted and backed up (3.3, #24) |
 | `services-mismatch` | service names different from `services` | the override would miss a service |
-| `unlisted-file` | a compose file in a directory no stack is named after, or not the stack's `composeFile` | every file under `stacks/` is checked against something |
+| `unlisted-file` | a compose file in a directory no stack is named after, or a stack whose `composeFile` is not `stacks/**/<name>/compose.yml` | every file is checked, against its own stack |
 
 ## Restarting, stopping, removing
 
@@ -132,9 +136,12 @@ sudo systemctl restart stack-<name>   # down, then up
 sudo systemctl stop stack-<name>      # down; comes back at the next boot or deploy that touches it
 ```
 
-A deploy restarts a stack only when its compose file, its generated
-override or its secret changed. Removing a stack from the configuration stops
-its unit, which runs `down`; its data directory stays.
+A deploy that changes a stack's unit reloads it rather than restarting it:
+`up` runs again, and Compose recreates only the services whose configuration
+changed, so an update that only moves Docker's store path leaves the
+containers running. A changed secret restarts the stack (sops-nix), which
+runs `down` then `up`. Removing a stack from the configuration stops its
+unit, which runs `down`; its data directory stays.
 
 A deploy that restarts Docker leaves stacks running: the unit wants Docker
 but does not require it, and `live-restore` keeps the containers through the

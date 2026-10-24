@@ -49,6 +49,7 @@ let
             EXTRA: "${extra}"
           ports:
             - "0.0.0.0:8081:8080"
+            - "[::]:8081:8080"
             - "8082:8080"
             - "0.0.0.0:8083:8080"
             - "0.0.0.0:8084:8084/udp"
@@ -201,6 +202,8 @@ pkgs.testers.runNixOSTest {
         ];
       }
     );
+    # Only the unit file changes, as when a deploy moves Docker's store path.
+    specialisation.unitOnly.configuration.systemd.services.stack-fixture.environment.UNIT_ONLY = "1";
     # Negative controls, as in tests/docker.nix.
     specialisation.noNetworkDefault.configuration.virtualisation.docker.daemon.settings.default-network-opts =
       lib.mkForce { };
