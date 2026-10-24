@@ -158,6 +158,21 @@ remember.
 - `live-restore`, which keeps containers running while the daemon restarts, is
   off by default in NixOS 26.05. Whether to turn it on is left to ticket 3.1,
   after testing how it behaves across a comin deploy and a reboot.
+- **Note, 2026-10-24 (3.2, #23): limits go on a slice.** The table's "set on
+  the stack's system unit" does not work as written. Docker starts containers
+  under containerd, not under the unit, so `MemoryMax=` on the unit would
+  limit only the `docker compose` client. The compose-stack module puts each
+  stack's containers in `stack-<name>.slice`, which carries the limits; the VM
+  test shows a container killed for memory at the slice's limit. The
+  advantage over rootless Podman stands: the limits are still system-level
+  declarations.
+- **Note, 2026-10-24 (3.2, #23): the firewall now enforces declared ports.**
+  Point 2 says Docker's traffic does not pass through the firewall. Since
+  3.1's forward filter it does, on the forward path, and 3.2 adds a
+  `stack-ports` table there that drops any connection Docker redirected to a
+  port no stack declares, or that arrives anywhere but the LAN port. The
+  flake check in 3 and this table are now independent layers; the VM test
+  removes each in turn ([stacks.md](../runbooks/stacks.md#public-ports)).
 - **Revisit** (a new ADR, not an edit) if any of these happen:
   - the security review (7.2, #45) finds a stack that cannot be hardened
     acceptably;

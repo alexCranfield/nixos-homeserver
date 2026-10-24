@@ -609,3 +609,67 @@ minor or major version, compare `sudo docker ps` with the
 `containerd-shim` processes after the deploy (docs/runbooks/updates.md).
 
 </details>
+
+### Is a port forward safer than a public port?
+
+*2026-10-24*
+
+> So Lan with port forwarding, is that more secure than a public port?
+
+<details>
+<summary>Answer</summary>
+
+No: they are the same thing. A router port forward is how a home server's
+port becomes public. Internet traffic to that port is passed to the server
+and arrives on its LAN (local area network) port, so the port is exactly as
+exposed as any public one.
+
+What "LAN only" decides is which of the server's own interfaces the firewall
+opens the port on. Opening it on the LAN port alone, not on `tailscale0` as
+well, admits the forwarded traffic and the home network, and nothing more; it
+is the smallest opening that does the job, not a different level of
+exposure.
+
+The protection is in the layers around it: the router forwards only the
+ports chosen, the server opens only ports declared in Nix (and its firewall
+drops any other port Docker publishes), a forgotten port defaults to
+loopback, and the compose check rejects risky settings. The exposed service
+itself still faces the internet, so keeping it up to date and, for a game,
+using its own whitelist, is what is left.
+
+</details>
+
+### Is an IP allowlist worth it for a game server?
+
+*2026-10-24*
+
+> Could we IP whitelist the server as a way to improve security? Or is that
+> going to cause more headaches than its worth?
+
+<details>
+<summary>Answer</summary>
+
+For friends playing from home, usually more trouble than it is worth.
+
+Most home connections get a new public IP address now and then: after a
+router restart, or whenever the ISP (internet service provider) decides.
+Mobile networks and some ISPs put many customers behind one shared address
+(carrier-grade NAT, network address translation). Each change locks a friend
+out until the list is edited and deployed, and it fails exactly when they
+want to play.
+
+What an allowlist buys is protection from internet-wide scanning: the
+constant probing of well-known ports, and exploits against the server
+software before anyone logs in. Cheaper measures cover most of that:
+
+- the game's own whitelist, here Minecraft's, plus `online-mode` so every
+  player signs in with a real account: strangers cannot join or grief;
+- keeping the server image updated: known exploits get patched;
+- or, strongest, no public port at all: friends join the tailnet through
+  Tailscale's machine sharing, which needs each to install Tailscale.
+
+The compose-stack module can still restrict a port to listed sources
+(`allowedSources`), off by default, for a case where the players' addresses
+are stable.
+
+</details>

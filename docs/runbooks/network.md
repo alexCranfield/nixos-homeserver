@@ -130,7 +130,9 @@ filter, a neighbour could route through the nuc between the LAN, the tailnet
 and the container bridges. Allowed through:
 
 - replies to connections already allowed;
-- traffic Docker has redirected to a published port (`ct status dnat`);
+- traffic Docker has redirected to a published port (`ct status dnat`), if
+  a stack declares the port and it arrives on `lan0`; the `stack-ports` table
+  drops the rest ([stacks.md](stacks.md#public-ports), from 3.2, #23);
 - connections containers start, out of `docker0` and the `br-<id>` bridges
   (`modules/containers/docker.nix`);
 - ICMPv6, NixOS's own rule, which forwards nothing while IPv6 forwarding is

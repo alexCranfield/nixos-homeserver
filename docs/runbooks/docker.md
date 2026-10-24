@@ -1,9 +1,9 @@
 # Docker
 
 Ticket 3.1 (#22). Rootful Docker, as ADR (Architecture Decision Record) 0006
-decides, configured in `modules/containers/docker.nix`. Compose stacks become
-systemd units in ticket 3.2 (#23); until then nothing runs in Docker on the
-nuc.
+decides, configured in `modules/containers/docker.nix`. Everything that runs
+in it is a Compose stack run by a systemd unit (ticket 3.2, #23):
+[stacks.md](stacks.md).
 
 ## Using it
 
@@ -31,14 +31,16 @@ default in two places:
 | `ip = "127.0.0.1"` | the built-in `bridge` network, used by a bare `docker run` |
 | `default-network-opts.bridge."com.docker.network.bridge.host_binding_ipv4" = "127.0.0.1"` | every bridge network created afterwards, including each Compose project's `<project>_default` |
 
-To publish a port to the LAN, name the address: `"0.0.0.0:25565:25565"`. From
-3.2 (#23), the port must also be declared in the stack's Nix module, and a
-flake check fails on a public port that is not.
+To publish a port to the LAN, name the address: `"0.0.0.0:25565:25565"`, and
+declare it in the stack's Nix module. A flake check fails on a public port
+that is not declared, and the firewall drops traffic to it anyway
+([stacks.md](stacks.md#public-ports)).
 
-Traffic to a published port reaches the container through the firewall's
-forward chain, which lets it in because Docker redirected it; containers'
-own outgoing connections are allowed out of their bridges, and nothing else
-is forwarded ([network.md](network.md#forwarded-traffic)).
+Traffic to a declared port reaches the container through the firewall's
+forward chain, which lets it in because Docker redirected it and the stack
+declared it; containers' own outgoing connections are allowed out of their
+bridges, and nothing else is forwarded
+([network.md](network.md#forwarded-traffic)).
 
 Check what is listening, and on which address:
 

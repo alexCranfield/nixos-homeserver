@@ -29,7 +29,7 @@ pkgs.testers.runNixOSTest {
     imports = [ ../hosts/nuc ];
     # The host's stacks pull images, and the build sandbox has no internet;
     # tests/compose-stack.nix covers them.
-    homeserver.stacks = lib.mkForce { };
+    homeserver.stacks = pkgs.lib.mkForce { };
     # The host's Tailscale key is a sops secret no test VM can decrypt, so
     # leave Tailscale logged out, as it was before #14: without this,
     # tailscaled-autoconnect runs `tailscale up` with an empty key and holds up
