@@ -134,6 +134,13 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 4.0 (#135): friends reach a game port over the tailnet and
+        # nothing else; the LAN does not reach it (ADR 0011).
+        game-access = import ./tests/game-access.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
         # Ticket 2.1 (#16): comin runs, follows `main`, and ignores a
         # `testing-nuc` branch, which would bypass review.
         comin = import ./tests/comin.nix {

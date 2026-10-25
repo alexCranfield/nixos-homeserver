@@ -20,7 +20,7 @@ flowchart TD
         direction LR
         bot["A change, or the weekly<br/>dependency update"]
         pr["Pull request"]
-        ci["CI: lint, 10 VM tests,<br/>build the whole OS"]
+        ci["CI: lint, 11 VM tests,<br/>build the whole OS"]
         main["main<br/>(protected)"]
         bot --> pr --> ci -->|"green:<br/>merge"| main
     end
@@ -41,8 +41,9 @@ flowchart TD
   described by the files in this repo, and changes reach it as pull requests
   to `main`.
 - **CI proves the change first.** It builds the complete system and boots it
-  in ten VM tests: SSH, disk encryption, network, Tailscale, the deploy
-  agent, the reboot window, alerting, Docker, Compose stacks and their data. `main` only
+  in eleven VM tests: SSH, disk encryption, network, Tailscale, the deploy
+  agent, the reboot window, alerting, Docker, Compose stacks and their data,
+  and friends' access to the games. `main` only
   accepts a merge once that passes.
 - **The server pulls its changes.** [comin](https://github.com/nlewo/comin)
   on the server notices the merge within a minute and switches to it, so no
@@ -87,7 +88,7 @@ drift and the server can be rebuilt from scratch.
 | Secrets encrypted in Git, decrypted only on the host | [ADR 0004](docs/adr/0004-secrets-sops.md), [secrets runbook](docs/runbooks/secrets.md) |
 | Container ports private unless declared in Nix: loopback by default, undeclared ports dropped by the firewall, compose files checked in CI | [ADR 0006](docs/adr/0006-docker-vs-podman.md), [Docker runbook](docs/runbooks/docker.md), [stacks runbook](docs/runbooks/stacks.md) |
 | No admin ports on the LAN: SSH by key, over Tailscale only | [ADR 0005](docs/adr/0005-tailscale.md), [Tailscale runbook](docs/runbooks/tailscale.md) |
-| Nothing exposed to the internet: friends reach game servers over Tailscale sharing, game ports only | [ADR 0011](docs/adr/0011-games-over-tailscale.md) |
+| Nothing exposed to the internet: friends reach game servers over Tailscale sharing, game ports only | [ADR 0011](docs/adr/0011-games-over-tailscale.md), [Tailscale runbook](docs/runbooks/tailscale.md), [friends' guide](docs/runbooks/game-access.md) |
 | Full-disk encryption unlocked by the TPM (Trusted Platform Module) | [ADR 0009](docs/adr/0009-disk-encryption.md), [install runbook](docs/runbooks/install.md) |
 | Automated dependency updates with a supply-chain cooldown | [updates runbook](docs/runbooks/updates.md) |
 | Kernel reboots only in a weekly maintenance window | [updates runbook](docs/runbooks/updates.md) |
@@ -186,6 +187,9 @@ tests/network.nix                  VM test: reserved address on lan0, nuc.home.a
 tests/network.py                   its test script
 tests/tailscale.nix                VM test: ops logs in over the tailnet from another network, which sees only SSH
 tests/tailscale.py                 its test script
+tests/headscale.nix                the stand-in for Tailscale's servers, shared by the tailscale and game-access tests
+tests/game-access.nix              VM test: a friend reaches a game port over the tailnet and nothing else, the LAN does not; controls without the rule and on lan0
+tests/game-access.py               its test script
 tests/notify.nix                   VM test: failed units and deploys, boot and shutdown post to a stand-in webhook, with the cooldown
 tests/notify.py                    its test script
 tests/docker.nix                   VM test: published ports bind to loopback on every network; controls without each setting
