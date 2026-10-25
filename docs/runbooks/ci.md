@@ -164,7 +164,7 @@ The workflow now carries the store between runs in GitHub's Actions cache,
 with `nix-community/cache-nix-action`:
 
 - **Restore**, before `just check`: the newest cache this branch can see,
-  which for a re-run is the earlier attempt's. GitHub looks on the pull
+  which for a re-run is the earlier attempt's if that attempt saved one. GitHub looks on the pull
   request's own branch first, then on `main`.
 - **Trim**, after it, even when a check failed: every check whose output
   exists is made a garbage-collection root, and everything else is deleted
@@ -182,8 +182,9 @@ with `nix-community/cache-nix-action`:
   holds nothing the restored cache lacked, as after a docs-only change. The
   attempt number is there because a saved cache cannot be replaced. On
   2026-10-24 the first run on `main` after #138 failed on the Tailscale flake
-  (#130) and saved a 0.19 GB partial store under its commit; the re-run
-  passed but could not save, so `main` kept the partial cache. With the
+  (#130) and saved a 0.19 GB partial store under its commit. The re-run
+  passed, but no new cache appeared: `main` still held only that 0.19 GB
+  one afterwards. With the
   attempt in the key, a re-run restores the failed attempt's cache, builds
   what it lacks, and saves its own.
 
@@ -213,8 +214,9 @@ something adds another 1.6 GB under the pull request (three pushes to #138
 made 4.7 GB), and `main`'s cache, the least recently used, would be the one
 deleted. `.github/workflows/ci-cache-cleanup.yml` deletes all but the newest of
 a pull request's caches on each push, and all of them when it closes, so each
-open pull request holds at most two: the one its latest run restored and the
-one it saved. A fork's run saves nothing unless the fork edits `ci.yml`; such
+open pull request holds two: the one its latest run restored and the one it
+saved, or three after a re-run that saved, until the next push or
+`gh cache delete`. A fork's run saves nothing unless the fork edits `ci.yml`; such
 caches are not cleaned up, and GitHub expires them after seven days. If `main`'s is evicted anyway, the next
 run is a full one, as before #137, and saves a new cache. To see what is
 stored: Actions, Caches, or `gh cache list`.
