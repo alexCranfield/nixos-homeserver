@@ -17,6 +17,7 @@
     ../../modules/containers/docker.nix
     ../../modules/containers/compose-stack.nix
     ../../stacks/hello
+    ../../stacks/minecraft
   ];
 
   networking.hostName = "nuc";

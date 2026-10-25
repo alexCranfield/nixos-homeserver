@@ -175,6 +175,7 @@ modules/containers/stack-snapshot.sh   takes a nightly or manual snapshot around
 modules/containers/stack-rollback.sh   lists a stack's snapshots, or rolls its data back to one
 modules/containers/stack-watch.sh  the crash watcher's loop: posts container crashes to Discord
 stacks/hello/                      the example stack: compose.yml, and default.nix declaring it
+stacks/minecraft/                  Minecraft with the All the Mods 9 modpack, over Tailscale sharing (ticket 4.1)
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
 tests/comin.nix                    VM test: comin runs, fetches `main`, ignores a testing branch

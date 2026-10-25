@@ -757,3 +757,21 @@ The cost is one extra step per friend: share the machine, then `whitelist
 add`. ADR 0011 item 5 already requires it.
 
 </details>
+
+*Asked again 2026-10-25, while building the stack (#28):*
+
+> again, with Tailscale, how necessary is this user whitelisting?
+
+<details>
+<summary>Answer</summary>
+
+The reasons above still hold; what changed is the cost. The names are
+friends' accounts, so they live in sops rather than this public repo, and
+adding a friend is `sops secrets/minecraft.yaml`, a commit and a merge, not
+just `whitelist add`. The image also looks every name up online at start, so
+a misspelt one stops the server starting
+([minecraft.md](../runbooks/minecraft.md)). That is a little more work per
+friend, a few times a year, against an extra lock that costs nothing at play
+time. Still worth keeping.
+
+</details>

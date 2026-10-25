@@ -1,0 +1,56 @@
+# Minecraft with the All the Mods 9 (ATM9) modpack, ticket 4.1 (#28). The
+# image installs the pinned pack from CurseForge on its first start, and again
+# only when CF_FILE_ID changes. Friends reach it through Tailscale sharing
+# (ADR (Architecture Decision Record) 0011); docs/runbooks/minecraft.md.
+services:
+  server:
+    # Java 17, which ATM9 (Minecraft 1.20.1, Forge) needs.
+    image: itzg/minecraft-server:2026.10.0-java17
+    # The stack's own ids, so the world on disk belongs to stack-minecraft.
+    # The image then skips its own switch from root to the UID and GID (user
+    # and group IDs) it is given.
+    user: "${STACK_UID}:${STACK_GID}"
+    environment:
+      EULA: "TRUE"
+      TYPE: AUTO_CURSEFORGE
+      CF_SLUG: all-the-mods-9
+      # All the Mods 9-1.1.1, uploaded 2025-10-12. The pack file, not the
+      # server file: the image reads the pack's manifest. Changing it
+      # reinstalls the pack over the world on the next start.
+      CF_FILE_ID: "7097953"
+      CF_API_KEY_FILE: /run/secrets/cf-api-key
+      # Heap. The stack's memoryMax sits above it for the JVM's (Java virtual machine's) own use.
+      MEMORY: 12G
+      ONLINE_MODE: "TRUE"
+      ENABLE_WHITELIST: "TRUE"
+      ENFORCE_WHITELIST: "TRUE"
+      # Player names, comma-separated, from the stack's .env: the `env` key
+      # of secrets/minecraft.yaml, kept out of this public file. They replace
+      # the server's whitelist at each start, so that list is the whole of it.
+      WHITELIST: ${WHITELIST:?set WHITELIST in the env key of secrets/minecraft.yaml}
+      EXISTING_WHITELIST_FILE: SYNCHRONIZE
+      # RCON (remote console) stays inside the container: the snapshot hooks
+      # use `rcon-cli` through `docker exec`, and nothing publishes its port.
+      # The image makes a new password at each start.
+      ENABLE_RCON: "TRUE"
+    secrets:
+      - cf-api-key
+    ports:
+      - "0.0.0.0:25565:25565"
+    volumes:
+      - /srv/data/minecraft:/data
+    # The image's own check gives up about three minutes in, and the unit's
+    # `up --wait` would then fail a start that is only slow. A modpack this
+    # size takes longer than that; the unit's 15 minutes are the limit.
+    healthcheck:
+      test: mc-health
+      start_period: 15m
+      start_interval: 10s
+      interval: 30s
+      retries: 3
+    # The image asks the server to stop and allows it 60 seconds to save.
+    stop_grace_period: 75s
+
+secrets:
+  cf-api-key:
+    file: /run/secrets/minecraft-cf-api-key
