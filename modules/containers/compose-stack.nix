@@ -44,6 +44,11 @@
 # `up`. `stack-<name>-watch.service` follows Docker's events instead and posts
 # to Discord through modules/base/notify.nix (stack-watch.sh for the rules).
 #
+# Data: a stack with a `dataDir` gets its own btrfs subvolume and a fixed user
+# and group, set up by `stack-<name>-data.service` (stack-data.nix, ticket 3.3,
+# #24). The unit passes the ids to Compose as STACK_UID and STACK_GID, for
+# `user:` in the file.
+#
 # Day-to-day use: docs/runbooks/stacks.md.
 {
   config,
@@ -53,6 +58,7 @@
 }:
 let
   cfg = config.homeserver.stacks;
+  idType = lib.types.nullOr (lib.types.ints.between 40000 40999);
 
   portType = lib.types.submodule {
     options = {
@@ -106,7 +112,50 @@ let
         type = lib.types.nullOr lib.types.str;
         default = null;
         example = "/srv/data/minecraft";
-        description = "The stack's data directory; bind mounts must sit under it.";
+        description = ''
+          The stack's data directory, a btrfs subvolume made before the stack
+          starts; bind mounts must sit under it. Must be /srv/data/<name>, and
+          needs `uid` and `gid`.
+        '';
+      };
+      uid = lib.mkOption {
+        type = idType;
+        default = null;
+        example = 40010;
+        description = ''
+          Owner of the data directory, and of the host user `stack-<name>`.
+          Compose gets it as STACK_UID. In 40000-40999, which NixOS leaves
+          alone (it keeps 30000-31000 for the nix build users); unique across
+          stacks.
+        '';
+      };
+      gid = lib.mkOption {
+        type = idType;
+        default = null;
+        example = 40010;
+        description = "Group of the data directory; STACK_GID. As `uid`.";
+      };
+      snapshot = {
+        preCommand = lib.mkOption {
+          type = lib.types.nullOr lib.types.lines;
+          default = null;
+          example = "docker exec minecraft rcon-cli save-off";
+          description = ''
+            Shell run on the host as root just before each snapshot, such as
+            to flush a running server's data to disk. It runs while the
+            stack's lock is held, so it must not start or reload the stack's
+            unit: that would wait 600 seconds and fail.
+          '';
+        };
+        postCommand = lib.mkOption {
+          type = lib.types.nullOr lib.types.lines;
+          default = null;
+          description = ''
+            Shell run as root after each snapshot, to undo the pre-command.
+            Like the pre-command it runs while the stack's lock is held, so it
+            must not start or reload the stack's unit.
+          '';
+        };
       };
       autoStart = lib.mkOption {
         type = lib.types.bool;
@@ -198,12 +247,22 @@ let
     text = builtins.readFile ./stack-watch.sh;
   };
 
+  # `up` under the stack's lock, which the snapshot and the rollback also take,
+  # so a deploy waits for them (up to 10 minutes, leaving the unit's 15 for
+  # `up --wait`) rather than starting
+  # containers on data being swapped.
+  lockedUp =
+    name:
+    "${pkgs.util-linux}/bin/flock -w 600 /run/lock/stack-${name}.lock ${compose name "up --detach --remove-orphans --wait"}";
+
   compose =
     name: verb:
     "${lib.getExe pkgs.docker} compose --project-name ${name} --project-directory ${dir name}"
     + " --file ${dir name}/compose.yml --file ${dir name}/override.yml ${verb}";
 in
 {
+  imports = [ ./stack-data.nix ];
+
   options.homeserver = {
     stacks = lib.mkOption {
       type = lib.types.attrsOf stackType;
@@ -276,8 +335,14 @@ in
             "docker.service"
             "network-online.target"
           ]
-          ++ stack.after;
+          ++ stack.after
+          ++ lib.optional (stack.dataDir != null) "stack-${name}-data.service";
+          requires = lib.optional (stack.dataDir != null) "stack-${name}-data.service";
           wantedBy = lib.optional stack.autoStart "multi-user.target";
+          environment = lib.optionalAttrs (stack.dataDir != null) {
+            STACK_UID = toString stack.uid;
+            STACK_GID = toString stack.gid;
+          };
           reloadIfChanged = true;
           restartTriggers = [
             stack.composeFile
@@ -289,12 +354,17 @@ in
             # `--wait`: until each container runs, or is healthy if it has a
             # healthcheck, so one that exits at once fails the unit. First
             # starts pull images.
-            ExecStart = compose name "up --detach --remove-orphans --wait";
+            ExecStart = lockedUp name;
             ExecStartPost = lib.mkIf (stack.publicPorts != [ ]) (checkPorts name stack);
             ExecReload = [
               "${config.systemd.package}/bin/systemctl start docker.service"
-              (compose name "up --detach --remove-orphans --wait")
             ]
+            # A reload does not pull in what the unit requires, so a stack that
+            # has just been given a dataDir needs its data unit started here.
+            ++ lib.optional (
+              stack.dataDir != null
+            ) "${config.systemd.package}/bin/systemctl start stack-${name}-data.service"
+            ++ [ (lockedUp name) ]
             ++ lib.optional (stack.publicPorts != [ ]) (checkPorts name stack);
             ExecStop = compose name "down";
             TimeoutStartSec = "15min";
@@ -338,12 +408,6 @@ in
       ))
     ];
 
-    systemd.tmpfiles.rules = lib.concatLists (
-      lib.mapAttrsToList (
-        _: stack: lib.optional (stack.dataDir != null) "d ${stack.dataDir} 0750 root root - -"
-      ) cfg
-    );
-
     # Before NixOS's own forward chain (priority filter), whose accept for
     # redirected traffic cannot undo a drop here.
     networking.nftables.tables.stack-ports = lib.mkIf (cfg != { }) {
@@ -358,6 +422,13 @@ in
       '';
     };
 
-    homeserver.notify.units = map (name: "stack-${name}") (lib.attrNames cfg);
+    homeserver.notify.units =
+      map (name: "stack-${name}") (lib.attrNames cfg)
+      ++ lib.optionals (notify.webhookFile != null) (
+        lib.concatMap (name: [
+          "stack-${name}-data"
+          "stack-${name}-snapshot"
+        ]) (lib.attrNames (lib.filterAttrs (_: s: s.dataDir != null) cfg))
+      );
   };
 }

@@ -34,7 +34,10 @@ journalctl CONTAINER_NAME=<name>-web-1 # a container's own output
    `envSecret`; it becomes the stack's `.env`. Compose reads `.env` for
    `${VAR}` in the file, and a service sees it as environment only with
    `env_file: .env`.
-3. Declare it in `stacks/<name>/default.nix`, as `stacks/hello` does:
+3. Declare it in `stacks/<name>/default.nix`, as `stacks/hello` does. A stack
+   that keeps data sets `dataDir` (always `/srv/data/<name>`) with a `uid` and
+   `gid`, and the compose file runs its containers as them with
+   `${STACK_UID}` and `${STACK_GID}` ([data-layout.md](data-layout.md)):
 
    ```nix
    {
@@ -43,7 +46,9 @@ journalctl CONTAINER_NAME=<name>-web-1 # a container's own output
        services = [ "server" ];          # the compose file's service names
        envSecret = "minecraft-env";      # optional
        publicPorts = [ { port = 25565; } ];
-       dataDir = "/srv/data/minecraft";
+       dataDir = "/srv/data/minecraft";  # a btrfs subvolume, made before the stack starts
+       uid = 40010;                      # 40000-40999, unique; the container runs as it
+       gid = 40010;
        resources.memoryMax = "8G";
      };
    }
@@ -149,7 +154,10 @@ changed, so an update that only moves Docker's store path leaves the
 containers running. A changed secret reloads it as well, and the services
 that read the secret are recreated with the new values. A reload starts
 Docker first if a deploy stopped it. Removing a stack from the configuration stops its
-unit, which runs `down`; its data directory stays.
+unit, which runs `down`; its data directory and its snapshots stay, and
+[data-layout.md](data-layout.md) says how to delete them. Each stack's data
+is snapshotted every night, and `just rollback <stack>` restores one; both
+are in the same runbook.
 
 A deploy that restarts Docker leaves stacks running: the unit wants Docker
 but does not require it, and `live-restore` keeps the containers through the

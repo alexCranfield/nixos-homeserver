@@ -20,7 +20,7 @@ flowchart TD
         direction LR
         bot["A change, or the weekly<br/>dependency update"]
         pr["Pull request"]
-        ci["CI: lint, 9 VM tests,<br/>build the whole OS"]
+        ci["CI: lint, 10 VM tests,<br/>build the whole OS"]
         main["main<br/>(protected)"]
         bot --> pr --> ci -->|"green:<br/>merge"| main
     end
@@ -41,8 +41,8 @@ flowchart TD
   described by the files in this repo, and changes reach it as pull requests
   to `main`.
 - **CI proves the change first.** It builds the complete system and boots it
-  in nine VM tests: SSH, disk encryption, network, Tailscale, the deploy
-  agent, the reboot window, alerting, Docker and Compose stacks. `main` only
+  in ten VM tests: SSH, disk encryption, network, Tailscale, the deploy
+  agent, the reboot window, alerting, Docker, Compose stacks and their data. `main` only
   accepts a merge once that passes.
 - **The server pulls its changes.** [comin](https://github.com/nlewo/comin)
   on the server notices the merge within a minute and switches to it, so no
@@ -168,6 +168,10 @@ modules/base/notify.nix            Discord alerts: failed units and deploys, boo
 modules/base/vm.nix                SSH into `just vm` on 127.0.0.1:2222; no effect on a real host
 modules/containers/docker.nix      rootful Docker: ports on loopback unless named, nobody in the docker group
 modules/containers/compose-stack.nix   homeserver.stacks: a compose file becomes stack-<name>.service; public ports, limits, crash alerts
+modules/containers/stack-data.nix  each stack's data subvolume, owner and nightly snapshot; builds stack-snapshot and stack-rollback
+modules/containers/stack-lib.sh    snapshot names and the configuration copy, shared by the two scripts below
+modules/containers/stack-snapshot.sh   takes a nightly or manual snapshot around the stack's hooks
+modules/containers/stack-rollback.sh   lists a stack's snapshots, or rolls its data back to one
 modules/containers/stack-watch.sh  the crash watcher's loop: posts container crashes to Discord
 stacks/hello/                      the example stack: compose.yml, and default.nix declaring it
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
@@ -190,6 +194,8 @@ tests/compose-stack.nix            VM test: stacks as units, slices and limits, 
 tests/compose-stack.py             its test script
 tests/compose-check.nix            flake check: compose files under stacks/ against ADR 0006, with a failing fixture per rule
 tests/compose-check/               one compose file per rule the check must reject, and one it must pass
+tests/stack-data.nix               VM test: data subvolumes and owners, nightly snapshots and hooks, retention, rollback; controls without each guard
+tests/stack-data.py                its test script
 tests/stack-watch.nix              flake check: the crash watcher's quiet posts and pings at several crash rates
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
@@ -228,6 +234,8 @@ by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
 | `just vm` | boot the nuc config in a local VM; log in as below; quit with ctrl-a then x |
 | `just vm-secrets` | prove sops-nix decrypts in a VM; exits non-zero on failure |
 | `just vm-test-tcg <test>` | run one VM test under TCG (Tiny Code Generator) software emulation, without KVM, e.g. `disk-tpm` when it fails locally before Linux starts (#80) |
+| `just snapshot <stack>` | snapshot a stack's data now, kept until deleted ([data-layout.md](docs/runbooks/data-layout.md)) |
+| `just rollback <stack> [snapshot]` | list a stack's snapshots, or roll its data back to one ([data-layout.md](docs/runbooks/data-layout.md)) |
 | `just deploy` | emergency deploy of the current checkout to the nuc; comin deploys `main` by itself ([deploy.md](docs/runbooks/deploy.md)) |
 | `just secrets-edit <file>` | edit an encrypted secret, re-encrypting on save |
 | `just secrets-show <file>` | print a secret without opening an editor |
@@ -276,7 +284,7 @@ does not re-encrypt anything on its own.
 | [0. Workstation and repo foundations](https://github.com/alexCranfield/nixos-homeserver/milestone/1) | Done; the machine user for bot pull requests (#61) remains |
 | [1. Bare-metal install and base OS](https://github.com/alexCranfield/nixos-homeserver/milestone/2) | Done: installed 2026-10-18, wiped and reinstalled from the runbook 2026-10-19; follow-ups open |
 | [2. GitOps, updates, rollback](https://github.com/alexCranfield/nixos-homeserver/milestone/3) | Live: self-deploy (#16), weekly updates (#17), reboot window (#18), rollback drill (#19) and alerting (#20). Open: whether to auto-merge update pull requests (#17, due late November) and two comin bugs (#110, #123) |
-| [3. Containers, observability, backups](https://github.com/alexCranfield/nixos-homeserver/milestone/4) | Started: Docker is live (#22); Compose stacks run as systemd units, with public ports declared in Nix and enforced by the firewall (#23). Next: the data layout (#24) |
+| [3. Containers, observability, backups](https://github.com/alexCranfield/nixos-homeserver/milestone/4) | Started: Docker is live (#22); Compose stacks run as systemd units, with public ports declared in Nix and enforced by the firewall (#23). Each stack's data has its own subvolume, nightly snapshots and a one-command rollback (#24). Next: observability (#25) |
 | [4. Game servers](https://github.com/alexCranfield/nixos-homeserver/milestone/5) | Planned |
 | [5. Local LLMs](https://github.com/alexCranfield/nixos-homeserver/milestone/6) | Planned |
 | [6. Development environment](https://github.com/alexCranfield/nixos-homeserver/milestone/7) | Planned |

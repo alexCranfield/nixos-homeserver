@@ -170,6 +170,14 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 3.3 (#24): a stack's data directory is a btrfs subvolume
+        # owned by the stack's fixed user, and a plain directory in its place
+        # fails the data unit.
+        stack-data = import ./tests/stack-data.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
         # Ticket 3.2 (#23): compose files under stacks/ publish only declared
         # ports, and mount neither the Docker socket nor anything outside
         # their stack's data directory (ADR 0006).

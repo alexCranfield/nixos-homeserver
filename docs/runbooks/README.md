@@ -17,12 +17,12 @@ Operational procedures, written as tickets are completed.
 - [deploy.md](deploy.md) — comin pulling `main`, checking it, the manual deploy (ticket 2.1)
 - [docker.md](docker.md) — rootful Docker: `sudo docker`, ports on loopback by default, logs, prune, storage (ticket 3.1)
 - [stacks.md](stacks.md) — Compose stacks as units: adding one, public ports and their log, what the check rejects, crash alerts (ticket 3.2)
+- [data-layout.md](data-layout.md) — `/srv/data/<stack>` subvolumes, the ID convention, the nightly snapshot, `just snapshot` and `just rollback` (ticket 3.3)
 - [hardware.md](hardware.md) — the live USB, assembly, BIOS settings and the hardware survey (ticket 1.1; the record fills in when it closes)
 
 ## Planned
 
 Not yet written. Each arrives with the ticket named.
 
-- `data-layout.md` (ticket 3.3) — `/srv/data` conventions and ownership
 - `game-ops.md` (ticket 4.4) — broadcasts, restarts, restoring a world
 - `new-game-server.md` (ticket 4.6) — adding another game
