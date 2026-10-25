@@ -253,6 +253,35 @@ with subtest("a stopped stack stays stopped after rollback"):
     assert marker() == "one"
     machine.succeed("systemctl start stack-keeper.service")
 
+with subtest("a failed start after the swap prints where the old data is and how to put it back"):
+    machine.succeed(f"echo before > {MARKER}")
+    snap = manual_snapshot()
+    machine.succeed(f"echo replaced > {MARKER}")
+    # A drop-in that makes the stack's start fail.
+    machine.succeed("mkdir -p /run/systemd/system/stack-keeper.service.d")
+    machine.succeed("printf '[Service]\\nExecStartPre=/run/current-system/sw/bin/false\\n' > /run/systemd/system/stack-keeper.service.d/fail.conf")
+    machine.succeed("systemctl daemon-reload")
+    kept_before = set(before_rollbacks())
+    machine.sleep(1)
+    status, out = machine.execute(f"stack-rollback keeper {snap} --yes 2>&1")
+    assert status != 0, out
+    (kept,) = set(before_rollbacks()) - kept_before
+    assert f"{SNAPS}/{kept}" in out, out
+    assert "now holds the snapshot you chose, but the stack did not start" in out, out
+    assert "systemctl start stack-keeper" in out, out
+    assert marker() == "before"
+    assert machine.succeed(f"cat {SNAPS}/{kept}/marker").strip() == "replaced"
+    # The printed commands put the replaced data back.
+    cmds = [l.strip() for l in out.splitlines() if l.startswith("  btrfs subvolume")]
+    assert len(cmds) == 2, out
+    machine.succeed("systemctl stop stack-keeper.service || true")
+    for c in cmds:
+        machine.succeed(c)
+    assert marker() == "replaced"
+    machine.succeed("rm /run/systemd/system/stack-keeper.service.d/fail.conf")
+    machine.succeed("systemctl daemon-reload")
+    machine.succeed("systemctl start stack-keeper.service")
+
 with subtest("unknown stack or snapshot changes nothing"):
     machine.succeed(f"echo four > {MARKER}")
     before = names()

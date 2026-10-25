@@ -36,27 +36,35 @@ list() {
   fi
   printf '%-40s %10s\n' "snapshot of $stack" "exclusive"
   for name in "${names[@]}"; do
-    size=$(btrfs filesystem du -s "$root/$stack/$name" | awk 'NR == 2 { print $2 }')
+    # A failing du must not end the listing: the size shows as ?.
+    size=$(btrfs filesystem du -s "$root/$stack/$name" | awk 'NR == 2 { print $2 }') || size=
     printf '%-40s %10s' "$name" "${size:-?}"
     if differs "$stack" "$name"; then printf '  config differs'; fi
     printf '\n'
   done
 }
 
-# State for the failure message: set once the current data is kept.
-kept="" dir="" stack="" was_active=0 rollback_done=0
+# State for the failure message: `kept` is set once the current data is kept;
+# `swapped` once $dir holds the chosen snapshot; `finished` at the end.
+kept="" dir="" stack="" was_active=0 swapped=0 finished=0
 
 on_exit() {
   local rc=$?
-  if [ "$rc" -ne 0 ] && [ -n "$kept" ] && [ "$rollback_done" = 0 ]; then
-    cat >&2 <<MSG
-stack-rollback failed. Your data from before the rollback is in
-  $kept
-To put it back (the first line only if $dir exists), with the stack stopped:
-  btrfs subvolume delete $dir
-  btrfs subvolume snapshot $kept $dir
-Then: systemctl start stack-$stack
-MSG
+  if [ "$rc" -ne 0 ] && [ -n "$kept" ] && [ "$finished" = 0 ]; then
+    {
+      echo "stack-rollback failed."
+      if [ "$swapped" = 1 ]; then
+        echo "$dir now holds the snapshot you chose, but the stack did not start."
+      fi
+      echo "Your data from before the rollback is in"
+      echo "  $kept"
+      echo "To put it back (the first line only if $dir exists), with the stack stopped:"
+      echo "  btrfs subvolume delete $dir"
+      echo "  btrfs subvolume snapshot $kept $dir"
+      if [ "$was_active" = 1 ]; then
+        echo "Then: systemctl start stack-$stack"
+      fi
+    } >&2
   fi
   exit "$rc"
 }
@@ -89,13 +97,18 @@ main() {
     list "$stack"
     return 0
   fi
-  # Only a name in the listing: not a path, not a .config.
+  # Only a name in the listing: one line (grep reads newlines as several
+  # patterns), not a path, not a .config.
+  case $snap in
+    *$'\n'*) echo "bad snapshot name" >&2; exit 1 ;;
+  esac
   # (Not `grep -q` in a pipe: it can exit early and fail the pipeline.)
   all_snapshot_names "$stack" | grep -xF -- "$snap" > /dev/null || {
     echo "$stack has no snapshot $snap; run stack-rollback $stack to list them" >&2
     exit 1
   }
   local from=$root/$stack/$snap
+  [ -d "$from" ] || { echo "$from is not a directory" >&2; exit 1; }
 
   echo "Plan for $stack:"
   echo "  1. stop stack-$stack"
@@ -133,20 +146,38 @@ main() {
   exec 9> "/run/lock/stack-$stack.lock"
   flock -w 900 9 || { echo "could not get the lock of $stack in 15 minutes" >&2; restart_if_active; exit 1; }
 
-  local before
+  # Something may have started the stack since the stop; never swap data
+  # under running containers.
+  local running
+  running=$(docker compose -p "$stack" ps -q) || {
+    echo "could not ask docker whether $stack is running, nothing was changed" >&2
+    restart_if_active
+    exit 1
+  }
+  if [ -n "$running" ]; then
+    echo "$stack has running containers again after the stop, nothing was changed" >&2
+    restart_if_active
+    exit 1
+  fi
+
+  local before keep
   before=before-rollback-$(now)
-  if ! { btrfs subvolume snapshot -r "$dir" "$root/$stack/$before" && copy_config "$stack" "$root/$stack/$before"; }; then
+  keep=$root/$stack/$before
+  if ! { btrfs subvolume snapshot -r "$dir" "$keep" && copy_config "$stack" "$keep"; }; then
+    # Nothing else has changed yet: remove what was half made.
+    btrfs subvolume delete "$keep" > /dev/null 2>&1 || true
+    rm -rf "$keep.config"
     echo "could not keep the current data, nothing was changed" >&2
     restart_if_active
     exit 1
   fi
-  kept=$root/$stack/$before
+  kept=$keep
 
   btrfs subvolume delete "$dir"
   btrfs subvolume snapshot "$from" "$dir"
   chown "$uid:$gid" "$dir"
   chmod 0750 "$dir"
-  rollback_done=1
+  swapped=1
   exec 9>&-
 
   if [ "$was_active" = 1 ]; then
@@ -154,6 +185,7 @@ main() {
   else
     echo "stack-$stack was stopped, so it stays stopped"
   fi
+  finished=1
   echo "Rolled back $stack to $snap."
   echo "The data from before is kept in $kept (configuration in $kept.config)."
   echo "Once you are happy, delete it with:"

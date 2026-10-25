@@ -74,6 +74,7 @@ let
       pkgs.btrfs-progs
       pkgs.coreutils
       pkgs.diffutils
+      pkgs.docker
       pkgs.jq
       pkgs.systemd
       pkgs.util-linux
