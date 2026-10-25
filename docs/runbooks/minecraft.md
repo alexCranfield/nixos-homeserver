@@ -86,7 +86,8 @@ fail the same way (not tested), and Docker keeps retrying. Once it is back,
 1. Find the new file on the pack's CurseForge Files tab. Its ID is the last
    part of the file's page address.
 2. Change `CF_FILE_ID` in `compose.yml` and the version in this runbook and
-   in [game-access.md](game-access.md).
+   in [game-access.md](game-access.md), and in any illustrated guide kept
+   for friends outside this repo.
 3. Merge. The deploy recreates the container, which installs the new pack
    over the old one. The world stays; mods the new version dropped are
    removed, and their blocks with them.
@@ -120,3 +121,7 @@ kills it, by which time everything is saved.
 | Event | Result |
 |---|---|
 | Timing run before merge | 2026-10-25, on the nuc, a throwaway container with the stack's image, pack and settings, no published port, removed afterwards. Image pull 10 s. First start: 400 mods downloaded and 26 client-only mods skipped by the image's own list, none needing a manual download; Forge 47.4.0 installed; healthy after 146 s (the server's own `Done` 33 s). Memory with nobody on: 14.46 GiB, so the limit went from 15 to 18 GiB. `save-off`, `save-all flush` (4 s) and `save-on` all exited 0. Stop 56 s, exit code 0, world saved after 8 s. Second start healthy after 96 s, pack and Forge reported already installed. The real unit's first run, with the sops secrets and the stack's user, is the deploy: recorded below when it happens. An earlier attempt with a made-up whitelist name stopped at `Could not resolve user from Playerdb` |
+| First deploy | 2026-10-25, comin deployed #147 (`bc84335`). The container started at 17:26:09 UTC and was healthy at 17:28:31 (142 s), within the unit's 15 minutes; no failed units. `/srv/data/minecraft` a subvolume owned `stack-minecraft` 750; the API key file `stack-minecraft` 0400 and `.env` root 0400; the container runs as `uid=40001`. `server.properties`: `white-list`, `enforce-whitelist` and `online-mode` true; the whitelist held one name. 25565 listened on `0.0.0.0` |
+| Port reachability | From the workstation, 25565 on the nuc's LAN address timed out, and the nuc logged `stack-port drop IN=lan0`. Over Tailscale it also timed out, with no drop logged: the tailnet's live policy then granted the nuc `tcp:22` only (its packet filter, from `tailscale debug netmap`), so Tailscale refused it first. Adding `tcp:25565` to the policy, as [tailscale.md](tailscale.md) shows, is part of #135's checks |
+| First manual snapshot | 17:30:04, `manual-2026-10-25T173004Z`, exit 0, `ro=true`. The server's log, all at 17:30:04: `Automatic saving is now disabled`, `Saved the game`, `Automatic saving is now enabled` |
+| Restart | `systemctl restart stack-minecraft` returned after 102 s, active. A new container (`577d4d51b7fd` became `cd9709db767c`), the same world seed (`4723322516846976875`) before and after, and the pack and Forge reported already installed, nothing downloaded |
