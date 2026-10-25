@@ -182,9 +182,10 @@ So a container that keeps crashing is reported at least every 10 minutes,
 and pings you at most every 10 minutes while it crashes three times or more
 in that time.
 
-A stack stopped on purpose, or a deploy that restarts it, does not count. The
-watcher reconnects after Docker restarts; a crash during those seconds is
-restarted but not posted.
+A stack stopped on purpose, or a deploy that restarts it, does not count. When
+Docker restarts, the watcher waits for it and reconnects rather than exiting,
+since a unit that fails during a deploy fails the deploy (#143); a crash
+during those seconds is restarted but not posted.
 
 ## Record
 

@@ -262,15 +262,23 @@ with subtest("stopping a stack is not a crash"):
 with subtest("the watcher survives a Docker restart"):
     # A fresh window, so the next crash posts again.
     nuc.succeed("rm /var/lib/stack-watch/other/other-web-1*")
-    restarts = int(nuc.succeed("systemctl show -P NRestarts stack-other-watch.service"))
+    nrestarts = "systemctl show -P NRestarts stack-other-watch.service"
+    waits = "journalctl -u stack-other-watch.service -o cat | grep -c 'waiting for Docker'"
+    restarts = int(nuc.succeed(nrestarts))
+    waited = int(nuc.succeed(f"{waits} || true"))
     nuc.succeed("systemctl restart docker.service")
     nuc.wait_until_succeeds("docker info >/dev/null", timeout=60)
+    # It waits for Docker rather than exiting, so systemd never restarts it:
+    # a restart is a failure, and one during a switch fails the deploy (#143).
+    # Either outcome ends the wait; the assertion tells them apart.
     nuc.wait_until_succeeds(
-        f"test $(systemctl show -P NRestarts stack-other-watch.service) -gt {restarts}"
-        " && systemctl is-active stack-other-watch.service",
+        f"test $({waits}) -gt {waited} || test $({nrestarts}) -gt {restarts}",
         timeout=60,
     )
     time.sleep(5)
+    after = int(nuc.succeed(nrestarts))
+    assert after == restarts, (restarts, after)
+    nuc.succeed("systemctl is-active stack-other-watch.service")
     kill("other-web-1")
     nuc.wait_until_succeeds("test $(grep -l 'other-web-1 crashed' /tmp/webhook/*.json | wc -l) -ge 3", timeout=60)
     posts = crash_posts("other-web-1")
