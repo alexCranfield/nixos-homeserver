@@ -67,10 +67,11 @@ follow_events() {
 
 while :; do
   # In the background, so `set -e` still holds inside it; only its ending is
-  # tolerated.
+  # tolerated. The status tells a failure in the loop from Docker stopping.
   follow_events &
-  wait $! || true
-  echo "docker events ended; waiting for Docker" >&2
+  status=0
+  wait $! || status=$?
+  echo "docker events ended (status $status); waiting for Docker" >&2
   sleep 1
   until docker info >/dev/null 2>&1; do sleep 2; done
 done
