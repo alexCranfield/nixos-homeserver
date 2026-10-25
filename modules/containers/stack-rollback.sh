@@ -61,6 +61,7 @@ on_exit() {
       echo "To put it back, with the stack stopped:"
       if [ "$swapped" = 1 ]; then
         echo "(first, as the failed start may have left containers running on the new data)"
+        echo "  systemctl stop stack-$stack"
         echo "  docker ps -aq --filter label=com.docker.compose.project=$stack | xargs -r docker rm -f"
       fi
       echo "(the first btrfs line only if $dir exists)"
@@ -190,6 +191,12 @@ main() {
   kept=$keep
 
   btrfs subvolume delete "$dir"
+  # A deploy reloading the data unit now would have made an empty $dir, and
+  # the snapshot would land inside it.
+  if [ -e "$dir" ]; then
+    echo "$dir exists again after the delete (something recreated it)" >&2
+    exit 1
+  fi
   btrfs subvolume snapshot "$from" "$dir"
   chown "$uid:$gid" "$dir"
   chmod 0750 "$dir"
@@ -199,7 +206,10 @@ main() {
   if [ "$was_active" = 1 ]; then
     systemctl start "stack-$stack"
   else
-    echo "stack-$stack was stopped, so it stays stopped"
+    local state
+    state=$(systemctl is-active "stack-$stack" 2> /dev/null) || true
+    echo "stack-$stack was not running (state: ${state:-unknown}), so it was not started."
+    echo "To start it: systemctl start stack-$stack"
   fi
   finished=1
   echo "Rolled back $stack to $snap."
@@ -211,7 +221,9 @@ main() {
 # After a failure before anything changed: release the lock, then restart.
 restart_if_active() {
   exec 9>&-
-  if [ "$was_active" = 1 ]; then systemctl start "stack-$stack" || true; fi
+  if [ "$was_active" = 1 ]; then
+    systemctl start "stack-$stack" || echo "restarting stack-$stack failed; start it with: systemctl start stack-$stack" >&2
+  fi
 }
 
 main "$@"

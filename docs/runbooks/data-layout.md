@@ -30,7 +30,10 @@ fail silently later. The failure posts to Discord when notifications are on
 ([notifications.md](notifications.md)). The data unit is wanted by
 `multi-user.target` even for a stack with `autoStart = false`, so every stack
 with data gets its subvolume. The stack requires it, so stopping the data
-unit by hand stops the stack.
+unit by hand stops the stack. Removing a stack's `dataDir` from the config
+does the same at the next deploy: switching stops the removed data unit, the
+old `Requires=` takes the stack down, and it comes back with
+`multi-user.target`, so expect one `down` and one `up`.
 
 ## Ownership
 
@@ -68,7 +71,10 @@ homeserver.stacks.hello = {
 `stack-<stack>-snapshot.timer` runs at 09:30 UTC every day: about 3:30am
 Mountain (2:30am in winter), 10:30am UK (9:30am in winter), and before the
 Tuesday 10:00 UTC reboot window. A run missed because the nuc was off
-happens at the next boot (`Persistent`).
+happens at the next boot (`Persistent`). That run can start alongside the
+stack's first start, which holds the lock during image pulls; if the
+snapshot's 900 second wait runs out it fails and alerts, and it runs again
+the next night.
 
 Each run, in `stack-<stack>-snapshot.service`:
 
@@ -130,7 +136,8 @@ start under the new configuration. Then, if you confirm:
 3. It deletes `/srv/data/<stack>` and makes a writable copy of the chosen
    snapshot there, with the stack's owner and mode.
 4. It starts the stack again, if it was running when you began. A stack that
-   was stopped stays stopped.
+   was not running (stopped, or `failed` after a bad update) is not started:
+   it says its state and how to start it.
 5. It prints what it kept and the line that deletes it.
 
 It aborts with nothing changed, and restarts the stack if it was running, if
@@ -140,9 +147,11 @@ lock in 15 minutes, if it cannot keep the current data, or if the
 refuses a name that is not in the listing.
 
 If it fails after keeping the data, it prints the recovery steps: a
-`docker ps -aq --filter label=com.docker.compose.project=<stack> | xargs -r
-docker rm -f` line when the data was already swapped (a failed start may have
-left containers running on the new data), then the `btrfs subvolume delete`
+`systemctl stop stack-<stack>` line (so a deploy cannot start the unit while
+you restore) and then a `docker ps -aq --filter
+label=com.docker.compose.project=<stack> | xargs -r docker rm -f` line when
+the data was already swapped (a failed start may have left containers running
+on the new data), then the `btrfs subvolume delete`
 and `btrfs subvolume snapshot` lines that put `before-rollback-<time>` back,
 then `systemctl start stack-<stack>` if the stack was running. Run them on
 the nuc as root.
@@ -210,7 +219,7 @@ just snapshot hello
 ssh ops@nuc sudo touch /srv/data/hello/after
 just rollback hello                      # note the manual-* name
 just rollback hello manual-<UTC time>
-ssh ops@nuc ls /srv/data/hello           # `before` only
+ssh ops@nuc sudo ls /srv/data/hello      # `before` only
 ```
 
 Then delete the `before-rollback-*` and `manual-*` it left.

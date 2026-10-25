@@ -142,13 +142,19 @@ let
           example = "docker exec minecraft rcon-cli save-off";
           description = ''
             Shell run on the host as root just before each snapshot, such as
-            to flush a running server's data to disk.
+            to flush a running server's data to disk. It runs while the
+            stack's lock is held, so it must not start or reload the stack's
+            unit: that would wait 600 seconds and fail.
           '';
         };
         postCommand = lib.mkOption {
           type = lib.types.nullOr lib.types.lines;
           default = null;
-          description = "Shell run as root after each snapshot, to undo the pre-command.";
+          description = ''
+            Shell run as root after each snapshot, to undo the pre-command.
+            Like the pre-command it runs while the stack's lock is held, so it
+            must not start or reload the stack's unit.
+          '';
         };
       };
       autoStart = lib.mkOption {

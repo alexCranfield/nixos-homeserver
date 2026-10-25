@@ -275,6 +275,10 @@ with subtest("a failed start after the swap prints where the old data is and how
     cmds = [l.strip() for l in out.splitlines() if l.startswith("  btrfs subvolume")]
     assert len(cmds) == 2, out
     # The first step stops anything the failed start left running.
+    stop = [l.strip() for l in out.splitlines() if l.startswith("  systemctl stop stack-keeper")]
+    assert len(stop) == 1, out
+    assert out.index(stop[0]) < out.index("docker ps -aq"), out
+    machine.succeed(stop[0])
     (down,) = [l.strip() for l in out.splitlines() if l.startswith("  docker ps -aq")]
     machine.succeed(down)
     machine.succeed("systemctl stop stack-keeper.service || true")
@@ -289,17 +293,22 @@ with subtest("a before-rollback name already taken aborts and leaves that snapsh
     machine.succeed(f"echo taken > {MARKER}")
     snap = manual_snapshot()
     machine.succeed(f"echo current > {MARKER}")
-    # Take every name the run could pick in the next two and a half minutes
-    # (the stop alone takes seconds under emulation), holding the current data.
+    # Take every second the run could pick in the next two and a half minutes
+    # (the stop alone takes seconds under emulation), holding the current
+    # data. The base time is read once, so the window has no gaps.
     old = set(before_rollbacks())
+    window = 152
     machine.succeed(
+        "b=$(date +%s); "
         "for i in $(seq -1 150); do "
-        "t=$(date -u -d \"@$(( $(date +%s) + i ))\" +%Y-%m-%dT%H%M%SZ); "
+        "t=$(date -u -d \"@$((b + i))\" +%Y-%m-%dT%H%M%SZ); "
         f"btrfs subvolume snapshot -r /srv/data/keeper {SNAPS}/before-rollback-$t > /dev/null; "
         "done"
     )
     planted = sorted(set(before_rollbacks()) - old)
-    assert len(planted) >= 100, planted
+    # Contiguous: one name per second of the window, none skipped.
+    assert len(planted) == window, (len(planted), planted)
+    print(f"planted {len(planted)} contiguous before-rollback names, {planted[0]} .. {planted[-1]}")
     before = names()
     status, out = machine.execute(f"stack-rollback keeper {snap} --yes 2>&1")
     assert status != 0, out
