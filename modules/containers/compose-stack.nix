@@ -29,7 +29,8 @@
 #    published port before the NixOS input rules see it, and NixOS's forward
 #    chain accepts whatever Docker redirected. The `stack-ports` table runs
 #    first and drops any redirected connection to a port no stack declares,
-#    or arriving anywhere but `publicInterface`, logging each new connection
+#    or arriving anywhere but the port's own `interface` (`publicInterface`
+#    unless set; game ports use `tailscale0`, ADR 0011), logging each new connection
 #    either way. The input rules open nothing for them: IPv4 traffic to a
 #    published port never takes the input path, and opening it there would
 #    let IPv6 in through docker-proxy (ADR 0006: public ports are IPv4 only).
@@ -79,6 +80,17 @@ let
         example = [ "203.0.113.7/32" ];
         description = "IPv4 addresses or ranges allowed in; null lets anyone in.";
       };
+      interface = lib.mkOption {
+        type = lib.types.str;
+        default = config.homeserver.publicInterface;
+        defaultText = lib.literalExpression "config.homeserver.publicInterface";
+        example = "tailscale0";
+        description = ''
+          The only interface the port is admitted from. Game ports use
+          `tailscale0`, so friends reach them through Tailscale sharing and
+          nothing reaches them from the LAN (ADR 0011).
+        '';
+      };
     };
   };
 
@@ -104,7 +116,7 @@ let
         type = lib.types.listOf portType;
         default = [ ];
         description = ''
-          Ports open to `homeserver.publicInterface`, IPv4 only. The compose
+          Ports open on their `interface`, IPv4 only. The compose
           file must publish each as `0.0.0.0:<port>:<container port>`.
         '';
       };
@@ -206,7 +218,7 @@ let
     p:
     let
       match =
-        ''ct state new ct status dnat iifname "${config.homeserver.publicInterface}"''
+        ''ct state new ct status dnat iifname "${p.interface}"''
         + " meta l4proto ${p.protocol} ct original proto-dst ${toString p.port}"
         + lib.optionalString (
           p.allowedSources != null
@@ -272,7 +284,7 @@ in
     publicInterface = lib.mkOption {
       type = lib.types.str;
       default = "lan0";
-      description = "The interface public ports are open on.";
+      description = "The interface a public port is open on unless it sets its own.";
     };
     stacksManifest = lib.mkOption {
       type = lib.types.attrs;

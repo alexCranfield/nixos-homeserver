@@ -2,7 +2,10 @@
 
 Admin access to the nuc goes over a Tailscale tailnet, a private network
 between your own devices (ADR (Architecture Decision Record) 0005). Ticket 1.5
-(#12). The configuration is `modules/base/tailscale.nix`.
+(#12). The configuration is `modules/base/tailscale.nix`. Friends reach the
+game servers over it too, through Tailscale's machine sharing (ADR 0011,
+ticket 4.0, #135): see "Sharing the nuc with a friend" below, and
+[game-access.md](game-access.md) for the friend's side.
 
 ## How it fits together
 
@@ -11,8 +14,12 @@ between your own devices (ADR (Architecture Decision Record) 0005). Ticket 1.5
   not used, so a login still needs the ops key, even from a device already on
   the tailnet.
 - **Port 22 is open on `tailscale0`.** Every other port is closed to the
-  tailnet by the firewall, as to the LAN (local area network), with one
-  exception below.
+  tailnet by the firewall, as to the LAN (local area network), with two
+  exceptions: the peer API below, and game ports.
+- **Game ports are admitted from `tailscale0` only.** A game stack declares
+  each port with `interface = "tailscale0"`, and the `stack-ports` table
+  admits it from there and drops it from the LAN ([stacks.md](stacks.md)).
+  The access policy decides who on the tailnet gets that far.
 - **`tailscaled` answers one port itself: its peer API** (application
   programming interface). It listens on a random high port on the tailnet
   address, for Taildrop and similar features. `tailscaled` handles those
@@ -67,10 +74,20 @@ Once, before #14. Menu names are from the admin console at
    "grants": [
      // Your own devices reach each other as before.
      {"src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["*"]},
-     // They reach the nuc on SSH only.
-     {"src": ["autogroup:member"], "dst": ["tag:server"], "ip": ["tcp:22"]},
+     // They reach the nuc on SSH and the game ports.
+     {"src": ["autogroup:member"], "dst": ["tag:server"], "ip": ["tcp:22", "tcp:25565"]},
+     // Everyone the nuc is shared with: the game ports and nothing else.
+     {"src": ["autogroup:shared"], "dst": ["tag:server"], "ip": ["tcp:25565"]},
    ],
    ```
+
+   The two game rules arrived with ticket 4.0 (#135). `tcp:25565` is
+   Minecraft (#28). Each game server adds its own ports to both rules, for
+   example `udp:8211` for Palworld, and nothing else does. Your own devices
+   need them because the LAN path is closed to games (ADR 0011).
+   `autogroup:shared` is Tailscale's selector for "every user who accepted a
+   share", valid as a source on every plan (Tailscale's grants syntax
+   reference, checked 2026-10-24), so no friend's email goes in the policy.
 
    The default rule is `"src": ["*"], "dst": ["*"]`, under `grants` or, in
    an older tailnet, `acls`; delete it. Nothing names `tag:server` as a
@@ -82,8 +99,8 @@ Once, before #14. Menu names are from the admin console at
    Tailscale SSH, which nothing here uses (Windows and Android cannot serve
    it), and an empty list means nobody could log in through it even if it
    were turned on by mistake. A `"tests"` section with your login email, for
-   example `{"src": "<email>", "accept": ["tag:server:22"], "deny":
-   ["tag:server:80"]}`, makes the console refuse later edits that would break
+   example `{"src": "<email>", "accept": ["tag:server:22",
+   "tag:server:25565"], "deny": ["tag:server:80"]}`, makes the console refuse later edits that would break
    the rules; it needs the real email, as a made-up one is no member. Done
    2026-10-18.
 
@@ -101,6 +118,41 @@ Once, before #14. Menu names are from the admin console at
 
    The key goes straight into sops (`just secrets-edit tailscale.yaml`, see
    [secrets.md](secrets.md)), never into a file or a chat.
+
+## Sharing the nuc with a friend
+
+A share makes the nuc appear in the friend's own tailnet, and nothing else of
+yours. They need a Tailscale account of their own, on any login it offers
+(Google, Microsoft, Apple, GitHub and others), and Tailscale installed
+([game-access.md](game-access.md) walks them through it).
+
+**Share.** In the admin console, Machines, open the nuc's menu and choose
+Share. Under Share by email, add the friend's email: they get a single-use
+invite link. Or, under Copy invite link, copy one and send it to them
+yourself; leave Reusable link off, so one link adds one person, and treat
+it like a password. An unused link expires after 30 days. Once they accept,
+their avatar and email show in the Share dialog, the nuc is listed in their
+Tailscale app, and the policy's `autogroup:shared` rule lets them reach the
+game ports.
+
+**Tell them the address**: `nuc.<tailnet name>.ts.net`, the full name. A
+shared machine does not answer to its short name in the friend's tailnet.
+Its 100.x address there is usually the nuc's own, but Tailscale gives it
+another if that address is taken in their tailnet, so for a fallback they
+read it from their own app rather than from you.
+
+**Revoke.** Machines, the nuc's Share option, then the friend's menu and
+Revoke invite. That works for an accepted share too: they can no longer reach
+the nuc, and coming back takes a new invite. (Tailscale's documentation
+does not say how quickly a session already running drops; check it at
+#135's close.)
+
+**Limits.** A share does not count as a user of your tailnet (the Personal
+plan allows six), and Tailscale's sharing documentation gives no cap on how
+many people a machine can be shared with (checked 2026-10-24). A friend who
+is sent an invite to the tailnet instead, from the Users page, becomes a user
+with access to everything the policy gives `autogroup:member`, SSH included:
+use Share, never Invite users.
 
 ## Joining the workstation and the phone
 
@@ -199,3 +251,24 @@ control server, on both. It checks that:
 
 The real tailnet, Tailscale's own policy engine and the tag's key expiry are
 not covered: they live in Tailscale's service, and are checked at #14.
+
+`nix build .#checks.x86_64-linux.game-access` (ticket 4.0, #135) runs four:
+the nuc with a stand-in game server on 25565 declared for `tailscale0`, a
+`friend` on another network, a `member` on the LAN, and Headscale. Headscale
+has no machine sharing, so the friend is a tailnet user held to the same rule
+the real policy gives `autogroup:shared`, and the member to the
+`autogroup:member` rule. It checks that:
+
+- the friend reaches the game port over the tailnet by name, and the
+  connection arrives on `tailscale0`, where `stack-ports` counts and logs it;
+- a scan from the friend finds the game port and not 22, which the nuc's
+  firewall opens on `tailscale0`, so the policy is what closes it;
+- the member reaches 22 and the game port over the tailnet, but not the game
+  port at the nuc's LAN address, which `stack-ports` drops and logs from
+  `lan0`, although the LAN path itself answers;
+- as negative controls, without the friend's rule the friend is shut out
+  while the member is not, and with the port declared for `lan0` the LAN
+  reaches it and the tailnet does not.
+
+The real share, `autogroup:shared` itself and the friend's game client are
+checked on the live tailnet at #135's close.

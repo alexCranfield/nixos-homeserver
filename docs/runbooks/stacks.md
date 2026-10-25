@@ -45,7 +45,7 @@ journalctl CONTAINER_NAME=<name>-web-1 # a container's own output
        composeFile = ./compose.yml;
        services = [ "server" ];          # the compose file's service names
        envSecret = "minecraft-env";      # optional
-       publicPorts = [ { port = 25565; } ];
+       publicPorts = [ { port = 25565; interface = "tailscale0"; } ];  # a game port (ADR 0011)
        dataDir = "/srv/data/minecraft";  # a btrfs subvolume, made before the stack starts
        uid = 40010;                      # 40000-40999, unique; the container runs as it
        gid = 40010;
@@ -70,10 +70,13 @@ if they disagree:
 - the stack declares it in `publicPorts`.
 
 "Public" here means reachable from another machine, not from the internet:
-the router forwards nothing, and game servers reach friends over the tailnet,
-once ticket 4.0 (#135) lets a port be declared for `tailscale0` (ADR,
-Architecture Decision Record, 0011). Until then a declared port is admitted
-from `lan0` only, as below.
+the router forwards nothing. Each declared port is admitted from one
+interface, its `interface`, which is `lan0` unless set. Game ports set
+`interface = "tailscale0"`, as ADR (Architecture Decision Record) 0011
+decided: friends reach them through Tailscale sharing, and nothing reaches
+them from the LAN (local area network). [tailscale.md](tailscale.md) has the
+access policy that limits what friends reach. A port open on both would be
+declared twice, once per interface.
 
 Public ports are IPv4 only (ADR 0006). A port
 published with no address binds to `127.0.0.1` ([docker.md](docker.md)), and
@@ -85,12 +88,12 @@ a published port before the NixOS input rules see it, so the `stack-ports`
 table sits on the forward path, where the redirected traffic goes, and for
 each new connection Docker redirected:
 
-- to a declared port, arriving on `lan0`, from an allowed source if the port
-  lists `allowedSources`: accepted and logged;
+- to a declared port, arriving on that port's `interface`, from an allowed
+  source if the port lists `allowedSources`: accepted and logged;
 - anything else: dropped and logged.
 
-So a declared port is open on the LAN (local area network) port only, not on
-the tailnet, and over IPv4 only: the input rules open nothing for it, so a
+So a declared port is open on its own interface only, `lan0` (the LAN port)
+or `tailscale0`, and over IPv4 only: the input rules open nothing for it, so a
 port Docker also publishes on `[::]` (served by `docker-proxy`, a host
 process) stays closed over IPv6, and the check rejects `[::]` anyway. `allowedSources` (IPv4 addresses or ranges) restricts a port to
 those sources; it is off unless set.
@@ -101,8 +104,8 @@ Discord; when a deploy reloads it, the failure fails the deploy instead,
 which comin posts, and the unit stays active.
 
 One case is blocked by design: a container reaching another stack's public
-port through the nuc's own LAN address arrives from a Docker bridge, not
-`lan0`, and is dropped. Containers that need each other share a Compose
+port through the nuc's own address arrives from a Docker bridge, not the
+port's interface, and is dropped. Containers that need each other share a Compose
 network instead.
 
 ### Reading the access log
