@@ -12,7 +12,12 @@ let
 
   stub = name: text: pkgs.writeShellScriptBin name text;
   stubs = [
-    (stub "docker" ''for _ in $(seq "$(wc -l < "$TIMES")"); do echo '${event}'; done'')
+    # `docker events` prints the deaths and ends, as when Docker stops; the
+    # script then asks `docker info` whether Docker is back, and that ends it.
+    (stub "docker" ''
+      if [ "$1" = info ]; then kill -TERM "$PPID"; exit 1; fi
+      for _ in $(seq "$(wc -l < "$TIMES")"); do echo '${event}'; done
+    '')
     # The next time from $TIMES, one per call.
     (stub "date" ''
       n=$(( $(cat "$WORK/calls" 2>/dev/null || echo 0) + 1 ))
@@ -76,7 +81,10 @@ pkgs.runCommand "stack-watch"
       export WORK=$(mktemp -d) STATE_DIRECTORY=$(mktemp -d)
       export TIMES=$WORK/times
       for i in $(seq 0 ${toString (c.count - 1)}); do echo $((1000000 + i * ${toString c.cadence})); done > "$TIMES"
-      bash -euo pipefail ${../modules/containers/stack-watch.sh} game webhook role 600 nuc icon > /dev/null
+      # 143: stopped by the `docker info` stub, waiting for Docker (#143).
+      status=0
+      bash -euo pipefail ${../modules/containers/stack-watch.sh} game webhook role 600 nuc icon > /dev/null || status=$?
+      [ "$status" -eq 143 ] || { echo "${c.name}: exit $status, not 143" >&2; exit 1; }
       posts=$(tr '\n' ' ' < "$WORK/posts" | sed 's/ $//')
       echo "${c.name}: $posts"
       [ "$posts" = "${c.expected}" ] || { echo "${c.name}: expected ${c.expected}" >&2; exit 1; }
