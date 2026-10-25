@@ -163,9 +163,9 @@ is an input. No check takes one today.)
 The workflow now carries the store between runs in GitHub's Actions cache,
 with `nix-community/cache-nix-action`:
 
-- **Restore**, before `just check`: the cache saved under this commit if
-  there is one (a re-run), otherwise the newest this branch can see. GitHub
-  looks on the pull request's own branch first, then on `main`.
+- **Restore**, before `just check`: the newest cache this branch can see,
+  which for a re-run is the earlier attempt's. GitHub looks on the pull
+  request's own branch first, then on `main`.
 - **Trim**, after it, even when a check failed: every check whose output
   exists is made a garbage-collection root, and everything else is deleted
   from the store. A failed check has no output, so it runs again next time.
@@ -178,8 +178,14 @@ with `nix-community/cache-nix-action`:
   changed since, more each time, until the parsing is fixed. A wrong parse
   can only leave a check out of the cache, never make one pass: an output
   exists only once its check has built.
-- **Save** the trimmed store under `nix-Linux-<commit>`, unless it holds
-  nothing the restored cache lacked, as after a docs-only change.
+- **Save** the trimmed store under `nix-Linux-<commit>-<attempt>`, unless it
+  holds nothing the restored cache lacked, as after a docs-only change. The
+  attempt number is there because a saved cache cannot be replaced. On
+  2026-10-24 the first run on `main` after #138 failed on the Tailscale flake
+  (#130) and saved a 0.19 GB partial store under its commit; the re-run
+  passed but could not save, so `main` kept the partial cache. With the
+  attempt in the key, a re-run restores the failed attempt's cache, builds
+  what it lacks, and saves its own.
 
 GitHub keeps a branch's caches to that branch: a pull request can read
 `main`'s cache but writes only its own, so code under review cannot plant a

@@ -61,12 +61,16 @@ jobs:
       # touches. Each run saves under its own key; the newest cache this ref
       # can see is restored, its own branch's first, then main's. GitHub keeps
       # caches per branch, so a pull request reads main's but cannot write it.
+      # The key carries the attempt: a cache cannot be overwritten, so a
+      # re-run of a failed job (a flaky test, #130) would otherwise find its
+      # commit's key taken by the failed attempt's partial store and save
+      # nothing, leaving that partial cache in use until the next commit.
       - name: Restore Nix store
         id: nix-cache
         if: ${{ env.USE_CACHE == 'true' }}
         uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
-          primary-key: nix-${{ runner.os }}-${{ github.sha }}
+          primary-key: nix-${{ runner.os }}-${{ github.sha }}-${{ github.run_attempt }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
 
       # The installer's Nix only enters the dev shell. The checks run with the
