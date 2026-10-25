@@ -721,3 +721,39 @@ little, since one public port makes the server public. Here every player was
 on a PC, phone or Steam Deck, so Tailscale won (ADR 0011).
 
 </details>
+
+### Is the Minecraft whitelist needed if friends come in over Tailscale?
+
+*2026-10-24*
+
+> Do we need the user whitelist if we're using tailscale?
+
+<details>
+<summary>Answer</summary>
+
+Yes, keep it. The two controls guard different things. Tailscale decides
+which devices can reach the port. The whitelist decides which Minecraft
+accounts can join once they get there.
+
+Why Tailscale alone is not enough:
+
+- A share goes to a Tailscale account, not to a person. Every device signed
+  into that account can reach the port: a sibling on the same PC, an old
+  laptop, a device that has been compromised.
+- Your own tailnet devices reach the game ports too, since #135 opens them
+  (the LAN path is closed). Anyone you add to the tailnet later could join.
+- It is a second barrier if a share or the access policy is ever set up
+  wrongly. One mistake then does not open the world to everyone who can
+  reach the port.
+- The whitelist only means something with `online-mode` on. Mojang then
+  checks each name against a real account. Without it, anyone who reaches
+  the port can type a whitelisted name and join as that player.
+
+The limit: neither stops an exploit in the server software before login,
+since the connection is open by then. Keeping the port to people you have
+shared with is Tailscale's job.
+
+The cost is one extra step per friend: share the machine, then `whitelist
+add`. ADR 0011 item 5 already requires it.
+
+</details>
