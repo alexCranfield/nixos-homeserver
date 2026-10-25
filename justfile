@@ -84,6 +84,14 @@ vm-secrets:
 deploy:
     nixos-rebuild switch --flake '.#nuc' --target-host ops@nuc --sudo
 
+# Snapshot a stack's data now, kept until deleted (docs/runbooks/data-layout.md).
+snapshot stack:
+    ssh ops@nuc sudo stack-snapshot {{ stack }} manual
+
+# List a stack's snapshots, or roll its data back to one (docs/runbooks/data-layout.md).
+rollback stack *snapshot:
+    ssh -t ops@nuc sudo stack-rollback {{ stack }} {{ snapshot }}
+
 # Edit an encrypted secret in $EDITOR, re-encrypting on save.
 secrets-edit file:
     EDITOR="${EDITOR:-vi}" sops 'secrets/{{ file }}'

@@ -87,7 +87,8 @@
                     mountpoint = "/home";
                     mountOptions = compressed;
                   };
-                  # Container data, /srv/data/<stack> (ticket 3.3, #24).
+                  # Container data, one subvolume per stack at /srv/data/<stack> (ticket 3.3,
+                  # #24). A snapshot of this one would not include them.
                   "@srv" = {
                     mountpoint = "/srv";
                     mountOptions = compressed;
@@ -102,7 +103,8 @@
                     mountpoint = "/var/lib/docker";
                     mountOptions = compressed;
                   };
-                  # Snapshots of the others, for the backups in ticket 3.5 (#26).
+                  # Snapshots of each stack's data, /.snapshots/stacks/<stack> (ticket 3.3,
+                  # #24), which the backups in ticket 3.5 (#26) copy off the machine.
                   # A snapshot is not itself snapshotted, so it lives apart.
                   "@snapshots" = {
                     mountpoint = "/.snapshots";
