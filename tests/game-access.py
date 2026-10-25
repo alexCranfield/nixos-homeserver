@@ -12,6 +12,33 @@ def open_ports(out):
     return sorted(int(p) for p in re.findall(r"^(\d+)/tcp\s+open\b", out, re.M))
 
 
+def accepted(iface):
+    # Packets stack-ports' accept rule for the game port on `iface` has
+    # counted. A connection the tailnet policy blocks never reaches it.
+    rules = nuc.succeed("nft list chain inet stack-ports forward")
+    m = re.search(
+        rf'iifname "{iface}" meta l4proto tcp ct original proto-dst {GAME_PORT} counter packets (\d+)',
+        rules,
+    )
+    assert m, rules
+    return int(m.group(1))
+
+
+def scan(machine, ports, expected):
+    # As in tests/tailscale.py (#109): on CI a dropped probe can hide an open
+    # port, so scan up to three times until the expected ports show. Any
+    # other open port fails at once.
+    for attempt in range(1, 4):
+        out = machine.succeed(f"nmap -Pn -p {ports} {NUC_TS_IP}")
+        print(out)
+        found = set(open_ports(out))
+        assert found <= set(expected), f"unexpected open ports: {sorted(found - set(expected))}"
+        if found == set(expected):
+            return
+        print(f"scan {attempt} found {sorted(found)}")
+    raise AssertionError(f"expected {sorted(expected)}, found {sorted(found)}")
+
+
 def game(ip):
     # busybox's httpd answers 404 for /, which is enough: something answered.
     return f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 5 http://{ip}:{GAME_PORT}/"
@@ -87,29 +114,19 @@ with subtest("a friend reaches the game port over the tailnet, by name"):
 with subtest("the connection came in on tailscale0 and stack-ports admitted it"):
     # Docker redirects the published port, so the connection takes the
     # forward path, where stack-ports' accept rule for tailscale0 counts it.
-    rules = nuc.succeed("nft list chain inet stack-ports forward")
-    print(rules)
-    accept = re.search(
-        rf'iifname "tailscale0" meta l4proto tcp ct original proto-dst {GAME_PORT} counter packets (\d+)',
-        rules,
-    )
-    assert accept and int(accept.group(1)) > 0, rules
-    accepted = nuc.succeed(f"journalctl -k --grep 'stack-port accept {GAME_PORT}/tcp' -o cat")
-    print(accepted)
-    assert "IN=tailscale0" in accepted, accepted
+    assert accepted("tailscale0") > 0
+    accept_log = nuc.succeed(f"journalctl -k --grep 'stack-port accept {GAME_PORT}/tcp' -o cat")
+    print(accept_log)
+    assert "IN=tailscale0" in accept_log, accept_log
 
 with subtest("a friend reaches nothing else the policy controls"):
     # 22 is open in the nuc's firewall on tailscale0, so a filtered 22 here is
     # the policy, not the firewall. The peer API is left out: the policy
     # cannot close it (tests/tailscale.py).
-    out = friend.succeed(f"nmap -Pn -p 22,80,443,{GAME_PORT} {NUC_TS_IP}")
-    print(out)
-    assert open_ports(out) == [GAME_PORT], open_ports(out)
+    scan(friend, f"22,80,443,{GAME_PORT}", [GAME_PORT])
 
 with subtest("a member reaches SSH and the game over the tailnet"):
-    out = member.succeed(f"nmap -Pn -p 22,{GAME_PORT} {NUC_TS_IP}")
-    print(out)
-    assert open_ports(out) == [22, GAME_PORT], open_ports(out)
+    scan(member, f"22,{GAME_PORT}", [22, GAME_PORT])
     member.succeed(f"{game(NUC_TS_IP)} | grep -q 404")
 
 with subtest("nobody reaches the game port from the LAN"):
@@ -128,6 +145,11 @@ with subtest("nobody reaches the game port from the LAN"):
 with subtest("negative control: without its rule, the friend is shut out"):
     set_policy([MEMBER_RULE])
     friend.wait_until_fails(f"{game(NUC_TS_IP)} | grep -q 404", timeout=60)
+    # Blocked by the policy, inside tailscaled: the attempt never reaches the
+    # nuc's forward path, so stack-ports counts nothing for it.
+    before = accepted("tailscale0")
+    friend.fail(f"{game(NUC_TS_IP)} | grep -q 404")
+    assert accepted("tailscale0") == before, (before, accepted("tailscale0"))
     # The member's rule still works, so the failure is the friend's rule.
     member.succeed(f"{game(NUC_TS_IP)} | grep -q 404")
     set_policy([MEMBER_RULE, FRIEND_RULE])
@@ -138,3 +160,9 @@ with subtest("negative control: the port on lan0 opens the LAN and shuts the tai
     nuc.wait_until_succeeds(f"nft list chain inet stack-ports forward | grep -q 'iifname \"lan0\".*proto-dst {GAME_PORT}'")
     member.wait_until_succeeds(f"{game(LAN_IP)} | grep -q 404", timeout=60)
     friend.fail(f"{game(NUC_TS_IP)} | grep -q 404")
+    # Refused by stack-ports, not lost on the way: the drop is logged from
+    # tailscale0 (DPT is the container's port, as above).
+    nuc.wait_until_succeeds(
+        "journalctl -k --grep 'stack-port drop' -o cat | grep -q 'IN=tailscale0 .*DPT=8080 '",
+        timeout=30,
+    )

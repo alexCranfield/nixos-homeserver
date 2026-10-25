@@ -147,9 +147,10 @@ the nuc, and coming back takes a new invite. (Tailscale's documentation
 does not say how quickly a session already running drops; check it at
 #135's close.)
 
-**Limits.** A share does not count as a user of your tailnet (the Personal
-plan allows six), and Tailscale's sharing documentation gives no cap on how
-many people a machine can be shared with (checked 2026-10-24). A friend who
+**Limits.** A share does not count as a user of your tailnet (Tailscale's
+"Inviting users vs sharing devices" page), the Personal plan allows six users
+(the pricing page), and the sharing page gives no cap on how many people a
+machine can be shared with (all checked 2026-10-24). A friend who
 is sent an invite to the tailnet instead, from the Users page, becomes a user
 with access to everything the policy gives `autogroup:member`, SSH included:
 use Share, never Invite users.

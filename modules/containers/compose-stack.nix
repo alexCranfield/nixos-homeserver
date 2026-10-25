@@ -81,7 +81,11 @@ let
         description = "IPv4 addresses or ranges allowed in; null lets anyone in.";
       };
       interface = lib.mkOption {
-        type = lib.types.str;
+        # A typo would build and match nothing: the port silently closed.
+        type = lib.types.enum [
+          config.homeserver.publicInterface
+          "tailscale0"
+        ];
         default = config.homeserver.publicInterface;
         defaultText = lib.literalExpression "config.homeserver.publicInterface";
         example = "tailscale0";

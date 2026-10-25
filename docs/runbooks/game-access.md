@@ -51,14 +51,15 @@ with a keyboard if you have one:
    exit
    ```
 
-   `tailscale up` shows a QR code: scan it with your phone and sign in there.
+   `tailscale up` shows a QR (quick response) code: scan it with your phone and sign in there.
    The script's own instructions add `--ssh`, which lets other devices on
    your Tailscale log in to your Deck. You don't need that, so leave it out.
 
-4. Return to Game Mode. Tailscale starts by itself when the Deck boots.
+4. Return to Game Mode. The script's page says Tailscale then starts by
+   itself when the Deck boots, Game Mode included.
 
-If it stops working after a SteamOS update, go back to Desktop Mode and run
-the same lines again. To remove it, run `cd ~/deck-tailscale` and then
+If it stops working, for example after a SteamOS update, go back to Desktop
+Mode and run the same lines again. To remove it, run `cd ~/deck-tailscale` and then
 `sudo bash uninstall.sh`.
 
 ## 2. Accept the invite
@@ -85,8 +86,12 @@ own app, since it can differ from what someone else sees.
    that another VPN hasn't taken over.
 2. **Is `nuc` in your Tailscale app's machine list?** If not, the invite
    wasn't accepted, or was revoked: ask Alex.
-3. **Try the `100.x.y.z` address** instead of the name.
-4. **Still nothing?** Tell Alex which device, which game, and what the error
+3. **Try the `100.x.y.z` address** instead of the name. The name also
+   leads to an IPv6 address, which the game servers don't answer on, and
+   some games try that first and give up.
+4. **Do you use Tailscale for something else too?** If your own tailnet has
+   an access policy, it must let your device connect out to `nuc`.
+5. **Still nothing?** Tell Alex which device, which game, and what the error
    says. The server may be down for an update.
 
 Your account on the game itself is separate: Minecraft also keeps a
