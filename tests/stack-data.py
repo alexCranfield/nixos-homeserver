@@ -288,6 +288,10 @@ with subtest("a failed start after the swap prints where the old data is and how
     assert out.index(stop[0]) < out.index("docker ps -aq"), out
     as_ops(stop[0])
     (down,) = [l.strip() for l in out.splitlines() if l.startswith("  sudo docker ps -aq")]
+    # Running it cannot tell: with nothing to remove, xargs -r runs nothing.
+    assert down == (
+        "sudo docker ps -aq --filter label=com.docker.compose.project=keeper | sudo xargs -r docker rm -f"
+    ), down
     as_ops(down)
     machine.succeed("systemctl stop stack-keeper.service || true")
     # Control: without its sudo, the first line fails as ops.
