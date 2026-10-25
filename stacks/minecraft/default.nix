@@ -16,7 +16,9 @@
     uid = 40001;
     gid = 40001;
     # MEMORY in compose.yml is the heap; the rest is the JVM's own memory.
-    resources.memoryMax = "15G";
+    # The pack used 14.5 GiB idle, before anyone joined (docs/runbooks/
+    # minecraft.md has the timing run).
+    resources.memoryMax = "18G";
     # Writes paused and flushed, so the snapshot holds a whole world. A
     # stopped server is snapshotted without these.
     snapshot = {

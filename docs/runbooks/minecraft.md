@@ -15,7 +15,7 @@ snapshots in [data-layout.md](data-layout.md).
 | The world, mods and configuration | `/srv/data/minecraft`, owned by `stack-minecraft` (40001) |
 | The port | TCP (Transmission Control Protocol) 25565, admitted from `tailscale0` only |
 | Secrets | `secrets/minecraft.yaml`: `CF_API_KEY`, the CurseForge API key, mounted into the container as a file; `env`, the whitelist, as the stack's `.env` |
-| Memory | a 12 GB heap (`MEMORY`), and 15 GB for the whole stack (`resources.memoryMax`) |
+| Memory | a 12 GB heap (`MEMORY`), and 18 GB for the whole stack (`resources.memoryMax`) |
 
 ## What is pinned
 
@@ -94,15 +94,21 @@ is whole: before it, `rcon-cli save-off` and `save-all flush`; after,
 `save-on`. A stopped server is snapshotted without them. If the pre-command
 fails, no snapshot is taken and the unit fails, which posts to Discord.
 
-## The first start
+## Start and stop times
 
 The first start downloads the pack's mods, installs Forge and makes the
-world, all inside `up --wait`, which the unit allows 15 minutes. The
+world, all inside `up --wait`, which the unit allows 15 minutes; the
 container's healthcheck waits up to 15 minutes before counting failures.
+Measured on the nuc, both are far inside that (the record below). comin
+puts no limit of its own on a deploy, so the unit's is the one that counts.
 
-The record below has the measured times.
+Stopping takes about a minute. The world is saved within seconds, then the
+server waits on a thread that one of the pack's mods leaves running, until
+it exits on its own; `stop_grace_period` allows 75 seconds before Docker
+kills it, by which time everything is saved.
 
 ## Record
 
 | Event | Result |
 |---|---|
+| Timing run before merge | 2026-10-25, on the nuc, a throwaway container with the stack's image, pack and settings, no published port, removed afterwards. Image pull 10 s. First start: 400 mods downloaded and 26 client-only mods skipped by the image's own list, none needing a manual download; Forge 47.4.0 installed; healthy after 146 s (the server's own `Done` 33 s). Memory with nobody on: 14.46 GiB, so the limit went from 15 to 18 GB. `save-off`, `save-all flush` (4 s) and `save-on` all exited 0. Stop 56 s, exit code 0, world saved after 8 s. Second start healthy after 96 s, pack and Forge reported already installed. An earlier attempt with a made-up whitelist name stopped at `Could not resolve user from Playerdb` |
