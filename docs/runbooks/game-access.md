@@ -87,8 +87,8 @@ own app, since it can differ from what someone else sees.
 2. **Is `nuc` in your Tailscale app's machine list?** If not, the invite
    wasn't accepted, or was revoked: ask Alex.
 3. **Try the `100.x.y.z` address** instead of the name. The name also
-   leads to an IPv6 address, which the game servers don't answer on, and
-   some games try that first and give up.
+   leads to an IPv6 address, which the game servers don't answer on (they
+   are IPv4 only), and a game that tries that first may give up.
 4. **Do you use Tailscale for something else too?** If your own tailnet has
    an access policy, it must let your device connect out to `nuc`.
 5. **Still nothing?** Tell Alex which device, which game, and what the error
