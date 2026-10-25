@@ -153,8 +153,8 @@ label=com.docker.compose.project=<stack> | xargs -r docker rm -f` line when
 the data was already swapped (a failed start may have left containers running
 on the new data), then the `btrfs subvolume delete`
 and `btrfs subvolume snapshot` lines that put `before-rollback-<time>` back,
-then `systemctl start stack-<stack>` if the stack was running. Run them on
-the nuc as root.
+then `systemctl start stack-<stack>` if the stack was running. Each line
+starts with `sudo`, so they can be pasted as they are into `ssh ops@nuc`.
 
 ### An update gone wrong
 
@@ -181,7 +181,7 @@ named. A deploy that arrives during it waits for the lock.
 
 Kept snapshots use disk only for blocks that changed since, but nothing
 removes `manual-*` or `before-rollback-*` for you. Free-space alerts are #27.
-Delete a snapshot, and its saved files, as root on the nuc:
+Delete a snapshot, and its saved files, on the nuc:
 
 ```bash
 sudo btrfs subvolume delete /.snapshots/stacks/<stack>/before-rollback-<time>
@@ -228,4 +228,6 @@ Then delete the `before-rollback-*` and `manual-*` it left.
 
 | Check | Result |
 |---|---|
-| First deploy on the nuc | |
+| First deploy on the nuc | 2026-10-25, comin deployed #139 (`3a8ef3c`). At 03:04:09 UTC `stack-hello-data` created `@srv/data/hello`, owned `40000:40000`, mode `750`. `stack-hello` was reloaded, not restarted: its ActiveEnterTimestamp stayed `Sat 2026-10-24 17:52:10 UTC` and its container `cdf3a4b17645`. `stack-hello-snapshot.timer` was set for 09:30 UTC; no failed units ([#24 comment](https://github.com/alexCranfield/nixos-homeserver/issues/24#issuecomment-6393209813)) |
+| Practice rollback | 2026-10-25 04:01 UTC, by Alex: `just snapshot hello` took `manual-2026-10-25T040110Z`; a `marker` file was then added to `/srv/data/hello`; `just rollback hello manual-2026-10-25T040110Z` emptied the data again, kept the replaced data read-only as `before-rollback-2026-10-25T040155Z` (holding `marker`), and restarted the stack (new container `c2aa3465d9e0`). Its printed clean-up line had no `sudo`, which `ops` needs for `btrfs`; the printed lines now carry it, and `tests/stack-data.py` shows the line failing as `ops` without it ([#24 comment](https://github.com/alexCranfield/nixos-homeserver/issues/24#issuecomment-6393228324)). At 16:01 UTC the `before-rollback-*` snapshot was no longer on the nuc |
+| First nightly snapshot | 2026-10-25 09:30:01 UTC: `stack-hello-snapshot.service` succeeded, logging `snapshotting /srv/data/hello to /.snapshots/stacks/hello/2026-10-25T093001Z` and `done`. `btrfs property get` shows `ro=true`; the `.config` copy is beside it. Next run Mon 2026-10-26 09:30 UTC |

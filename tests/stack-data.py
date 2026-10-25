@@ -3,6 +3,7 @@
 
 import datetime
 import re
+import shlex
 
 start_all()
 machine.wait_for_unit("multi-user.target")
@@ -199,6 +200,11 @@ def before_rollbacks():
     return sorted(n for n in names() if n.startswith("before-rollback-") and not n.endswith(".config"))
 
 
+def as_ops(cmd):
+    # A printed line run as the admin, not root: without its sudo it fails.
+    return machine.succeed(f"su - ops -c {shlex.quote(cmd)}")
+
+
 with subtest("rollback restores the earlier file and keeps the replaced data"):
     machine.succeed("systemctl is-active stack-keeper.service")
     machine.succeed(f"echo one > {MARKER}")
@@ -212,7 +218,8 @@ with subtest("rollback restores the earlier file and keeps the replaced data"):
     (kept,) = set(before_rollbacks()) - kept_before
     assert machine.succeed(f"cat {SNAPS}/{kept}/marker").strip() == "two"
     assert machine.succeed(f"ls -A {SNAPS}/{kept}.config").split() == ["compose.yml", "override.yml"]
-    assert f"btrfs subvolume delete {SNAPS}/{kept}" in out, out
+    # With sudo, so it can be pasted into `ssh ops@nuc`.
+    assert f"  sudo btrfs subvolume delete {SNAPS}/{kept} && sudo rm -rf" in out, out
     machine.wait_until_succeeds("systemctl is-active stack-keeper.service")
     machine.succeed("btrfs subvolume show /srv/data/keeper")
     assert machine.succeed("stat -c '%u:%g %a' /srv/data/keeper").strip() == "40010:40010 750"
@@ -271,19 +278,26 @@ with subtest("a failed start after the swap prints where the old data is and how
     assert "systemctl start stack-keeper" in out, out
     assert marker() == "before"
     assert machine.succeed(f"cat {SNAPS}/{kept}/marker").strip() == "replaced"
-    # The printed commands put the replaced data back.
-    cmds = [l.strip() for l in out.splitlines() if l.startswith("  btrfs subvolume")]
+    # The printed commands put the replaced data back, run as ops, as when
+    # pasted into `ssh ops@nuc`.
+    cmds = [l.strip() for l in out.splitlines() if l.startswith("  sudo btrfs subvolume")]
     assert len(cmds) == 2, out
     # The first step stops anything the failed start left running.
-    stop = [l.strip() for l in out.splitlines() if l.startswith("  systemctl stop stack-keeper")]
+    stop = [l.strip() for l in out.splitlines() if l.startswith("  sudo systemctl stop stack-keeper")]
     assert len(stop) == 1, out
     assert out.index(stop[0]) < out.index("docker ps -aq"), out
-    machine.succeed(stop[0])
-    (down,) = [l.strip() for l in out.splitlines() if l.startswith("  docker ps -aq")]
-    machine.succeed(down)
+    as_ops(stop[0])
+    (down,) = [l.strip() for l in out.splitlines() if l.startswith("  sudo docker ps -aq")]
+    # Running it cannot tell: with nothing to remove, xargs -r runs nothing.
+    assert down == (
+        "sudo docker ps -aq --filter label=com.docker.compose.project=keeper | sudo xargs -r docker rm -f"
+    ), down
+    as_ops(down)
     machine.succeed("systemctl stop stack-keeper.service || true")
+    # Control: without its sudo, the first line fails as ops.
+    machine.fail(f"su - ops -c {shlex.quote(cmds[0].removeprefix('sudo '))}")
     for c in cmds:
-        machine.succeed(c)
+        as_ops(c)
     assert marker() == "replaced"
     machine.succeed("rm /run/systemd/system/stack-keeper.service.d/fail.conf")
     machine.succeed("systemctl daemon-reload")

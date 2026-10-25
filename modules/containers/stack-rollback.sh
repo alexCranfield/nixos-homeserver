@@ -61,14 +61,14 @@ on_exit() {
       echo "To put it back, with the stack stopped:"
       if [ "$swapped" = 1 ]; then
         echo "(first, as the failed start may have left containers running on the new data)"
-        echo "  systemctl stop stack-$stack"
-        echo "  docker ps -aq --filter label=com.docker.compose.project=$stack | xargs -r docker rm -f"
+        echo "  sudo systemctl stop stack-$stack"
+        echo "  sudo docker ps -aq --filter label=com.docker.compose.project=$stack | sudo xargs -r docker rm -f"
       fi
       echo "(the first btrfs line only if $dir exists)"
-      echo "  btrfs subvolume delete $dir"
-      echo "  btrfs subvolume snapshot $kept $dir"
+      echo "  sudo btrfs subvolume delete $dir"
+      echo "  sudo btrfs subvolume snapshot $kept $dir"
       if [ "$was_active" = 1 ]; then
-        echo "Then: systemctl start stack-$stack"
+        echo "Then: sudo systemctl start stack-$stack"
       fi
     } >&2
   fi
@@ -209,20 +209,20 @@ main() {
     local state
     state=$(systemctl is-active "stack-$stack" 2> /dev/null) || true
     echo "stack-$stack was not running (state: ${state:-unknown}), so it was not started."
-    echo "To start it: systemctl start stack-$stack"
+    echo "To start it: sudo systemctl start stack-$stack"
   fi
   finished=1
   echo "Rolled back $stack to $snap."
   echo "The data from before is kept in $kept (configuration in $kept.config)."
   echo "Once you are happy, delete it with:"
-  echo "  btrfs subvolume delete $kept && rm -rf $kept.config"
+  echo "  sudo btrfs subvolume delete $kept && sudo rm -rf $kept.config"
 }
 
 # After a failure before anything changed: release the lock, then restart.
 restart_if_active() {
   exec 9>&-
   if [ "$was_active" = 1 ]; then
-    systemctl start "stack-$stack" || echo "restarting stack-$stack failed; start it with: systemctl start stack-$stack" >&2
+    systemctl start "stack-$stack" || echo "restarting stack-$stack failed; start it with: sudo systemctl start stack-$stack" >&2
   fi
 }
 
