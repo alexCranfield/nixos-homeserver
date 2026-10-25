@@ -775,3 +775,39 @@ friend, a few times a year, against an extra lock that costs nothing at play
 time. Still worth keeping.
 
 </details>
+
+### Is it a risk to publish the guide for joining the game server?
+
+*2026-10-25*
+
+> I'm working on some tutorial docs now, should we host them on Github, or on Google Docs within the Discord? For some items is there a security risk havinbg the docs public? Like how to join the server? Or is there eniough gates (i.e. me manually adding users, machines etc.) that it's safe? I also have a lot of screenshots for a visual guide, so github might not be the best place
+
+<details>
+<summary>Answer</summary>
+
+Publishing how to join is safe, because knowing the steps lets no one in.
+Every gate is one Alex opens by hand: the Tailscale share (nothing faces
+the internet; only invited accounts reach the nuc), the whitelist (only
+named Minecraft accounts join) and `online-mode` (Mojang checks that each
+account is real). Keeping the method secret adds no protection;
+[game-access.md](../runbooks/game-access.md) is already public for that
+reason.
+
+What stays private is the specifics:
+
+- **Invite links**, which work like keys. Send them one to one, never in a
+  document or a shared channel.
+- **The server's full address** (`nuc.<tailnet name>.ts.net`) and its `100.x`
+  address. Neither lets anyone in, but there is no reason to publish them.
+- **Whatever screenshots show.** Crop or blur the address, IP addresses,
+  emails and account names, the machine list, QR (quick response) codes and
+  friends' player names.
+
+Where: a screenshot-heavy guide for friends suits a Google Doc linked from
+Discord better than the repo. It is easy to edit and lay out, friends need
+no GitHub, and images committed here stay in the history for good. Its cost
+is drift: when the pack version changes, the doc must change too, so the
+pack-update steps in [minecraft.md](../runbooks/minecraft.md) now name it.
+The repo keeps the short text guide, maintained with the code.
+
+</details>
