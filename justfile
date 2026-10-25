@@ -17,7 +17,13 @@ fmt:
 
 # Everything CI runs; .github/workflows/ci.yml calls this rather than restating it.
 check:
-    nix flake check
+    # Evaluate every output, then build the checks from their derivations in a
+    # second process. A plain `nix flake check` keeps all 10 GB of evaluation
+    # while the VM tests run, which ran the 16 GB CI runner out of memory
+    # (#141). The `^*` builds every output of each derivation; `set -f` keeps
+    # the shell from treating it as a glob.
+    nix flake check --no-build
+    set -f; drvs=$(nix eval --raw '.#checks.x86_64-linux' --apply 'cs: toString (map (c: c.drvPath + "^*") (builtins.attrValues cs))') && test -n "$drvs" && nix build --no-link $drvs
     nix build --no-link '.#nixosConfigurations.nuc.config.system.build.toplevel'
     nix fmt -- --ci
     # Indent width is left to editors: Markdown lists, the GPL (GNU General

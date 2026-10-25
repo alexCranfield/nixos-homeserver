@@ -15,8 +15,10 @@
 pkgs.testers.runNixOSTest {
   name = "reboot-window";
   node.specialArgs = { inherit inputs; };
-  # As in base-ssh.nix: the host sets `nixpkgs.hostPlatform`.
+  # As in base-ssh.nix: the host sets `nixpkgs.hostPlatform`, and every
+  # machine shares the test's `pkgs`.
   node.pkgsReadOnly = false;
+  defaults.nixpkgs.pkgs = pkgs;
 
   nodes.nuc = {
     imports = [ ../hosts/nuc ];

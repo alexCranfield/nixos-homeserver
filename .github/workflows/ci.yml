@@ -56,7 +56,7 @@ jobs:
             max-jobs = 2
 
       # The store from an earlier run (#137), so a check whose derivation is
-      # unchanged is already built and `nix flake check` skips it: a docs-only
+      # unchanged is already built and `just check` skips it: a docs-only
       # change builds nothing, and a code change reruns only the checks it
       # touches. Each run saves under its own key; the newest cache this ref
       # can see is restored, its own branch's first, then main's. GitHub keeps
@@ -97,14 +97,13 @@ jobs:
       # Everything else, such as build inputs and the dev shell, comes from
       # cache.nixos.org again, which keeps the cache small enough that the
       # repo's 10 GB limit does not evict main's. The derivations come from
-      # `nix flake check`'s own log ("checking derivation <name>" then
-      # "derivation evaluated to <drv>"), since evaluating the flake again
-      # takes three minutes. If a Nix update changes those lines and none are
+      # the log of `just check`'s `nix flake check --no-build` ("checking
+      # derivation <name>" then "derivation evaluated to <drv>"), rather than
+      # from a third evaluation of the flake. If a Nix update changes those
+      # lines and none are
       # found, the step warns and nothing is saved: later runs keep restoring
       # the last cache saved, and rerun whatever changed since. A check whose
-      # name contains a dot is never matched, so it is never cached. The check
-      # devshell-nix-matches-server always shows "not built": it does its work
-      # while the flake is evaluated, and its empty output is not built here.
+      # name contains a dot is never matched, so it is never cached.
       - name: Keep only built checks
         id: keep
         if: ${{ !cancelled() && env.USE_CACHE == 'true' }}

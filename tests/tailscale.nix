@@ -24,7 +24,9 @@
 }:
 let
   lanIp = "192.168.1.50";
-  keys = import "${pkgs.path}/nixos/tests/ssh-keys.nix" pkgs;
+  # `+`, not "${pkgs.path}/…": interpolating copies all of nixpkgs into the
+  # store, which `nix flake check --no-build` cannot do on a cold store (#141).
+  keys = import (pkgs.path + "/nixos/tests/ssh-keys.nix") pkgs;
   # As in nixpkgs' own headscale test: Tailscale talks to its control server
   # over HTTPS (HTTP over TLS, Transport Layer Security) only, so the
   # stand-in needs a certificate the others trust.
@@ -48,8 +50,10 @@ in
 pkgs.testers.runNixOSTest {
   name = "tailscale";
   node.specialArgs = { inherit inputs; };
-  # As in base-ssh.nix: the host sets `nixpkgs.hostPlatform`.
+  # As in base-ssh.nix: the host sets `nixpkgs.hostPlatform`, and every
+  # machine shares the test's `pkgs`.
   node.pkgsReadOnly = false;
+  defaults.nixpkgs.pkgs = pkgs;
 
   nodes.nuc =
     { config, ... }:
