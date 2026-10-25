@@ -1,5 +1,5 @@
 # The `minecraft` stack: see compose.yml. Ticket 4.1 (#28).
-{ config, ... }:
+{ config, lib, ... }:
 {
   homeserver.stacks.minecraft = {
     composeFile = ./compose.yml;
@@ -29,19 +29,23 @@
     };
   };
 
-  # The CurseForge API key the image downloads the pack with, mounted into
-  # the container as a compose secret and read as the stack's own user.
-  sops.secrets.minecraft-cf-api-key = {
-    sopsFile = ../../secrets/minecraft.yaml;
-    key = "CF_API_KEY";
-    owner = config.users.users.stack-minecraft.name;
-    restartUnits = [ "stack-minecraft.service" ];
-  };
+  # Only while the stack is declared: the VM tests that replace the host's
+  # stacks also drop its user, and have no secrets to decrypt.
+  sops.secrets = lib.mkIf (config.homeserver.stacks ? minecraft) {
+    # The CurseForge API key the image downloads the pack with, mounted into
+    # the container as a compose secret and read as the stack's own user.
+    minecraft-cf-api-key = {
+      sopsFile = ../../secrets/minecraft.yaml;
+      key = "CF_API_KEY";
+      owner = config.users.users.stack-minecraft.name;
+      restartUnits = [ "stack-minecraft.service" ];
+    };
 
-  # The stack's .env: dotenv lines, such as the whitelist, under the `env`
-  # key. Compose reads it as root, so it keeps sops-nix's default owner.
-  sops.secrets.minecraft-env = {
-    sopsFile = ../../secrets/minecraft.yaml;
-    key = "env";
+    # The stack's .env: dotenv lines, such as the whitelist, under the `env`
+    # key. Compose reads it as root, so it keeps sops-nix's default owner.
+    minecraft-env = {
+      sopsFile = ../../secrets/minecraft.yaml;
+      key = "env";
+    };
   };
 }

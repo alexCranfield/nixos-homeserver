@@ -66,6 +66,13 @@ the key, rather than running a server no one can join. To let someone
 in at once, before the merge, run `rcon-cli whitelist add <name>` as well;
 the next start drops them if the file does not list them.
 
+Check each name's spelling before merging. The image looks every name up
+online when the container starts, and a name it cannot find stops the
+start: the log shows `Could not resolve user from Playerdb: <name>`, the
+container exits, and Docker starts it again, over and over, which the crash
+watcher posts to Discord. This happened in the timing run before #28's
+merge, with a made-up name.
+
 ## Updating the pack
 
 1. Find the new file on the pack's CurseForge Files tab. Its ID is the last
