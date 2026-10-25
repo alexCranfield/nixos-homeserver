@@ -68,7 +68,33 @@ Open Alex's invite link and sign in with your Tailscale account. The server
 (`nuc`) then shows in your Tailscale app's list of machines, marked as shared
 with you. You can reach the game servers on it and nothing else.
 
-## 3. Connect
+## 3. Install the modpack (Minecraft)
+
+The Minecraft server runs the **All the Mods 9** modpack, version
+**1.1.1** (Minecraft Java Edition 1.20.1). You need exactly that version:
+a different one is refused when you join. You also need Minecraft Java
+Edition on a Microsoft account, and Alex adds your player name to the
+server's whitelist. Install the pack with one of these launchers:
+
+- **CurseForge app (Windows, macOS).** Install it from
+  [curseforge.com/download/app](https://www.curseforge.com/download/app),
+  choose Minecraft, search for All the Mods 9, open its page and install
+  version 1.1.1 from its list of files. The plain Install button takes the
+  newest, which may differ from the server's.
+- **Prism Launcher (Windows, macOS, Linux, Steam Deck).** Install it from
+  [prismlauncher.org](https://prismlauncher.org/); on a Steam Deck, from the
+  Discover store in Desktop Mode. Sign in with your Microsoft account, then
+  Add Instance, CurseForge, search for All the Mods 9 and pick version 1.1.1.
+  If Prism shows a list of mods whose authors block launchers from
+  downloading them, open each link, download the file in your browser, and
+  leave the list open: Prism picks the files up from your Downloads folder.
+
+The pack is large. Give Minecraft about 8 GB of memory in the launcher's
+settings for the instance or profile. On a Steam Deck, which has 16 GB in
+all, expect it to be slow; a lower render distance helps. To play in Game
+Mode, add Prism Launcher to Steam as a non-Steam game.
+
+## 4. Connect
 
 With Tailscale on, add the server in the game using the address Alex sent,
 the full `nuc.<something>.ts.net` (the short name `nuc` doesn't work on
