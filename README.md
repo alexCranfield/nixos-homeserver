@@ -228,7 +228,7 @@ by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
 |---|---|
 | `just` | list the targets |
 | `just fmt` | format every file in place |
-| `just check` | everything CI runs: `nix flake check`, build the closure, check formatting and `.editorconfig`, lint the workflows |
+| `just check` | everything CI runs: evaluate the flake, build the checks, build the closure, check formatting and `.editorconfig`, lint the workflows |
 | `just build` | build the nuc closure, print its store path |
 | `just iso` | build the live USB image, print its store path ([hardware.md](docs/runbooks/hardware.md)) |
 | `just vm` | boot the nuc config in a local VM; log in as below; quit with ctrl-a then x |

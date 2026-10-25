@@ -24,6 +24,11 @@ pkgs.testers.runNixOSTest {
   # The host sets `nixpkgs.hostPlatform`, as a real host must. The test
   # framework otherwise supplies a read-only `pkgs` and rejects that option.
   node.pkgsReadOnly = false;
+  # Hand every machine the test's `pkgs` anyway. Without it each machine, and
+  # each specialisation, imports its own copy of nixpkgs, and evaluating every
+  # check at once ran the CI runner out of memory (#141). The host sets no
+  # `nixpkgs.config` or overlays, so the machines come out the same.
+  defaults.nixpkgs.pkgs = pkgs;
 
   nodes.nuc = {
     imports = [ ../hosts/nuc ];

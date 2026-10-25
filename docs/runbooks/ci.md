@@ -13,8 +13,9 @@ Actions tab (`workflow_dispatch`). It checks out the repo, installs Nix, and run
 nix develop --command just check
 ```
 
-`just check` is the same target you run locally: `nix flake check`, a build of
-the nuc system closure, `nix fmt -- --ci`, and `editorconfig-checker`, which
+`just check` is the same target you run locally: `nix flake check --no-build`
+to evaluate every output, a build of every check in a second process (see
+"Evaluation and builds apart" below), a build of the nuc system closure, `nix fmt -- --ci`, and `editorconfig-checker`, which
 holds every file git does not ignore to `.editorconfig` (line endings, final
 newline, trailing whitespace, tabs). That includes untracked files, so a stray
 scratch file in the tree fails `just check` locally until it is removed or
@@ -56,7 +57,7 @@ On the workstation, `disk-tpm` often fails before the kernel prints anything
 The test then fails with `neither a prompt nor a boot` or a timeout, in
 whichever subtest booted the VM. Each boot is bounded at ten minutes. A
 hung boot shows as a single QEMU (Quick Emulator) process using a whole core.
-To give up sooner, stop the `nix flake check` client, which cancels the build;
+To give up sooner, stop the `nix build` client, which cancels the build;
 the QEMU process belongs to a Nix build user, so your own account cannot kill
 it directly. (Before #80 the first boot was unbounded and held the test for its
 one-hour limit.)
@@ -250,6 +251,30 @@ largest two (`docker`, 4 GB; `compose-stack`, 3 GB); the job timeout went from
 30 to 45 minutes to allow for the slower run. A runner killed this way shows no
 test failure in the log, only the shutdown message: look at which VM tests
 started just before it.
+
+**Evaluation and builds apart.** Two builds at a time was not the whole
+story. On 2026-10-25 `main` was stopped the same way twice (#141), with no
+more than two tests running. A run that sampled memory every 20 seconds
+showed why: evaluating the 15 checks took 15.9 GB and 1.5 GB of swap before
+any test started, and `nix flake check` kept that memory while it built
+them, so two VM tests booting on top left 113 MB free and the swap full.
+Disk never fell below 72 GB free. Two changes, measured on the workstation
+with caching off (`nix flake check --no-build --no-eval-cache`):
+
+- Eight tests set `node.pkgsReadOnly = false`, because the host sets
+  `nixpkgs.hostPlatform`. Without `nixpkgs.pkgs`, every machine and every
+  specialisation in them then imported its own copy of nixpkgs. They now
+  set `defaults.nixpkgs.pkgs = pkgs`, which took evaluation from 14.7 GB
+  to 10.4 GB (70 s to 50 s). No check's derivation changed, so nothing was
+  rebuilt and every test checks what it did before.
+- `just check` evaluates with `nix flake check --no-build`, whose process
+  exits, then reads the checks' derivations with a separate `nix eval`
+  (9.6 GB, about 45 s, also gone before anything builds) and builds them with
+  `nix build`, which evaluates nothing. The VM tests now have the runner's
+  memory to themselves, at the cost of evaluating the checks twice.
+
+If the runner is stopped again, a sampler like the one on #141 tells memory
+from disk in one run.
 
 **Actions pinned by commit hash.** `uses: owner/action@<40-character hash> #
 vX.Y.Z`. A tag can be moved to point at different code after it was reviewed; a
