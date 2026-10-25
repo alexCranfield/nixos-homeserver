@@ -7,7 +7,8 @@ services:
     # Java 17, which ATM9 (Minecraft 1.20.1, Forge) needs.
     image: itzg/minecraft-server:2026.10.0-java17
     # The stack's own ids, so the world on disk belongs to stack-minecraft.
-    # The image then skips its own switch from root to UID and GID.
+    # The image then skips its own switch from root to the UID and GID (user
+    # and group IDs) it is given.
     user: "${STACK_UID}:${STACK_GID}"
     environment:
       EULA: "TRUE"
@@ -18,7 +19,7 @@ services:
       # reinstalls the pack over the world on the next start.
       CF_FILE_ID: "7097953"
       CF_API_KEY_FILE: /run/secrets/cf-api-key
-      # Heap. The stack's memoryMax sits above it for the JVM's own use.
+      # Heap. The stack's memoryMax sits above it for the JVM's (Java virtual machine's) own use.
       MEMORY: 12G
       ONLINE_MODE: "TRUE"
       ENABLE_WHITELIST: "TRUE"

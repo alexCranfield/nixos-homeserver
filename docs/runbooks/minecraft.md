@@ -14,8 +14,8 @@ snapshots in [data-layout.md](data-layout.md).
 | The unit | `stack-minecraft.service`; the container is `minecraft-server-1` |
 | The world, mods and configuration | `/srv/data/minecraft`, owned by `stack-minecraft` (40001) |
 | The port | TCP (Transmission Control Protocol) 25565, admitted from `tailscale0` only |
-| Secrets | `secrets/minecraft.yaml`: `CF_API_KEY`, the CurseForge API key, mounted into the container as a file; `env`, the whitelist, as the stack's `.env` |
-| Memory | a 12 GB heap (`MEMORY`), and 18 GB for the whole stack (`resources.memoryMax`) |
+| Secrets | `secrets/minecraft.yaml`: `CF_API_KEY`, the CurseForge API (application programming interface) key, mounted into the container as a file; `env`, the whitelist, as the stack's `.env` |
+| Memory | a 12 GiB Java heap (`MEMORY=12G`), and 18 GiB for the whole stack (`resources.memoryMax`) |
 
 ## What is pinned
 
@@ -61,17 +61,25 @@ env: |
 Commit the file and merge. The changed secret reloads the stack, which
 recreates the container, and the list replaces the server's whitelist
 (`EXISTING_WHITELIST_FILE=SYNCHRONIZE`); `ENFORCE_WHITELIST` kicks anyone
-removed from it. A missing or empty `WHITELIST` fails the stack's start, naming
-the key, rather than running a server no one can join. To let someone
+removed from it. A missing or empty `WHITELIST` fails every compose command on the stack,
+stop included, naming the key, rather than running a server no one can
+join; restore the line to stop or start it again. To let someone
 in at once, before the merge, run `rcon-cli whitelist add <name>` as well;
 the next start drops them if the file does not list them.
 
 Check each name's spelling before merging. The image looks every name up
 online when the container starts, and a name it cannot find stops the
 start: the log shows `Could not resolve user from Playerdb: <name>`, the
-container exits, and Docker starts it again, over and over, which the crash
-watcher posts to Discord. This happened in the timing run before #28's
-merge, with a made-up name.
+container exits, and Docker starts it again, over and over. On a deploy or
+at boot the unit's failure is what posts to Discord; after a change to a
+running stack, the crash watcher posts the restarts, with the container's
+last log lines, names included. This happened in the timing run before
+#28's merge, with a made-up name.
+
+The same lookup needs Playerdb to be reachable. If the internet or Playerdb
+is down when the container starts, at boot say, the start is expected to
+fail the same way (not tested), and Docker keeps retrying. Once it is back,
+`sudo systemctl restart stack-minecraft`.
 
 ## Updating the pack
 
@@ -111,4 +119,4 @@ kills it, by which time everything is saved.
 
 | Event | Result |
 |---|---|
-| Timing run before merge | 2026-10-25, on the nuc, a throwaway container with the stack's image, pack and settings, no published port, removed afterwards. Image pull 10 s. First start: 400 mods downloaded and 26 client-only mods skipped by the image's own list, none needing a manual download; Forge 47.4.0 installed; healthy after 146 s (the server's own `Done` 33 s). Memory with nobody on: 14.46 GiB, so the limit went from 15 to 18 GB. `save-off`, `save-all flush` (4 s) and `save-on` all exited 0. Stop 56 s, exit code 0, world saved after 8 s. Second start healthy after 96 s, pack and Forge reported already installed. An earlier attempt with a made-up whitelist name stopped at `Could not resolve user from Playerdb` |
+| Timing run before merge | 2026-10-25, on the nuc, a throwaway container with the stack's image, pack and settings, no published port, removed afterwards. Image pull 10 s. First start: 400 mods downloaded and 26 client-only mods skipped by the image's own list, none needing a manual download; Forge 47.4.0 installed; healthy after 146 s (the server's own `Done` 33 s). Memory with nobody on: 14.46 GiB, so the limit went from 15 to 18 GiB. `save-off`, `save-all flush` (4 s) and `save-on` all exited 0. Stop 56 s, exit code 0, world saved after 8 s. Second start healthy after 96 s, pack and Forge reported already installed. The real unit's first run, with the sops secrets and the stack's user, is the deploy: recorded below when it happens. An earlier attempt with a made-up whitelist name stopped at `Could not resolve user from Playerdb` |

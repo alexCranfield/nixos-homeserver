@@ -15,7 +15,8 @@
     dataDir = "/srv/data/minecraft";
     uid = 40001;
     gid = 40001;
-    # MEMORY in compose.yml is the heap; the rest is the JVM's own memory.
+    # MEMORY in compose.yml is the heap; the rest is the JVM's (Java virtual
+    # machine's) own memory.
     # The pack used 14.5 GiB idle, before anyone joined (docs/runbooks/
     # minecraft.md has the timing run).
     resources.memoryMax = "18G";
@@ -24,6 +25,12 @@
     snapshot = {
       preCommand = ''
         set -e
+        # Running is not ready: after a crash or a reboot Docker restarts the
+        # server outside the stack's lock, and RCON (remote console) comes up
+        # only when it has loaded, which took 96 seconds in the timing run.
+        health() { docker inspect -f '{{.State.Health.Status}}' minecraft-server-1; }
+        for _ in $(seq 60); do [ "$(health)" = healthy ] && break; sleep 5; done
+        [ "$(health)" = healthy ]
         docker exec minecraft-server-1 rcon-cli save-off
         docker exec minecraft-server-1 rcon-cli save-all flush
       '';
@@ -34,7 +41,7 @@
   # Only while the stack is declared: the VM tests that replace the host's
   # stacks also drop its user, and have no secrets to decrypt.
   sops.secrets = lib.mkIf (config.homeserver.stacks ? minecraft) {
-    # The CurseForge API key the image downloads the pack with, mounted into
+    # The CurseForge API (application programming interface) key the image downloads the pack with, mounted into
     # the container as a compose secret and read as the stack's own user.
     minecraft-cf-api-key = {
       sopsFile = ../../secrets/minecraft.yaml;
