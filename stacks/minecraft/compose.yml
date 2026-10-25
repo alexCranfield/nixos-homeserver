@@ -23,8 +23,10 @@ services:
       ONLINE_MODE: "TRUE"
       ENABLE_WHITELIST: "TRUE"
       ENFORCE_WHITELIST: "TRUE"
-      # The list below replaces the server's at each start, so this file is
-      # the whole whitelist.
+      # Player names, comma-separated, from the stack's .env: the `env` key
+      # of secrets/minecraft.yaml, kept out of this public file. They replace
+      # the server's whitelist at each start, so that list is the whole of it.
+      WHITELIST: ${WHITELIST:?set WHITELIST in the env key of secrets/minecraft.yaml}
       EXISTING_WHITELIST_FILE: SYNCHRONIZE
       # RCON (remote console) stays inside the container: the snapshot hooks
       # use `rcon-cli` through `docker exec`, and nothing publishes its port.

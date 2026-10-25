@@ -14,7 +14,7 @@ snapshots in [data-layout.md](data-layout.md).
 | The unit | `stack-minecraft.service`; the container is `minecraft-server-1` |
 | The world, mods and configuration | `/srv/data/minecraft`, owned by `stack-minecraft` (40001) |
 | The port | TCP (Transmission Control Protocol) 25565, admitted from `tailscale0` only |
-| The CurseForge API key | `secrets/minecraft.yaml`, key `CF_API_KEY`, mounted into the container as a file |
+| Secrets | `secrets/minecraft.yaml`: `CF_API_KEY`, the CurseForge API key, mounted into the container as a file; `env`, the whitelist, as the stack's `.env` |
 | Memory | a 12 GB heap (`MEMORY`), and 15 GB for the whole stack (`resources.memoryMax`) |
 
 ## What is pinned
@@ -42,12 +42,29 @@ publishes its port, and the image makes a new password each time it starts.
 
 ### The whitelist
 
-`WHITELIST` in `compose.yml` lists the players allowed in, and
-`ENFORCE_WHITELIST` kicks anyone removed from it while online. The list is
-applied at each start, so a change reaches the server when the deploy
-recreates the container. To add someone at once, without a deploy, run
-`rcon-cli whitelist add <name>` too, and still add them to the file, or the
-next start drops them.
+The players allowed in are friends' names, so they are kept out of this
+public repo: they are the `WHITELIST` line under the `env` key of
+`secrets/minecraft.yaml`, which becomes the stack's `.env`. To change it, on
+the workstation:
+
+```bash
+sops secrets/minecraft.yaml
+```
+
+and edit the `env` key, which holds dotenv lines, names comma-separated:
+
+```yaml
+env: |
+  WHITELIST=FirstPlayer,SecondPlayer
+```
+
+Commit the file and merge. The changed secret reloads the stack, which
+recreates the container, and the list replaces the server's whitelist
+(`EXISTING_WHITELIST_FILE=SYNCHRONIZE`); `ENFORCE_WHITELIST` kicks anyone
+removed from it. A missing or empty `WHITELIST` fails the stack's start, naming
+the key, rather than running a server no one can join. To let someone
+in at once, before the merge, run `rcon-cli whitelist add <name>` as well;
+the next start drops them if the file does not list them.
 
 ## Updating the pack
 

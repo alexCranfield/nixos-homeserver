@@ -4,6 +4,7 @@
   homeserver.stacks.minecraft = {
     composeFile = ./compose.yml;
     services = [ "server" ];
+    envSecret = "minecraft-env";
     # Friends reach it only through Tailscale sharing (ADR 0011).
     publicPorts = [
       {
@@ -35,5 +36,12 @@
     key = "CF_API_KEY";
     owner = config.users.users.stack-minecraft.name;
     restartUnits = [ "stack-minecraft.service" ];
+  };
+
+  # The stack's .env: dotenv lines, such as the whitelist, under the `env`
+  # key. Compose reads it as root, so it keeps sops-nix's default owner.
+  sops.secrets.minecraft-env = {
+    sopsFile = ../../secrets/minecraft.yaml;
+    key = "env";
   };
 }
