@@ -180,6 +180,13 @@ pkgs.testers.runNixOSTest {
       ../modules/containers/docker.nix
       ../modules/containers/compose-stack.nix
     ];
+    # The rollback's printed commands are pasted into `ssh ops@nuc`, so the
+    # test runs them as an admin like the real one (modules/base/ssh.nix).
+    users.users.ops = {
+      isNormalUser = true;
+      extraGroups = [ "wheel" ];
+    };
+    security.sudo.wheelNeedsPassword = false;
     virtualisation.memorySize = 2048;
     virtualisation.diskSize = 4096;
     virtualisation.emptyDiskImages = [ 1024 ];

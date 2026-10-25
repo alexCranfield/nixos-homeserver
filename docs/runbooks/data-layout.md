@@ -153,8 +153,8 @@ label=com.docker.compose.project=<stack> | xargs -r docker rm -f` line when
 the data was already swapped (a failed start may have left containers running
 on the new data), then the `btrfs subvolume delete`
 and `btrfs subvolume snapshot` lines that put `before-rollback-<time>` back,
-then `systemctl start stack-<stack>` if the stack was running. Run them on
-the nuc as root.
+then `systemctl start stack-<stack>` if the stack was running. Each line
+starts with `sudo`, so they can be pasted as they are into `ssh ops@nuc`.
 
 ### An update gone wrong
 
@@ -228,4 +228,6 @@ Then delete the `before-rollback-*` and `manual-*` it left.
 
 | Check | Result |
 |---|---|
-| First deploy on the nuc | |
+| First deploy on the nuc | 2026-10-25, comin deployed #139 (`3a8ef3c`), then `d4dceab`. `stack-hello-data` created `@srv/data/hello`, owned `40000:40000`, mode `750`. `stack-hello` was reloaded, not restarted: its container `cdf3a4b17645` kept running. `stack-hello-snapshot.timer` set for 09:30 UTC |
+| Practice rollback | 2026-10-25 04:01 UTC, by Alex: `just snapshot hello` took `manual-2026-10-25T040110Z`, a marker file was changed, and `just rollback hello manual-2026-10-25T040110Z` put the marker back, keeping the replaced data read-only as `before-rollback-2026-10-25T040155Z`. The printed clean-up line lacked `sudo`, so pasted into `ssh ops@nuc` it would fail; the printed lines now carry it. By 16:01 UTC the `before-rollback-*` snapshot had been deleted |
+| First nightly snapshot | 2026-10-25 09:30:01 UTC: `stack-hello-snapshot.service` succeeded, logging `snapshotting /srv/data/hello to /.snapshots/stacks/hello/2026-10-25T093001Z` and `done`. `btrfs property get` shows `ro=true`; the `.config` copy is beside it. Next run Mon 2026-10-26 09:30 UTC |
