@@ -65,7 +65,20 @@ let
       pkgs.jq
       pkgs.util-linux
     ];
-    text = builtins.readFile ./stack-snapshot.sh;
+    text = builtins.readFile ./stack-lib.sh + builtins.readFile ./stack-snapshot.sh;
+  };
+
+  rollback = pkgs.writeShellApplication {
+    name = "stack-rollback";
+    runtimeInputs = [
+      pkgs.btrfs-progs
+      pkgs.coreutils
+      pkgs.diffutils
+      pkgs.jq
+      pkgs.systemd
+      pkgs.util-linux
+    ];
+    text = builtins.readFile ./stack-lib.sh + builtins.readFile ./stack-rollback.sh;
   };
 
   command =
@@ -140,7 +153,10 @@ in
       name: stack: lib.nameValuePair "stacks/${name}/snapshot.json" { source = settings name stack; }
     ) withData;
 
-    environment.systemPackages = lib.mkIf (withData != { }) [ snapshot ];
+    environment.systemPackages = lib.mkIf (withData != { }) [
+      snapshot
+      rollback
+    ];
 
     systemd.timers = lib.mapAttrs' (
       name: _:

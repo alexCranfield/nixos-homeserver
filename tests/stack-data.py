@@ -178,6 +178,106 @@ with subtest("a reload waits for the lock, then succeeds"):
     assert machine.succeed("cat /tmp/reload.rc").strip() == "0"
     machine.succeed("systemctl is-active stack-keeper.service")
 
+STILL_DEPLOYED = "The update that changed this is still deployed"
+MARKER = "/srv/data/keeper/marker"
+
+
+def manual_snapshot():
+    """Takes a manual snapshot and returns its name."""
+    before = set(names())
+    machine.sleep(1)
+    machine.succeed("stack-snapshot keeper manual")
+    (snap,) = [n for n in set(names()) - before if not n.endswith(".config")]
+    return snap
+
+
+def marker():
+    return machine.succeed(f"cat {MARKER}").strip()
+
+
+def before_rollbacks():
+    return sorted(n for n in names() if n.startswith("before-rollback-") and not n.endswith(".config"))
+
+
+with subtest("rollback restores the earlier file and keeps the replaced data"):
+    machine.succeed("systemctl is-active stack-keeper.service")
+    machine.succeed(f"echo one > {MARKER}")
+    snap = manual_snapshot()
+    machine.succeed(f"echo two > {MARKER}")
+    kept_before = set(before_rollbacks())
+    machine.sleep(1)
+    out = machine.succeed(f"stack-rollback keeper {snap} --yes")
+    assert STILL_DEPLOYED not in out, out
+    assert marker() == "one"
+    (kept,) = set(before_rollbacks()) - kept_before
+    assert machine.succeed(f"cat {SNAPS}/{kept}/marker").strip() == "two"
+    assert machine.succeed(f"ls -A {SNAPS}/{kept}.config").split() == ["compose.yml", "override.yml"]
+    assert f"btrfs subvolume delete {SNAPS}/{kept}" in out, out
+    machine.wait_until_succeeds("systemctl is-active stack-keeper.service")
+    machine.succeed("btrfs subvolume show /srv/data/keeper")
+    assert machine.succeed("stat -c '%u:%g %a' /srv/data/keeper").strip() == "40010:40010 750"
+    assert machine.succeed("btrfs property get /srv/data/keeper ro").strip() == "ro=false"
+    machine.succeed("touch /srv/data/keeper/writable")
+    # The lock is free again.
+    machine.succeed("flock -n /run/lock/stack-keeper.lock true")
+
+with subtest("rollback warns when the configuration differs, and not when it matches"):
+    edited = manual_snapshot()
+    machine.succeed(f"echo '# edited by hand' >> {SNAPS}/{edited}.config/compose.yml")
+    before = names()
+    out = machine.execute(f"stack-rollback keeper {edited} < /dev/null 2>&1")
+    assert out[0] != 0, out
+    assert STILL_DEPLOYED + ": revert it and let comin deploy the revert before rolling back" in out[1], out
+    assert "-# edited by hand" in out[1], out
+    assert "Roll back keeper to " + edited + "? [y/N]" in out[1], out
+    assert names() == before
+    matching = manual_snapshot()
+    out = machine.execute(f"stack-rollback keeper {matching} < /dev/null 2>&1")
+    assert out[0] != 0, out
+    assert STILL_DEPLOYED not in out[1], out
+    assert "Roll back keeper to " + matching + "? [y/N]" in out[1], out
+    # The listing marks the edited one and not the matching one (the hand-made
+    # 2020 snapshot has no .config at all, so it counts as differing).
+    listing = machine.succeed("stack-rollback keeper")
+    flagged = [l.split()[0] for l in listing.splitlines() if "config differs" in l]
+    assert edited in flagged and matching not in flagged, (flagged, listing)
+
+with subtest("a stopped stack stays stopped after rollback"):
+    snap = manual_snapshot()
+    machine.succeed(f"echo three > {MARKER}")
+    machine.succeed("systemctl stop stack-keeper.service")
+    machine.sleep(1)
+    machine.succeed(f"stack-rollback keeper {snap} --yes")
+    assert machine.succeed("systemctl is-active stack-keeper.service || true").strip() == "inactive"
+    assert machine.succeed("docker compose -p keeper ps -q").strip() == ""
+    assert marker() == "one"
+    machine.succeed("systemctl start stack-keeper.service")
+
+with subtest("unknown stack or snapshot changes nothing"):
+    machine.succeed(f"echo four > {MARKER}")
+    before = names()
+    machine.fail("stack-rollback nosuch")
+    machine.fail("stack-rollback keeper nosuch --yes")
+    (config_entry,) = [n for n in before if n.endswith(".config")][:1]
+    machine.fail(f"stack-rollback keeper {config_entry} --yes")
+    machine.fail("stack-rollback keeper ../keeper --yes")
+    assert marker() == "four"
+    assert names() == before
+    machine.succeed("systemctl is-active stack-keeper.service")
+
+with subtest("the listing shows each kind, and no .config entries"):
+    listing = machine.succeed("stack-rollback keeper")
+    rows = listing.splitlines()[1:]
+    shown = [r.split()[0] for r in rows]
+    assert shown == sorted(shown, key=lambda n: n[-18:]), shown  # newest last
+    assert sorted(shown) == sorted(n for n in names() if not n.endswith(".config")), (shown, names())
+    assert any(re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z", n) for n in shown), shown
+    assert any(n.startswith("manual-") for n in shown), shown
+    assert any(n.startswith("before-rollback-") for n in shown), shown
+    assert ".config" not in listing, listing
+    for r in rows:
+        assert len(r.split()) >= 2 and r.split()[1] != "?", r  # a size is shown
+
 with subtest("the timer fires at 09:30 UTC"):
     assert "09:30:00" in machine.succeed("systemctl show stack-keeper-snapshot.timer -p TimersCalendar")
 

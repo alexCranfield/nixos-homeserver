@@ -16,19 +16,8 @@
 # stack-rollback), waiting up to 15 minutes for it. (The stack unit's own wait
 # is 10 minutes, so its 15 minute start timeout leaves time for `up --wait`.)
 #
-# snapshot_names STACK prints the nightly snapshot names, oldest first. This
-# file can be sourced for it (stack-rollback does); nothing runs then.
-root=/.snapshots/stacks
-
-snapshot_names() {
-  local f
-  for f in "$root/$1"/*; do
-    [ -d "$f" ] || continue
-    f=${f##*/}
-    [[ $f =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z$ ]] && echo "$f"
-  done | sort
-}
-
+# The names, the stack-name check and the configuration copy are in
+# stack-lib.sh, which stack-data.nix puts in front of this file.
 log() {
   echo "stack-snapshot: $*"
 }
@@ -53,7 +42,7 @@ finish() {
 
 main() {
   local stack=${1:?usage: stack-snapshot STACK [manual]} mode=${2:-nightly}
-  [[ $stack =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo "bad stack name: $stack" >&2; exit 2; }
+  check_stack_name "$stack"
   case $mode in
     nightly | manual) ;;
     *) echo "unknown mode: $mode" >&2; exit 2 ;;
@@ -91,7 +80,7 @@ main() {
   fi
 
   local name
-  name=$(date -u +%Y-%m-%dT%H%M%SZ)
+  name=$(now)
   [ "$mode" = manual ] && name=manual-$name
   local snap=$root/$stack/$name
   log "snapshotting $dir to $snap"
@@ -102,8 +91,7 @@ main() {
   run_post || post_rc=1
 
   log "copying the configuration to $snap.config"
-  mkdir -p "$snap.config"
-  cp -L "/etc/stacks/$stack/compose.yml" "/etc/stacks/$stack/override.yml" "$snap.config/"
+  copy_config "$stack" "$snap"
 
   if [ "$mode" = nightly ]; then
     local old
@@ -119,6 +107,4 @@ main() {
   log "done: $name"
 }
 
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-  main "$@"
-fi
+main "$@"
