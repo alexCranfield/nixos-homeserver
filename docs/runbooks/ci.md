@@ -15,7 +15,8 @@ nix develop --command just check
 
 `just check` is the same target you run locally: `nix flake check --no-build`
 to evaluate every output, a build of every check in a second process (see
-"Evaluation and builds apart" below), a build of the nuc system closure, `nix fmt -- --ci`, and `editorconfig-checker`, which
+"Evaluation and builds apart" below), a build of the nuc system closure,
+`nix fmt -- --ci`, and `editorconfig-checker`, which
 holds every file git does not ignore to `.editorconfig` (line endings, final
 newline, trailing whitespace, tabs). That includes untracked files, so a stray
 scratch file in the tree fails `just check` locally until it is removed or
@@ -227,7 +228,7 @@ workflow, so the required check `check` never reports, and GitHub holds the
 pull request at "Expected — waiting for status". A filter would also need a
 hand-kept list of paths that cannot affect a check; Nix already knows.
 
-**VM (virtual machine) tests run in CI.** Since #10, `nix flake check` also runs
+**VM (virtual machine) tests run in CI.** Since #10, `just check` also runs
 `base-ssh`, a NixOS test that boots two VMs and logs in over SSH. NixOS tests
 require the `kvm` system feature. `install-nix-action` provides it on GitHub's
 Linux runners (`enable_kvm`, on by default; the job log shows "Enabled KVM"),
@@ -253,11 +254,12 @@ test failure in the log, only the shutdown message: look at which VM tests
 started just before it.
 
 **Evaluation and builds apart.** Two builds at a time was not the whole
-story. On 2026-10-25 `main` was stopped the same way twice (#141), with no
+story. On 2026-10-25 (UTC) `main` was stopped the same way twice (#141), with no
 more than two tests running. A run that sampled memory every 20 seconds
 showed why: evaluating the 15 checks took 15.9 GB and 1.5 GB of swap before
 any test started, and `nix flake check` kept that memory while it built
-them, so two VM tests booting on top left 113 MB free and the swap full.
+them, so two VM tests booting on top left 113 MB free, with swap use flat
+at 3 GB.
 Disk never fell below 72 GB free. Two changes, measured on the workstation
 with caching off (`nix flake check --no-build --no-eval-cache`):
 
@@ -271,7 +273,14 @@ with caching off (`nix flake check --no-build --no-eval-cache`):
   exits, then reads the checks' derivations with a separate `nix eval`
   (9.6 GB, about 45 s, also gone before anything builds) and builds them with
   `nix build`, which evaluates nothing. The VM tests now have the runner's
-  memory to themselves, at the cost of evaluating the checks twice.
+  memory to themselves, at the cost of evaluating the checks twice. One
+  difference: `nix flake check` skipped a check whose output could be
+  downloaded, and `nix build` downloads it. Only
+  `devshell-nix-matches-server`, an empty file, is affected.
+- `--no-build` evaluates with a read-only store, so evaluation cannot add
+  anything to it. A test that interpolated `"${pkgs.path}/…"` copied all of
+  nixpkgs into the store and failed on a cold runner with `path … is not
+  valid`; it now uses `pkgs.path + "/…"`, which reads the file in place.
 
 If the runner is stopped again, a sampler like the one on #141 tells memory
 from disk in one run.
