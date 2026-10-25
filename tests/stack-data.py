@@ -274,6 +274,9 @@ with subtest("a failed start after the swap prints where the old data is and how
     # The printed commands put the replaced data back.
     cmds = [l.strip() for l in out.splitlines() if l.startswith("  btrfs subvolume")]
     assert len(cmds) == 2, out
+    # The first step stops anything the failed start left running.
+    (down,) = [l.strip() for l in out.splitlines() if l.startswith("  docker ps -aq")]
+    machine.succeed(down)
     machine.succeed("systemctl stop stack-keeper.service || true")
     for c in cmds:
         machine.succeed(c)
@@ -281,6 +284,33 @@ with subtest("a failed start after the swap prints where the old data is and how
     machine.succeed("rm /run/systemd/system/stack-keeper.service.d/fail.conf")
     machine.succeed("systemctl daemon-reload")
     machine.succeed("systemctl start stack-keeper.service")
+
+with subtest("a before-rollback name already taken aborts and leaves that snapshot intact"):
+    machine.succeed(f"echo taken > {MARKER}")
+    snap = manual_snapshot()
+    machine.succeed(f"echo current > {MARKER}")
+    # Take every name the run could pick in the next two and a half minutes
+    # (the stop alone takes seconds under emulation), holding the current data.
+    old = set(before_rollbacks())
+    machine.succeed(
+        "for i in $(seq -1 150); do "
+        "t=$(date -u -d \"@$(( $(date +%s) + i ))\" +%Y-%m-%dT%H%M%SZ); "
+        f"btrfs subvolume snapshot -r /srv/data/keeper {SNAPS}/before-rollback-$t > /dev/null; "
+        "done"
+    )
+    planted = sorted(set(before_rollbacks()) - old)
+    assert len(planted) >= 100, planted
+    before = names()
+    status, out = machine.execute(f"stack-rollback keeper {snap} --yes 2>&1")
+    assert status != 0, out
+    assert "already exists" in out and "nothing was changed" in out, out
+    assert names() == before
+    assert marker() == "current"
+    for p in planted:
+        assert machine.succeed(f"cat {SNAPS}/{p}/marker").strip() == "current", p
+    machine.succeed("systemctl is-active stack-keeper.service")
+    for p in planted:
+        machine.succeed(f"btrfs subvolume delete {SNAPS}/{p} > /dev/null")
 
 with subtest("unknown stack or snapshot changes nothing"):
     machine.succeed(f"echo four > {MARKER}")

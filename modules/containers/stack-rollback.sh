@@ -58,7 +58,12 @@ on_exit() {
       fi
       echo "Your data from before the rollback is in"
       echo "  $kept"
-      echo "To put it back (the first line only if $dir exists), with the stack stopped:"
+      echo "To put it back, with the stack stopped:"
+      if [ "$swapped" = 1 ]; then
+        echo "(first, as the failed start may have left containers running on the new data)"
+        echo "  docker ps -aq --filter label=com.docker.compose.project=$stack | xargs -r docker rm -f"
+      fi
+      echo "(the first btrfs line only if $dir exists)"
       echo "  btrfs subvolume delete $dir"
       echo "  btrfs subvolume snapshot $kept $dir"
       if [ "$was_active" = 1 ]; then
@@ -149,7 +154,7 @@ main() {
   # Something may have started the stack since the stop; never swap data
   # under running containers.
   local running
-  running=$(docker compose -p "$stack" ps -q) || {
+  running=$(docker ps -q --filter "label=com.docker.compose.project=$stack") || {
     echo "could not ask docker whether $stack is running, nothing was changed" >&2
     restart_if_active
     exit 1
@@ -163,8 +168,19 @@ main() {
   local before keep
   before=before-rollback-$(now)
   keep=$root/$stack/$before
-  if ! { btrfs subvolume snapshot -r "$dir" "$keep" && copy_config "$stack" "$keep"; }; then
-    # Nothing else has changed yet: remove what was half made.
+  # Names have one-second resolution: never touch a snapshot of an earlier run.
+  if [ -e "$keep" ] || [ -e "$keep.config" ]; then
+    echo "$keep already exists (a rollback ran in this same second), nothing was changed" >&2
+    restart_if_active
+    exit 1
+  fi
+  if ! btrfs subvolume snapshot -r "$dir" "$keep"; then
+    echo "could not keep the current data, nothing was changed" >&2
+    restart_if_active
+    exit 1
+  fi
+  if ! copy_config "$stack" "$keep"; then
+    # Both paths are ours: they did not exist a moment ago, under the lock.
     btrfs subvolume delete "$keep" > /dev/null 2>&1 || true
     rm -rf "$keep.config"
     echo "could not keep the current data, nothing was changed" >&2
