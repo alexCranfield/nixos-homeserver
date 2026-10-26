@@ -40,6 +40,13 @@ sudo docker exec -it minecraft-server-1 rcon-cli  # a console; Ctrl-D leaves
 RCON (remote console) is reachable only inside the container: nothing
 publishes its port, and the image makes a new password each time it starts.
 
+`allow-flight` is on (`ALLOW_FLIGHT` in `compose.yml`, #156). Without it,
+vanilla's movement check kicked a player while they fell, probably because
+lag or one of the pack's mods made the fall look like flying. Every player
+is whitelisted, so the check is not needed against cheating. The image
+writes the setting into `server.properties` at each start; to check it:
+`sudo docker exec minecraft-server-1 grep allow-flight /data/server.properties`.
+
 ### The whitelist
 
 The players allowed in are friends' names, so they are kept out of this
