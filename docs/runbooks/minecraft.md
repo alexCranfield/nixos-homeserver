@@ -66,7 +66,8 @@ env: |
 ```
 
 Commit the file and merge. The changed secret reloads the stack, which
-recreates the container, and the list replaces the server's whitelist
+recreates the container, disconnecting everyone online (#153 is to change
+that for additions). The list then replaces the server's whitelist
 (`EXISTING_WHITELIST_FILE=SYNCHRONIZE`); `ENFORCE_WHITELIST` kicks anyone
 removed from it. A missing or empty `WHITELIST` fails every compose command on the stack,
 stop included, naming the key, rather than running a server no one can
@@ -87,6 +88,61 @@ The same lookup needs Playerdb to be reachable. If the internet or Playerdb
 is down when the container starts, at boot say, the start is expected to
 fail the same way (not tested), and Docker keeps retrying. Once it is back,
 `sudo systemctl restart stack-minecraft`.
+
+### Join protection
+
+The pack's clients take a long time to load, and the server puts a player
+in the world before they can see or move. Mobs used to kill them while
+they waited (#154). Vanilla's own protection after a join lasts only a
+few seconds, which is not enough.
+
+A small datapack, `join-protection`, now gives each player Resistance V,
+which blocks all damage from mobs and falls, for 30 seconds after they
+join. It applies on a player's first join, every rejoin, and the first
+join after the server restarts. It is server-side only: friends install
+nothing.
+
+Its files are inline in `compose.yml` (the `configs:` at the end). The
+image copies them into `world/datapacks` at each start.
+
+- **Change the duration:** edit the `30` in `jp-protect`'s
+  `effect give @s minecraft:resistance 30 4 true`, and bump the service's
+  `homeserver.join-protection` label. Compose decides whether to recreate
+  the container from the service's own settings, which leave out the
+  files' text, and the files are copied in only when the container is
+  created. Without the bump, the deploy succeeds and nothing changes.
+- **Remove it:** drop the `DATAPACKS` line, the service's `configs:` and
+  the top-level `configs:`. Then, with the stack stopped, run
+  `sudo rm -r /srv/data/minecraft/world/datapacks/join-protection`. The
+  image never deletes what it copied, so the pack stays enabled until it
+  is removed by hand. The same goes for a file renamed inside it: the old
+  one stays behind. Its two scoreboard objectives stay in the world too,
+  which is harmless; `scoreboard objectives remove jp.left` and `jp.on`
+  clear them.
+- **A `/reload` protects everyone online for 30 seconds,** since it runs
+  the pack's `load` function again, which clears every player's mark. The
+  clearing is there for server starts, after a crash included, when no
+  logout was recorded.
+- **Check it on the server:**
+
+  ```bash
+  sudo docker exec minecraft-server-1 rcon-cli scoreboard objectives list
+  sudo docker exec minecraft-server-1 rcon-cli data get entity <player> ActiveEffects
+  ```
+
+  The first should list `[jp.left]` and `[jp.on]`, which the pack's `load`
+  function creates. The second, within 30 seconds of the player joining,
+  should show `Id: 11, Amplifier: 4b`. `datapack list enabled` is no use
+  here: it listed 432 datapacks, nearly all from mods, and RCON's reply
+  stops at 4096 bytes, before the list reaches this one.
+
+A change to the service in `compose.yml` (its environment, image, label
+or list of configs, not the configs' text alone) recreates the container
+on deploy, and that disconnects everyone online. Merge such changes when
+nobody is playing.
+
+Resistance ends when a player dies, so a player who respawns into chunks
+that are still loading is not protected.
 
 ## Updating the pack
 
