@@ -23,8 +23,8 @@ services:
       MEMORY: 12G
       ONLINE_MODE: "TRUE"
       # Vanilla kicks a player it sees in the air too long ("Flying is not
-      # enabled on this server"), and on this pack that misfires on falls
-      # (#156). ATM9's own server files allow it; every player is whitelisted.
+      # enabled on this server"), and on this pack it misfired on a fall
+      # (#156). Every player is whitelisted, so it isn't needed against cheats.
       ALLOW_FLIGHT: "TRUE"
       ENABLE_WHITELIST: "TRUE"
       ENFORCE_WHITELIST: "TRUE"

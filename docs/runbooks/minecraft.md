@@ -41,9 +41,11 @@ RCON (remote console) is reachable only inside the container: nothing
 publishes its port, and the image makes a new password each time it starts.
 
 `allow-flight` is on (`ALLOW_FLIGHT` in `compose.yml`, #156). Without it,
-vanilla's movement check kicked players while they fell, with `Flying is not
-enabled on this server`, as it misreads lag and the pack's movement items.
-Every player is whitelisted, so the check is not needed against cheating.
+vanilla's movement check kicked a player while they fell, probably because
+lag or one of the pack's mods made the fall look like flying. Every player
+is whitelisted, so the check is not needed against cheating. The image
+writes the setting into `server.properties` at each start; to check it:
+`sudo docker exec minecraft-server-1 grep allow-flight /data/server.properties`.
 
 ### The whitelist
 
