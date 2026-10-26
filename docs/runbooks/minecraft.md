@@ -116,12 +116,15 @@ image copies them into `world/datapacks` at each start.
 - **Check it on the server:**
 
   ```bash
-  sudo docker exec minecraft-server-1 rcon-cli datapack list enabled
+  sudo docker exec minecraft-server-1 rcon-cli scoreboard objectives list
   sudo docker exec minecraft-server-1 rcon-cli data get entity <player> ActiveEffects
   ```
 
-  The first should list `file/join-protection`. The second, within 30
-  seconds of the player joining, should show `Id: 11, Amplifier: 4b`.
+  The first should list `[jp.left]` and `[jp.on]`, which the pack's `load`
+  function creates. The second, within 30 seconds of the player joining,
+  should show `Id: 11, Amplifier: 4b`. `datapack list enabled` is no use
+  here: with the pack's 430-odd mod datapacks, RCON's reply stops at 4096
+  bytes, before the list reaches this one.
 
 A change to the service in `compose.yml` (its environment, image, label
 or list of configs, not the configs' text alone) recreates the container
