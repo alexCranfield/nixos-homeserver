@@ -81,13 +81,22 @@ in
   # from an older snapshot or a fresh world ends up with the same names.
   systemd.services.minecraft-whitelist = lib.mkIf (config.homeserver.stacks ? minecraft) {
     description = "Apply the Minecraft whitelist from secrets/minecraft.yaml";
+    # Only once the stack has started: a failed start is the stack's alert,
+    # not a second one from here.
     after = [ "stack-minecraft.service" ];
+    requisite = [ "stack-minecraft.service" ];
+    # A stop or restart of the stack carries over, and its Wants= starts this
+    # again after each start.
+    partOf = [ "stack-minecraft.service" ];
     wantedBy = [
       "stack-minecraft.service"
       "multi-user.target"
     ];
     serviceConfig = {
       Type = "oneshot";
+      # Stays active after a run, so a deploy, which starts multi-user.target,
+      # does not run it again. A changed secret restarts it.
+      RemainAfterExit = true;
       ExecStart = "${lib.getExe whitelistSync} ${config.sops.secrets.minecraft-env.path} minecraft-server-1";
       # It waits up to five minutes for the server to be ready.
       TimeoutStartSec = "10min";

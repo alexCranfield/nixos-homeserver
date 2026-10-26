@@ -83,8 +83,10 @@ sudo docker exec minecraft-server-1 rcon-cli whitelist list
 Check each name's spelling before merging. The server looks each new name
 up with Mojang when it is added, and one it cannot find (`That player does
 not exist`) fails the unit, which posts to Discord with its log, names
-included. The other changes in the same edit still go through, and the
-server keeps running. Fix the name and merge again, or run `sudo systemctl
+included. So does anything that is not a valid player name (3 to 16
+letters, digits and underscores). The other names in the same edit are
+still applied, and the server keeps running. A failed unit is tried again
+on the next deploy, and posts again, until the name is fixed. Fix the name and merge again, or run `sudo systemctl
 start minecraft-whitelist` once Mojang's lookup is back if that was the
 cause.
 
