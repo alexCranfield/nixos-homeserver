@@ -109,10 +109,13 @@ image copies them into `world/datapacks` at each start.
   `sudo rm -r /srv/data/minecraft/world/datapacks/join-protection`. The
   image never deletes what it copied, so the pack stays enabled until it
   is removed by hand. The same goes for a file renamed inside it: the old
-  one stays behind.
+  one stays behind. Its two scoreboard objectives stay in the world too,
+  which is harmless; `scoreboard objectives remove jp.left` and `jp.on`
+  clear them.
 - **A `/reload` protects everyone online for 30 seconds,** since it runs
-  the pack's `load` function again. That reset is what covers a crash,
-  which records no logout.
+  the pack's `load` function again, which clears every player's mark. The
+  clearing is there for server starts, after a crash included, when no
+  logout was recorded.
 - **Check it on the server:**
 
   ```bash
@@ -123,8 +126,8 @@ image copies them into `world/datapacks` at each start.
   The first should list `[jp.left]` and `[jp.on]`, which the pack's `load`
   function creates. The second, within 30 seconds of the player joining,
   should show `Id: 11, Amplifier: 4b`. `datapack list enabled` is no use
-  here: with the pack's 430-odd mod datapacks, RCON's reply stops at 4096
-  bytes, before the list reaches this one.
+  here: it listed 432 datapacks, nearly all from mods, and RCON's reply
+  stops at 4096 bytes, before the list reaches this one.
 
 A change to the service in `compose.yml` (its environment, image, label
 or list of configs, not the configs' text alone) recreates the container
