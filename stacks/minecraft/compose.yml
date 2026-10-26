@@ -22,6 +22,10 @@ services:
       # Heap. The stack's memoryMax sits above it for the JVM's (Java virtual machine's) own use.
       MEMORY: 12G
       ONLINE_MODE: "TRUE"
+      # Vanilla kicks a player it sees in the air too long ("Flying is not
+      # enabled on this server"), and on this pack that misfires on falls
+      # (#156). ATM9's own server files allow it; every player is whitelisted.
+      ALLOW_FLIGHT: "TRUE"
       ENABLE_WHITELIST: "TRUE"
       ENFORCE_WHITELIST: "TRUE"
       # Player names, comma-separated, from the stack's .env: the `env` key
