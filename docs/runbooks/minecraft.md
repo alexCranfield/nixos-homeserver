@@ -59,7 +59,8 @@ env: |
 ```
 
 Commit the file and merge. The changed secret reloads the stack, which
-recreates the container, and the list replaces the server's whitelist
+recreates the container, disconnecting everyone online (#153 is to change
+that for additions). The list then replaces the server's whitelist
 (`EXISTING_WHITELIST_FILE=SYNCHRONIZE`); `ENFORCE_WHITELIST` kicks anyone
 removed from it. A missing or empty `WHITELIST` fails every compose command on the stack,
 stop included, naming the key, rather than running a server no one can
@@ -80,6 +81,37 @@ The same lookup needs Playerdb to be reachable. If the internet or Playerdb
 is down when the container starts, at boot say, the start is expected to
 fail the same way (not tested), and Docker keeps retrying. Once it is back,
 `sudo systemctl restart stack-minecraft`.
+
+### Join protection
+
+The pack's clients take a long time to load, and the server puts a player
+in the world before they can see or move. Mobs used to kill them while
+they waited (#154). Vanilla's own protection after a join lasts only a
+few seconds, which is not enough.
+
+A small datapack, `join-protection`, now gives each player Resistance V,
+which blocks all damage from mobs and falls, for 30 seconds after they
+join. It applies on a player's first join, every rejoin, and the first
+join after the server restarts. It is server-side only: friends install
+nothing.
+
+Its files are inline in `compose.yml` (the `configs:` at the end). The
+image copies them into `world/datapacks` at each start.
+
+- **Change the duration:** edit the `30` in `jp-protect`'s
+  `effect give @s minecraft:resistance 30 4 true`.
+- **Check it on the server:**
+
+  ```bash
+  sudo docker exec minecraft-server-1 rcon-cli datapack list enabled
+  sudo docker exec minecraft-server-1 rcon-cli data get entity <player> ActiveEffects
+  ```
+
+  The first should list `file/join-protection`. The second, within 30
+  seconds of the player joining, should show `Id: 11, Amplifier: 4b`.
+
+Any change to `compose.yml` recreates the container on deploy, and that
+disconnects everyone online. Merge such changes when nobody is playing.
 
 ## Updating the pack
 

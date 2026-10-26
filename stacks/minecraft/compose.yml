@@ -33,8 +33,32 @@ services:
       # use `rcon-cli` through `docker exec`, and nothing publishes its port.
       # The image makes a new password at each start.
       ENABLE_RCON: "TRUE"
+      # The join-protection datapack below. The image copies it into
+      # world/datapacks at each start.
+      DATAPACKS: /datapacks/join-protection
     secrets:
       - cf-api-key
+    # Mode 0644: the copy keeps it, and the next start's copy must be able
+    # to overwrite the last one.
+    configs:
+      - source: jp-pack
+        target: /datapacks/join-protection/pack.mcmeta
+        mode: 0644
+      - source: jp-load-tag
+        target: /datapacks/join-protection/data/minecraft/tags/functions/load.json
+        mode: 0644
+      - source: jp-tick-tag
+        target: /datapacks/join-protection/data/minecraft/tags/functions/tick.json
+        mode: 0644
+      - source: jp-load
+        target: /datapacks/join-protection/data/join_protection/functions/load.mcfunction
+        mode: 0644
+      - source: jp-tick
+        target: /datapacks/join-protection/data/join_protection/functions/tick.mcfunction
+        mode: 0644
+      - source: jp-protect
+        target: /datapacks/join-protection/data/join_protection/functions/protect.mcfunction
+        mode: 0644
     ports:
       - "0.0.0.0:25565:25565"
     volumes:
@@ -54,3 +78,36 @@ services:
 secrets:
   cf-api-key:
     file: /run/secrets/minecraft-cf-api-key
+
+# Join protection (#154). The pack's clients load slowly, and the server puts a
+# player in the world before they can see or move, so mobs got to them first.
+# This datapack gives a joining player Resistance V, which blocks all damage
+# from mobs and falls, for 30 seconds. It is server-side only: clients need
+# nothing. "Joining" is a player the scoreboard has not marked as on since the
+# server started, or one whose leave_game statistic counts a logout since they
+# were last protected. Minecraft 1.20.1 (pack format 15, `functions`
+# directories). The files are inline, so no host file is mounted.
+configs:
+  jp-pack:
+    content: |
+      {"pack": {"pack_format": 15, "description": "Protect players for 30 seconds as they join"}}
+  jp-load-tag:
+    content: |
+      {"values": ["join_protection:load"]}
+  jp-tick-tag:
+    content: |
+      {"values": ["join_protection:tick"]}
+  jp-load:
+    content: |
+      scoreboard objectives add jp.left minecraft.custom:minecraft.leave_game
+      scoreboard objectives add jp.on dummy
+      scoreboard players reset * jp.on
+  jp-tick:
+    content: |
+      execute as @a[scores={jp.left=1..}] run function join_protection:protect
+      execute as @a unless score @s jp.on matches 1 run function join_protection:protect
+  jp-protect:
+    content: |
+      effect give @s minecraft:resistance 30 4 true
+      scoreboard players set @s jp.on 1
+      scoreboard players set @s jp.left 0
