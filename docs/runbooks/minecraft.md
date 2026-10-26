@@ -99,7 +99,20 @@ Its files are inline in `compose.yml` (the `configs:` at the end). The
 image copies them into `world/datapacks` at each start.
 
 - **Change the duration:** edit the `30` in `jp-protect`'s
-  `effect give @s minecraft:resistance 30 4 true`.
+  `effect give @s minecraft:resistance 30 4 true`, and bump the service's
+  `homeserver.join-protection` label. Compose decides whether to recreate
+  the container from the service's own settings, which leave out the
+  files' text, and the files are copied in only when the container is
+  created. Without the bump, the deploy succeeds and nothing changes.
+- **Remove it:** drop the `DATAPACKS` line, the service's `configs:` and
+  the top-level `configs:`. Then, with the stack stopped, run
+  `sudo rm -r /srv/data/minecraft/world/datapacks/join-protection`. The
+  image never deletes what it copied, so the pack stays enabled until it
+  is removed by hand. The same goes for a file renamed inside it: the old
+  one stays behind.
+- **A `/reload` protects everyone online for 30 seconds,** since it runs
+  the pack's `load` function again. That reset is what covers a crash,
+  which records no logout.
 - **Check it on the server:**
 
   ```bash
@@ -110,8 +123,13 @@ image copies them into `world/datapacks` at each start.
   The first should list `file/join-protection`. The second, within 30
   seconds of the player joining, should show `Id: 11, Amplifier: 4b`.
 
-Any change to `compose.yml` recreates the container on deploy, and that
-disconnects everyone online. Merge such changes when nobody is playing.
+A change to the service in `compose.yml` (its environment, image, label
+or list of configs, not the configs' text alone) recreates the container
+on deploy, and that disconnects everyone online. Merge such changes when
+nobody is playing.
+
+Resistance ends when a player dies, so a player who respawns into chunks
+that are still loading is not protected.
 
 ## Updating the pack
 

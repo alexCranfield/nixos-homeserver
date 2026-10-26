@@ -38,6 +38,11 @@ services:
       DATAPACKS: /datapacks/join-protection
     secrets:
       - cf-api-key
+    # Bump this whenever the text of a jp-* config changes. Compose recreates
+    # the container only when the service's own settings change, and the
+    # configs' text is not one of them; it is copied in at creation.
+    labels:
+      homeserver.join-protection: "1"
     # Mode 0644: the copy keeps it, and the next start's copy must be able
     # to overwrite the last one.
     configs:
