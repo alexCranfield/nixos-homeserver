@@ -61,27 +61,32 @@ def hook(script, **env):
     nuc.succeed(f"{assignments} {script}")
 
 
-def build(msg, status="built", error="", root="/tmp/new-system"):
+def build(generation, msg, status="built", error="", root="/tmp/new-system"):
     hook(
         BUILD_HOOK,
         COMIN_PHASE="build",
         COMIN_STATUS=status,
         COMIN_ERROR_MSG=error,
+        COMIN_GENERATION=generation,
         COMIN_GIT_SHA="0123456789abcdef",
         COMIN_GIT_MSG=msg,
         ANNOUNCE_GCROOT=root,
     )
 
 
-def deploy(status, error=""):
+def deploy(generation, msg, status, error=""):
     hook(
         DEPLOY_HOOK,
         COMIN_PHASE="deploy",
         COMIN_STATUS=status,
         COMIN_ERROR_MSG=error,
+        COMIN_GENERATION=generation,
         COMIN_GIT_SHA="0123456789abcdef",
-        COMIN_GIT_MSG="Add a thing (#42)\n\nBody, mentioning (#7)",
+        COMIN_GIT_MSG=msg,
     )
+
+
+PR_42 = "Add a thing (#42)\n\nBody, mentioning (#7)"
 
 
 APPLYING = "Applying update. Services on the nuc may restart briefly."
@@ -99,7 +104,7 @@ with subtest("the host announces it is up, in Discord only"):
 with subtest("a build of a new system is announced with its pull request"):
     # What comin's gcroot would point at: anything but the running system.
     nuc.succeed("ln -sfn /nix/store/0000000000000000000000000000000a-new /tmp/new-system")
-    build("Add a thing (#42)\n\nBody, mentioning (#7)")
+    build("gen-a", PR_42)
     assert public(2) == f"**🔵 {APPLYING} More info: <{REPO}/pull/42>**"
     said = game()
     assert len(said) == 1, said
@@ -108,30 +113,40 @@ with subtest("a build of a new system is announced with its pull request"):
 
 with subtest("negative control: a build of the running system announces nothing"):
     nuc.succeed("ln -sfn $(readlink /run/current-system) /tmp/same-system")
-    build("Docs only (#43)", root="/tmp/same-system")
-    build("Docs only (#43)", status="already built", root="/tmp/same-system")
-    build("Broken (#44)", status="failed", error="build failed")
+    build("gen-docs", "Docs only (#43)", root="/tmp/same-system")
+    build("gen-docs", "Docs only (#43)", status="already built", root="/tmp/same-system")
+    build("gen-broken", "Broken (#44)", status="failed", error="build failed")
     # A missing gcroot, as before comin's first build.
-    build("Nothing built yet (#45)", root="/tmp/no-such-gcroot")
+    build("gen-none", "Nothing built yet (#45)", root="/tmp/no-such-gcroot")
     time.sleep(5)
     assert len(received("public")) == 2, received("public")
     assert len(game()) == 1, game()
 
 with subtest("a subject without a pull request number links the commit"):
-    build("Pushed directly, see (#9) for why", status="already built")
+    build("gen-b", "Pushed directly, see (#9) for why", status="already built")
     assert public(3) == f"**🔵 {APPLYING} More info: <{REPO}/commit/0123456789abcdef>**"
     assert link(game()[-1]) == [f"{REPO}/commit/0123456789abcdef"]
 
 with subtest("a finished deploy is announced in both places"):
-    deploy("done")
+    deploy("gen-a", PR_42, "done")
     assert public(4) == f"**🟢 Update complete. More info: <{REPO}/pull/42>**"
     assert text(game()[-1]) == "[nuc] Update complete. More info", game()
     assert len(game()) == 3, game()
 
+with subtest("negative control: a deploy that was not announced posts nothing"):
+    # comin switching again to the same system, for a merge that changed
+    # only docs (its check compares with the deployment before last); and
+    # the same deploy reported twice.
+    deploy("gen-docs", "Docs only (#43)", "done")
+    deploy("gen-a", PR_42, "done")
+    time.sleep(5)
+    assert len(received("public")) == 4, received("public")
+    assert len(game()) == 3, game()
+
 with subtest("a failed deploy is announced in Discord only, its error kept private"):
     private_before = len(received("private"))
-    deploy("failed", error="switch-to-configuration exited with 4")
-    assert public(5) == f"**🔴 Update failed; the server is unchanged. More info: <{REPO}/pull/42>**"
+    deploy("gen-b", "Pushed directly, see (#9) for why", "failed", error="switch-to-configuration exited with 4")
+    assert public(5) == f"**🔴 Update failed; the server is unchanged. More info: <{REPO}/commit/0123456789abcdef>**"
     assert len(game()) == 3, game()
     nuc.wait_until_succeeds(
         f"test $(ls /tmp/shared/webhook/private/*.json | wc -l) -gt {private_before}", timeout=60
@@ -185,14 +200,14 @@ with subtest("with a reboot pending, the window warns, reminds, then reboots"):
     print(f"warning to shutdown: {took:.0f} s")
     # The warning's ten seconds, before the reboot.
     assert took >= 10, took
+    nuc.start()
+    nuc.wait_for_unit("multi-user.target")
+    assert public(9) == "**🟢 The nuc is back up.**"
     said = game()
     assert [text(c) for c in said[4:]] == [
         "[nuc] " + warning.removeprefix("**🟠 ").removesuffix("**"),
         "[nuc] The nuc restarts in 1 minute.",
     ], said
-    nuc.start()
-    nuc.wait_for_unit("multi-user.target")
-    assert public(9) == "**🟢 The nuc is back up.**"
 
 with subtest("neither webhook URL is in the journal"):
     nuc.succeed("journalctl --sync")

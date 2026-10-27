@@ -12,7 +12,8 @@
 #    whether or not it restarts anything (Alex, 2026-10-27).
 #  - The deploy finished: "Update complete".
 #  - The deploy failed: "Update failed", Discord only; the error goes to the
-#    private channel.
+#    private channel. Either only for an update announced as applying
+#    (announce-comin.sh says why).
 #  - The reboot window is about to reboot: a warning `rebootWarning` seconds
 #    ahead, and a reminder in game a minute before. Only when a reboot is
 #    pending: the window checks first (reboot-window.nix).
@@ -58,6 +59,7 @@ let
     text = ''
       ANNOUNCE_GCROOT=''${ANNOUNCE_GCROOT:-/var/lib/comin/gcroots/last-built-generation}
       ANNOUNCE_CURRENT=''${ANNOUNCE_CURRENT:-/run/current-system}
+      ANNOUNCE_STATE=''${ANNOUNCE_STATE:-/run/announce-comin}
     ''
     + builtins.readFile ./announce-comin.sh;
   };
@@ -164,7 +166,13 @@ in
         Type = "oneshot";
         RemainAfterExit = true;
       };
+      # The deploy that adds this unit starts it too, long after boot.
       script = ''
+        read -r up _ < /proc/uptime
+        if [ "''${up%.*}" -gt 600 ]; then
+          echo "up for ''${up%.*} s: started by a deploy, not a boot; not posting"
+          exit 0
+        fi
         ${lib.getExe announce} --discord-only 🟢 "The nuc is back up." ||
           echo "could not post the boot message" >&2
       '';

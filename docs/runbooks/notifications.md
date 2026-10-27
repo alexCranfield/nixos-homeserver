@@ -158,21 +158,40 @@ running. Discord gets the icon and the time in UTC; the game gets
 | The deploy finished | 🟢 `Update complete. More info: <pull request>` | yes |
 | The deploy failed | 🔴 `Update failed; the server is unchanged. More info: <pull request>`; the error goes to the alerts channel | no |
 | The reboot window is about to reboot (Tuesday 09:55 UTC) | 🟠 `Scheduled maintenance: the nuc restarts at 10:00 UTC (in 5 minutes).` | yes, plus `The nuc restarts in 1 minute.` |
-| The nuc has booted | 🟢 `The nuc is back up.` | no, nobody is connected yet |
+| The nuc has booted (within its first 10 minutes, so not the deploy that adds the unit) | 🟢 `The nuc is back up.` | no, nobody is connected yet |
 | `sudo nuc-announce "TEXT" [LINK]` on the nuc | 📢 the text | yes |
 
 - **No pings, nothing private.** Nobody is ever mentioned: `@everyone` in a
-  message stays text. No message carries a log, a unit name, a hostname or
-  the kernel version.
+  message stays text, though Discord highlights it. No message carries a
+  log, a unit name, a hostname or the kernel version. Discord formats the
+  text as Markdown, inside bold, so `*` or `_` in an announcement may render
+  as formatting; keep announcements under about 1,900 characters, Discord's
+  limit less the time and icon.
 - **Every update gets the same wording,** whether or not it restarts
   anything. Updates are applied at once, with no warning before one restarts
   a game (Alex, 2026-10-27). For a big change, announce it first by hand.
 - **"Applying update" comes from comin's build hook.** comin has no hook
   before it deploys; its build hook runs just before, after the build. A
   build of the system already running (a merge that changes only docs, or
-  comin starting again) is not deployed, so it is not announced. The link is
-  the pull request from the `(#N)` at the end of the squash merge's subject,
-  or else the commit.
+  comin starting again) is not announced. The link is the pull request from
+  the `(#N)` at the end of the squash merge's subject, or else the commit.
+- **An outcome is posted only for an announced update.** The build hook
+  leaves a marker in `/run/announce-comin` for each build it announces, and
+  the deployment hook posts "complete" or "failed" only for one with a
+  marker. Without that, a docs-only merge right after a real update would
+  post a bare "Update complete": comin 0.14.0 compares a new build with the
+  deployment *before* the last one (`IsAlreadyDeployed`), so it switches
+  again to the system already running, which changes nothing.
+- **Posting holds comin up for a moment.** Its hooks run in line: a post
+  that Discord or a game server is slow to take holds the deploy for up to
+  about a minute (curl's 30 seconds of retries, 20 seconds per server), then
+  is logged and given up.
+- **Known gaps.** Two merges in quick succession can post "Applying" twice
+  and "complete" once, when the second replaces the first before it
+  deploys. After a failed deploy and then a reboot, comin builds the failed
+  commit again and does not redeploy it, so "Applying" can appear with
+  nothing after it. And "the server is unchanged" is the agreed wording, but
+  a switch that fails partway may have changed some services.
 - **The reboot window warns only when it will reboot.** It checks for a
   pending reboot first, as it always has. With public messages on, its timer
   starts at 09:55, and the reboot follows the five-minute warning, at about
