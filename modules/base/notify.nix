@@ -340,6 +340,6 @@ in
       onFailure = [ "notify-failure@%n.service" ];
     });
 
-    services.comin.postDeploymentCommand = deployHook;
+    homeserver.comin.postDeployment = [ "${deployHook}" ];
   };
 }
