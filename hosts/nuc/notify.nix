@@ -1,6 +1,7 @@
 # Where the nuc's notifications go, ticket 2.5 (#20): a Discord webhook, and
 # the role that failures ping (modules/base/notify.nix,
-# docs/runbooks/notifications.md).
+# docs/runbooks/notifications.md). And the public channel everyone who uses
+# the nuc can read, ticket #161 (modules/base/announce.nix).
 #
 # The URL is the only credential: whoever holds it can post to the channel,
 # though not read it. The role id is not secret, but kept beside it so the
@@ -12,4 +13,6 @@
   sops.secrets.discord-role.sopsFile = ../../secrets/notify.yaml;
   homeserver.notify.webhookFile = config.sops.secrets.discord-webhook.path;
   homeserver.notify.roleFile = config.sops.secrets.discord-role.path;
+  sops.secrets.discord-public-webhook.sopsFile = ../../secrets/notify.yaml;
+  homeserver.announce.webhookFile = config.sops.secrets.discord-public-webhook.path;
 }

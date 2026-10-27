@@ -47,9 +47,11 @@ let
   hook =
     name: commands:
     pkgs.writeShellScript name (
-      lib.concatMapStrings (cmd: ''
-        ${cmd} || echo ${lib.escapeShellArg "${cmd}"} "failed (exit $?)" |
-          ${pkgs.systemd}/bin/systemd-cat --identifier ${name} --priority err
+      ''
+        exec 2> >(${pkgs.systemd}/bin/systemd-cat --identifier ${name} --priority err)
+      ''
+      + lib.concatMapStrings (cmd: ''
+        ${cmd} || echo ${lib.escapeShellArg "${cmd}"} "failed (exit $?)" >&2
       '') commands
     );
   hookOption =

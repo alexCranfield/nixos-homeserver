@@ -117,8 +117,14 @@ own app, since it can differ from what someone else sees.
    are IPv4 only), and a game that tries that first may give up.
 4. **Do you use Tailscale for something else too?** If your own tailnet has
    an access policy, it must let your device connect out to `nuc`.
-5. **Still nothing?** Tell Alex which device, which game, and what the error
-   says. The server may be down for an update.
+5. **Still nothing?** Check the `nuc-alerts-public` channel on Discord: it
+   says when the server is updating or restarting, and when it is back. If
+   it says nothing, tell Alex which device, which game, and what the error
+   says.
+
+The same messages show in the game's chat, starting `[nuc]`. An update may
+restart the server for a minute or two. The Tuesday restart, for system
+updates, comes with a five-minute warning.
 
 Your account on the game itself is separate: Minecraft also keeps a
 whitelist, so Alex adds your player name there too.
