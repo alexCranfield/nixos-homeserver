@@ -71,9 +71,11 @@ the running server's and applies the difference through RCON: `whitelist
 add` for a new name, who can join at once, and `whitelist remove` for a
 dropped one, whom the server kicks at once, since it enforces its whitelist
 (`ENFORCE_WHITELIST`). Names match whatever their case. The same unit runs
-after every start of the stack, so a server started from an older snapshot
-ends up with the current list too. The server keeps the list in
-`/data/whitelist.json` between starts.
+after every start or restart of the stack, so a server restored from an
+older snapshot, which stops and starts the stack, ends up with the current
+list too. The server keeps the list in `/data/whitelist.json` between
+starts. A deploy that only reloads the stack, even one that recreates the
+container, does not run the unit; the new container reads the same file.
 
 ```bash
 systemctl status minecraft-whitelist   # the last sync and what it changed

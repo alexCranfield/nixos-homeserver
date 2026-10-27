@@ -77,8 +77,10 @@ in
   };
 
   # Applies that list to the running server (whitelist-sync.sh): when the
-  # secret changes, and after each start of the stack, so a server started
-  # from an older snapshot or a fresh world ends up with the same names.
+  # secret changes, and after each start or restart of the stack, so a server
+  # started from an older snapshot or a fresh world ends up with the same
+  # names. A deploy that only reloads the stack does not run it: a recreated
+  # container keeps /data/whitelist.json.
   systemd.services.minecraft-whitelist = lib.mkIf (config.homeserver.stacks ? minecraft) {
     description = "Apply the Minecraft whitelist from secrets/minecraft.yaml";
     # Only once the stack has started: a failed start is the stack's alert,
