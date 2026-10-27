@@ -26,13 +26,12 @@ services:
       # enabled on this server"), and on this pack it misfired on a fall
       # (#156). Every player is whitelisted, so it isn't needed against cheats.
       ALLOW_FLIGHT: "TRUE"
+      # The names themselves are not set here. minecraft-whitelist.service
+      # (default.nix) applies the list in secrets/minecraft.yaml through RCON,
+      # so changing it needs no new container (#153). The server keeps it in
+      # /data/whitelist.json between starts.
       ENABLE_WHITELIST: "TRUE"
       ENFORCE_WHITELIST: "TRUE"
-      # Player names, comma-separated, from the stack's .env: the `env` key
-      # of secrets/minecraft.yaml, kept out of this public file. They replace
-      # the server's whitelist at each start, so that list is the whole of it.
-      WHITELIST: ${WHITELIST:?set WHITELIST in the env key of secrets/minecraft.yaml}
-      EXISTING_WHITELIST_FILE: SYNCHRONIZE
       # RCON (remote console) stays inside the container: the snapshot hooks
       # use `rcon-cli` through `docker exec`, and nothing publishes its port.
       # The image makes a new password at each start.

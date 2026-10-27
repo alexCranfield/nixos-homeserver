@@ -14,7 +14,7 @@ snapshots in [data-layout.md](data-layout.md).
 | The unit | `stack-minecraft.service`; the container is `minecraft-server-1` |
 | The world, mods and configuration | `/srv/data/minecraft`, owned by `stack-minecraft` (40001) |
 | The port | TCP (Transmission Control Protocol) 25565, admitted from `tailscale0` only |
-| Secrets | `secrets/minecraft.yaml`: `CF_API_KEY`, the CurseForge API (application programming interface) key, mounted into the container as a file; `env`, the whitelist, as the stack's `.env` |
+| Secrets | `secrets/minecraft.yaml`: `CF_API_KEY`, the CurseForge API (application programming interface) key, mounted into the container as a file; `env`, the whitelist, read by `minecraft-whitelist.service` |
 | Memory | a 12 GiB Java heap (`MEMORY=12G`), and 18 GiB for the whole stack (`resources.memoryMax`) |
 
 ## What is pinned
@@ -56,43 +56,57 @@ writes the setting into `server.properties` at each start; to check it:
 
 The players allowed in are friends' names, so they are kept out of this
 public repo: they are the `WHITELIST` line under the `env` key of
-`secrets/minecraft.yaml`, which becomes the stack's `.env`. To change it, on
-the workstation:
+`secrets/minecraft.yaml`. To change it, on the workstation:
 
 ```bash
 sops secrets/minecraft.yaml
 ```
 
-and edit the `env` key, which holds dotenv lines, names comma-separated:
+and edit the `env` key, names comma-separated (the key holds dotenv lines,
+from when it was the stack's `.env`):
 
 ```yaml
 env: |
   WHITELIST=FirstPlayer,SecondPlayer
 ```
 
-Commit the file and merge. The changed secret reloads the stack, which
-recreates the container, disconnecting everyone online (#153 is to change
-that for additions). The list then replaces the server's whitelist
-(`EXISTING_WHITELIST_FILE=SYNCHRONIZE`); `ENFORCE_WHITELIST` kicks anyone
-removed from it. A missing or empty `WHITELIST` fails every compose command on the stack,
-stop included, naming the key, rather than running a server no one can
-join; restore the line to stop or start it again. To let someone
-in at once, before the merge, run `rcon-cli whitelist add <name>` as well;
-the next start drops them if the file does not list them.
+Commit the file and merge. Nobody is disconnected (#153). The changed
+secret restarts `minecraft-whitelist.service`, which compares the list with
+the running server's and applies the difference through RCON: `whitelist
+add` for a new name, who can join at once, and `whitelist remove` for a
+dropped one, whom the server kicks at once, since it enforces its whitelist
+(`ENFORCE_WHITELIST`). Names match whatever their case. The same unit runs
+after every start or restart of the stack, so a server restored from an
+older snapshot, which stops and starts the stack, ends up with the current
+list too. The server keeps the list in `/data/whitelist.json` between
+starts. A deploy that only reloads the stack, even one that recreates the
+container, does not run the unit; the new container reads the same file.
 
-Check each name's spelling before merging. The image looks every name up
-online when the container starts, and a name it cannot find stops the
-start: the log shows `Could not resolve user from Playerdb: <name>`, the
-container exits, and Docker starts it again, over and over. On a deploy or
-at boot the unit's failure is what posts to Discord; after a change to a
-running stack, the crash watcher posts the restarts, with the container's
-last log lines, names included. This happened in the timing run before
-#28's merge, with a made-up name.
+```bash
+systemctl status minecraft-whitelist   # the last sync and what it changed
+sudo docker exec minecraft-server-1 rcon-cli whitelist list
+```
 
-The same lookup needs Playerdb to be reachable. If the internet or Playerdb
-is down when the container starts, at boot say, the start is expected to
-fail the same way (not tested), and Docker keeps retrying. Once it is back,
-`sudo systemctl restart stack-minecraft`.
+Check each name's spelling before merging. The server looks each new name
+up with Mojang when it is added, and one it cannot find (`That player does
+not exist`) fails the unit, which posts to Discord with its log, names
+included. So does anything that is not a valid player name (3 to 16
+letters, digits and underscores). The other names in the same edit are
+still applied, and the server keeps running. A failed unit is tried again
+on the next deploy, and posts again, until the name is fixed. Fix the name
+and merge again, or run `sudo systemctl start minecraft-whitelist` once
+Mojang's lookup is back if that was the cause.
+
+The unit runs only while the stack is up. It waits up to 15 minutes for
+the server to be healthy, which also covers a deploy that recreates the
+container at the same moment, and fails, with the same alert, if it is
+not. `sudo systemctl start minecraft-whitelist` then applies the list.
+
+A missing `WHITELIST` line, or one that names no one, also fails the unit,
+and the server's whitelist is left as it was rather than emptied.
+
+To let someone in before a merge, `rcon-cli whitelist add <name>` works as
+well, but the next sync removes anyone the file does not list.
 
 ### Join protection
 
