@@ -86,9 +86,14 @@ not exist`) fails the unit, which posts to Discord with its log, names
 included. So does anything that is not a valid player name (3 to 16
 letters, digits and underscores). The other names in the same edit are
 still applied, and the server keeps running. A failed unit is tried again
-on the next deploy, and posts again, until the name is fixed. Fix the name and merge again, or run `sudo systemctl
-start minecraft-whitelist` once Mojang's lookup is back if that was the
-cause.
+on the next deploy, and posts again, until the name is fixed. Fix the name
+and merge again, or run `sudo systemctl start minecraft-whitelist` once
+Mojang's lookup is back if that was the cause.
+
+The unit runs only while the stack is up. It waits up to five minutes for
+the server to be healthy, which also covers a deploy that recreates the
+container at the same moment, and fails, with the same alert, if it is
+not. `sudo systemctl start minecraft-whitelist` then applies the list.
 
 A missing `WHITELIST` line, or one that names no one, also fails the unit,
 and the server's whitelist is left as it was rather than emptied.

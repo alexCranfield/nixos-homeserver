@@ -6,9 +6,8 @@
 # Names are matched without regard to case, as Minecraft does. A name that is
 # not a valid player name, or that the server cannot add (misspelt, or Mojang's
 # lookup down), is reported and the script fails, so the unit's failure posts
-# to Discord; the other names are still applied. A server that is not running
-# is left alone: its whitelist.json keeps the last list, and the unit runs
-# again after the stack starts.
+# to Discord; the other names are still applied. So does a server that is not
+# healthy within five minutes; its whitelist.json keeps the last list.
 env_file=$1
 container=$2
 
@@ -45,15 +44,15 @@ if [ "${#want[@]}" -eq 0 ]; then
   exit 1
 fi
 
-# A stopped container can keep its last health status, so check it runs too.
+# The unit runs only while the stack is active, so a container that is
+# missing or stopped is being recreated (a reload) or has gone wrong: wait for
+# it either way, and fail if it does not come back. A stopped container can
+# keep its last health status, so check it runs too. Running is not ready
+# either: RCON comes up only once the server has loaded.
 health() {
   docker inspect -f '{{if .State.Running}}{{.State.Health.Status}}{{else}}stopped{{end}}' "$container" 2> /dev/null
 }
-if ! state=$(health) || [ "$state" = stopped ]; then
-  echo "$container is not running; its whitelist is synced when the stack next starts"
-  exit "$failed"
-fi
-# Running is not ready: RCON comes up only once the server has loaded.
+state=$(health) || state=gone
 for _ in $(seq 60); do
   [ "$state" = healthy ] && break
   sleep 5
