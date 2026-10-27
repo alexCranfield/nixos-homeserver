@@ -34,6 +34,7 @@
 # to be mentioned, so a log line containing `@everyone` stays text.
 {
   config,
+  options,
   lib,
   pkgs,
   ...
@@ -184,162 +185,170 @@ in
     };
   };
 
-  config = lib.mkIf (cfg.webhookFile != null) {
-    assertions =
-      map
-        (f: {
-          assertion = f == null || !lib.hasPrefix builtins.storeDir f;
-          message = "homeserver.notify: ${f} is in the Nix store, which every local user can read.";
-        })
-        [
-          cfg.webhookFile
-          cfg.roleFile
-        ];
+  config = lib.mkIf (cfg.webhookFile != null) (
+    lib.mkMerge [
+      {
+        assertions =
+          map
+            (f: {
+              assertion = f == null || !lib.hasPrefix builtins.storeDir f;
+              message = "homeserver.notify: ${f} is in the Nix store, which every local user can read.";
+            })
+            [
+              cfg.webhookFile
+              cfg.roleFile
+            ];
 
-    # The services the base modules run, each only where it exists.
-    # Ticket-specific ones add themselves beside their unit.
-    homeserver.notify.units =
-      lib.optional config.services.comin.enable "comin"
-      ++ lib.optional config.services.openssh.enable "sshd"
-      ++ lib.optional config.nix.gc.automatic "nix-gc"
-      ++ lib.optional config.services.tailscale.enable "tailscaled"
-      ++ lib.optional (
-        config.services.tailscale.enable && config.services.tailscale.authKeyFile != null
-      ) "tailscaled-autoconnect"
-      ++ lib.optional config.services.fstrim.enable "fstrim"
-      ++ lib.optional config.services.logrotate.enable "logrotate";
+        # The services the base modules run, each only where it exists.
+        # Ticket-specific ones add themselves beside their unit.
+        homeserver.notify.units =
+          lib.optional config.services.comin.enable "comin"
+          ++ lib.optional config.services.openssh.enable "sshd"
+          ++ lib.optional config.nix.gc.automatic "nix-gc"
+          ++ lib.optional config.services.tailscale.enable "tailscaled"
+          ++ lib.optional (
+            config.services.tailscale.enable && config.services.tailscale.authKeyFile != null
+          ) "tailscaled-autoconnect"
+          ++ lib.optional config.services.fstrim.enable "fstrim"
+          ++ lib.optional config.services.logrotate.enable "logrotate";
 
-    systemd.services = {
-      "notify-failure@" = {
-        description = "Post the failure of %i to Discord";
-        after = [ "network-online.target" ];
-        wants = [ "network-online.target" ];
-        scriptArgs = "%i";
-        # systemd starts this on every failure, including each one followed by
-        # an automatic restart (tests/notify.py, systemd 260), so a unit stuck
-        # in a crash loop would post every few seconds. One message per unit
-        # per cooldown; failures inside it are counted, and the next message
-        # says how many.
-        script = ''
-          unit=$1
-          state=$STATE_DIRECTORY/$unit
-          now=$(date +%s)
-          last=0
-          held=0
-          # A file cut short by a power cut, or unreadable, counts as none:
-          # failing here would silence the unit for good.
-          if [ -e "$state" ]; then
-            read -r last held < "$state" || true
-          fi
-          [[ $last =~ ^[0-9]+$ && $held =~ ^[0-9]+$ ]] || { last=0; held=0; }
-          save() {
-            echo "$1 $2" > "$state.new"
-            mv "$state.new" "$state"
-          }
-          # 0 or more: a clock set back past the last post does not hold
-          # posts back until it catches up.
-          if [ $((now - last)) -ge 0 ] && [ $((now - last)) -lt ${toString cfg.cooldown} ]; then
-            save "$last" $((held + 1))
-            echo "posted about $unit $((now - last)) s ago; holding this one back"
-            exit 0
-          fi
-          # In the title, which is never cut to fit, unlike the log.
-          title="${host}: $unit failed"
-          if [ "$held" -gt 0 ]; then
-            title="$title ($held more times since the last message, not posted)"
-          fi
-          # The failed run only, not earlier runs or boots.
-          journalctl --unit "$unit" --invocation 0 --lines 20 --no-pager --output short-iso |
-            ${lib.getExe send} "$CREDENTIALS_DIRECTORY/webhook" ${credRole} ${icon.wrong} "$title"
-          save "$now" 0
-        '';
-        path = [
-          pkgs.coreutils
-          pkgs.systemd
-        ];
-        serviceConfig = hardening // {
-          Type = "oneshot";
-          StateDirectory = "notify-failure";
-          DynamicUser = true;
-          LoadCredential = credentials;
-          # The journal is readable by its group; root is not needed.
-          SupplementaryGroups = [ "systemd-journal" ];
-        };
-      };
+        systemd.services = {
+          "notify-failure@" = {
+            description = "Post the failure of %i to Discord";
+            after = [ "network-online.target" ];
+            wants = [ "network-online.target" ];
+            scriptArgs = "%i";
+            # systemd starts this on every failure, including each one followed by
+            # an automatic restart (tests/notify.py, systemd 260), so a unit stuck
+            # in a crash loop would post every few seconds. One message per unit
+            # per cooldown; failures inside it are counted, and the next message
+            # says how many.
+            script = ''
+              unit=$1
+              state=$STATE_DIRECTORY/$unit
+              now=$(date +%s)
+              last=0
+              held=0
+              # A file cut short by a power cut, or unreadable, counts as none:
+              # failing here would silence the unit for good.
+              if [ -e "$state" ]; then
+                read -r last held < "$state" || true
+              fi
+              [[ $last =~ ^[0-9]+$ && $held =~ ^[0-9]+$ ]] || { last=0; held=0; }
+              save() {
+                echo "$1 $2" > "$state.new"
+                mv "$state.new" "$state"
+              }
+              # 0 or more: a clock set back past the last post does not hold
+              # posts back until it catches up.
+              if [ $((now - last)) -ge 0 ] && [ $((now - last)) -lt ${toString cfg.cooldown} ]; then
+                save "$last" $((held + 1))
+                echo "posted about $unit $((now - last)) s ago; holding this one back"
+                exit 0
+              fi
+              # In the title, which is never cut to fit, unlike the log.
+              title="${host}: $unit failed"
+              if [ "$held" -gt 0 ]; then
+                title="$title ($held more times since the last message, not posted)"
+              fi
+              # The failed run only, not earlier runs or boots.
+              journalctl --unit "$unit" --invocation 0 --lines 20 --no-pager --output short-iso |
+                ${lib.getExe send} "$CREDENTIALS_DIRECTORY/webhook" ${credRole} ${icon.wrong} "$title"
+              save "$now" 0
+            '';
+            path = [
+              pkgs.coreutils
+              pkgs.systemd
+            ];
+            serviceConfig = hardening // {
+              Type = "oneshot";
+              StateDirectory = "notify-failure";
+              DynamicUser = true;
+              LoadCredential = credentials;
+              # The journal is readable by its group; root is not needed.
+              SupplementaryGroups = [ "systemd-journal" ];
+            };
+          };
 
-      # Up at boot, down at shutdown. A marker in its state directory lives
-      # from start to stop, so finding it at start means the last boot never
-      # stopped this unit: it ended without a clean shutdown. The marker, not
-      # the journal: what the journal held in memory is lost in a power cut.
-      notify-online = {
-        description = "Post to Discord when the host comes up and goes down";
-        wantedBy = [ "multi-user.target" ];
-        # network.target too, so it is stopped before the network is.
-        after = [
-          "network-online.target"
-          "network.target"
-        ];
-        wants = [ "network-online.target" ];
-        # A deploy that changes this unit must not post a fake down and up.
-        restartIfChanged = false;
-        path = [
-          pkgs.coreutils
-          pkgs.systemd
-        ];
-        script = ''
-          marker=/var/lib/notify-online/running
-          if [ -e "$marker" ]; then
-            unclean=1
-          else
-            unclean=0
-          fi
-          touch "$marker"
-          # All of it, not the file alone: a new file's directory entry is
-          # what makes it exist after a power cut. ext4 and btrfs often commit
-          # it soon anyway, so the VM test passes without this too; it is here
-          # for the power cut that comes first.
-          sync
-          kernel=$(uname -r)
-          # A failed post must not fail the unit: a failed unit is not stopped
-          # at shutdown, which would leave the marker and report the next boot
-          # as unclean.
-          if [ "$unclean" = 1 ]; then
-            echo "The last boot ended without a clean shutdown (power cut, crash or hang); when it went down is not known." |
-              ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} ${lib.escapeShellArg roleArg} ${icon.wrong} "${host} is up after an unclean shutdown, kernel $kernel" ||
-              echo "could not post the boot message" >&2
-          else
-            ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - ${icon.up} "${host} is up, kernel $kernel" < /dev/null ||
-              echo "could not post the boot message" >&2
-          fi
-        '';
-        preStop = ''
-          rm -f /var/lib/notify-online/running
-          sync
-          # A queued job for one of these targets: the host comes back.
-          if systemctl list-jobs --no-legend reboot.target kexec.target soft-reboot.target | grep -q .; then
-            what=rebooting
-          else
-            what="shutting down"
-          fi
-          ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - ${icon.down} "${host} is $what" < /dev/null ||
-            echo "could not post the shutdown message" >&2
-        '';
-        # As root, reading the secrets where sops-nix put them, as comin's hook
-        # does. With a dynamic user and LoadCredential=, as notify-failure@
-        # has, ExecStop= could not use the credentials: $CREDENTIALS_DIRECTORY
-        # was empty there, and with the path given as %d, reading the file was
-        # denied (tests/notify.py, 2026-10-21).
-        serviceConfig = hardening // {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          StateDirectory = "notify-online";
-        };
-      };
-    }
-    // lib.genAttrs cfg.units (_: {
-      onFailure = [ "notify-failure@%n.service" ];
-    });
+          # Up at boot, down at shutdown. A marker in its state directory lives
+          # from start to stop, so finding it at start means the last boot never
+          # stopped this unit: it ended without a clean shutdown. The marker, not
+          # the journal: what the journal held in memory is lost in a power cut.
+          notify-online = {
+            description = "Post to Discord when the host comes up and goes down";
+            wantedBy = [ "multi-user.target" ];
+            # network.target too, so it is stopped before the network is.
+            after = [
+              "network-online.target"
+              "network.target"
+            ];
+            wants = [ "network-online.target" ];
+            # A deploy that changes this unit must not post a fake down and up.
+            restartIfChanged = false;
+            path = [
+              pkgs.coreutils
+              pkgs.systemd
+            ];
+            script = ''
+              marker=/var/lib/notify-online/running
+              if [ -e "$marker" ]; then
+                unclean=1
+              else
+                unclean=0
+              fi
+              touch "$marker"
+              # All of it, not the file alone: a new file's directory entry is
+              # what makes it exist after a power cut. ext4 and btrfs often commit
+              # it soon anyway, so the VM test passes without this too; it is here
+              # for the power cut that comes first.
+              sync
+              kernel=$(uname -r)
+              # A failed post must not fail the unit: a failed unit is not stopped
+              # at shutdown, which would leave the marker and report the next boot
+              # as unclean.
+              if [ "$unclean" = 1 ]; then
+                echo "The last boot ended without a clean shutdown (power cut, crash or hang); when it went down is not known." |
+                  ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} ${lib.escapeShellArg roleArg} ${icon.wrong} "${host} is up after an unclean shutdown, kernel $kernel" ||
+                  echo "could not post the boot message" >&2
+              else
+                ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - ${icon.up} "${host} is up, kernel $kernel" < /dev/null ||
+                  echo "could not post the boot message" >&2
+              fi
+            '';
+            preStop = ''
+              rm -f /var/lib/notify-online/running
+              sync
+              # A queued job for one of these targets: the host comes back.
+              if systemctl list-jobs --no-legend reboot.target kexec.target soft-reboot.target | grep -q .; then
+                what=rebooting
+              else
+                what="shutting down"
+              fi
+              ${lib.getExe send} ${lib.escapeShellArg cfg.webhookFile} - ${icon.down} "${host} is $what" < /dev/null ||
+                echo "could not post the shutdown message" >&2
+            '';
+            # As root, reading the secrets where sops-nix put them, as comin's hook
+            # does. With a dynamic user and LoadCredential=, as notify-failure@
+            # has, ExecStop= could not use the credentials: $CREDENTIALS_DIRECTORY
+            # was empty there, and with the path given as %d, reading the file was
+            # denied (tests/notify.py, 2026-10-21).
+            serviceConfig = hardening // {
+              Type = "oneshot";
+              RemainAfterExit = true;
+              StateDirectory = "notify-online";
+            };
+          };
+        }
+        // lib.genAttrs cfg.units (_: {
+          onFailure = [ "notify-failure@%n.service" ];
+        });
+      }
 
-    homeserver.comin.postDeployment = [ "${deployHook}" ];
-  };
+      # Only where comin.nix is imported: tests/stack-data.nix uses this module
+      # without it.
+      (lib.optionalAttrs (options.homeserver ? comin) {
+        homeserver.comin.postDeployment = [ "${deployHook}" ];
+      })
+    ]
+  );
 }
