@@ -77,3 +77,55 @@ set: more risk than the console's notice is worth. Revisit when a bulletin
 affects plain clients.
 
 </details>
+
+### Could sops keep the tailnet's name private if Grafana used HTTPS through Serve?
+
+*2026-10-27*
+
+> Could we encrypt the DNS with Sops? Similar to the Minecraft usernames and webhooks?
+
+<details>
+<summary>Answer</summary>
+
+No. The name wouldn't leak from the repo; Serve's configuration needs only
+ports. It leaks from the certificate. To serve HTTPS, Tailscale gets a Let's
+Encrypt certificate for `nuc.<tailnet name>.ts.net`, and every public CA
+(certificate authority) must record what it issues in the Certificate
+Transparency logs, which anyone can search (crt.sh, for example). Once the
+certificate exists, the name is public, whatever is encrypted on our side.
+
+The name alone doesn't let anyone in: the tailnet still needs a login and the
+access policy. But keeping it private is the rule here, so Grafana uses Serve
+over plain HTTP. There's no certificate, and the traffic is still encrypted end
+to end by Tailscale's WireGuard tunnel; the browser's "Not secure" label is the
+only cost.
+
+</details>
+
+### Could our own DNS server give the admin pages HTTPS?
+
+*2026-10-27*
+
+> Could we not use a self hosted DNS like the nas on the tailscale network to have our own https? Like unbound or technitium?
+
+<details>
+<summary>Answer</summary>
+
+Half of it. A DNS (Domain Name System) server on the tailnet, with Tailscale's
+split DNS pointing a domain at it, gives the nuc a private name such as
+`grafana.home.arpa`. HTTPS also needs a certificate the browser trusts, and
+there are two ways to get one without the tailnet's name going public:
+
+- **A private CA** (certificate authority) on the nuc, such as Caddy's
+  built-in one or step-ca. Nothing is published, but every device that opens
+  the pages has to install its root certificate.
+- **A domain you own.** Let's Encrypt issues a wildcard certificate, proved
+  through the DNS provider's API. The public logs show only the wildcard, and
+  every device trusts it with nothing to install. It costs a domain and an API
+  token in sops.
+
+Either way a reverse proxy on the nuc replaces Serve, with 443 open on
+`tailscale0` only. Tracked in #163, alongside moving the LAN's DNS to the nuc
+(#164), so that one DNS server does both jobs.
+
+</details>

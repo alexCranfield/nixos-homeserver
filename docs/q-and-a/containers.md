@@ -113,3 +113,32 @@ images already drop to an unprivileged user, and it shares rootless mode's
 "cheap only before data exists" property.
 
 </details>
+
+### How likely is Docker to fail, and is Grafana safer in a container?
+
+*2026-10-27*
+
+> Native is fine, that makes sense, but realistically how likely is docker going to fail? Is it safer to have it containerised?
+
+<details>
+<summary>Answer</summary>
+
+Docker failing outright is unlikely. The realistic ways it stops the containers
+are rarer events: the daemon restarting for a Docker update (which arrives
+through the weekly `flake.lock` bump) or for a daemon setting that needs a start
+with nothing running (ADR (Architecture Decision Record) 0006); Docker's
+storage filling up or getting corrupted, since it shares the one btrfs
+filesystem with everything else; and a bad image or Compose change the checks
+don't catch.
+
+The argument for running Grafana natively is overlap rather than probability:
+monitoring shouldn't fail for the same reasons as the things it watches. In
+Docker, a Docker problem takes out the dashboard you'd use to look into it.
+Prometheus and the exporters are native for the same reason.
+
+On safety, a container adds little here. The nixpkgs Grafana module runs it as
+its own user with systemd's sandboxing, about what rootful Docker gives a
+container. Native Grafana also gets security updates through the `flake.lock`
+bump, with no image tag to pin and follow.
+
+</details>
