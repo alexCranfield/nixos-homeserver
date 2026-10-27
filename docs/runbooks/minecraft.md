@@ -90,7 +90,7 @@ on the next deploy, and posts again, until the name is fixed. Fix the name
 and merge again, or run `sudo systemctl start minecraft-whitelist` once
 Mojang's lookup is back if that was the cause.
 
-The unit runs only while the stack is up. It waits up to five minutes for
+The unit runs only while the stack is up. It waits up to 15 minutes for
 the server to be healthy, which also covers a deploy that recreates the
 container at the same moment, and fails, with the same alert, if it is
 not. `sudo systemctl start minecraft-whitelist` then applies the list.

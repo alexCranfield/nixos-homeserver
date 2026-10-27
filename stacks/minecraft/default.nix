@@ -98,8 +98,9 @@ in
       # does not run it again. A changed secret restarts it.
       RemainAfterExit = true;
       ExecStart = "${lib.getExe whitelistSync} ${config.sops.secrets.minecraft-env.path} minecraft-server-1";
-      # It waits up to five minutes for the server to be ready.
-      TimeoutStartSec = "10min";
+      # It waits up to 15 minutes for the server to be ready, as the stack
+      # allows a start that long (a pack update reinstalls mods).
+      TimeoutStartSec = "20min";
     };
   };
   homeserver.notify.units = lib.mkIf (config.homeserver.stacks ? minecraft) [ "minecraft-whitelist" ];

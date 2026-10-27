@@ -7,7 +7,8 @@
 # not a valid player name, or that the server cannot add (misspelt, or Mojang's
 # lookup down), is reported and the script fails, so the unit's failure posts
 # to Discord; the other names are still applied. So does a server that is not
-# healthy within five minutes; its whitelist.json keeps the last list.
+# healthy within 15 minutes, as long as the stack allows a start; its
+# whitelist.json keeps the last list.
 env_file=$1
 container=$2
 
@@ -53,7 +54,7 @@ health() {
   docker inspect -f '{{if .State.Running}}{{.State.Health.Status}}{{else}}stopped{{end}}' "$container" 2> /dev/null
 }
 state=$(health) || state=gone
-for _ in $(seq 60); do
+for _ in $(seq 180); do
   [ "$state" = healthy ] && break
   sleep 5
   state=$(health) || state=gone
