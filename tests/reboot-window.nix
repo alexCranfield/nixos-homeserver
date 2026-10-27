@@ -31,6 +31,9 @@ pkgs.testers.runNixOSTest {
     # but a switch reports it (exit 2), and switching is what this test does,
     # so the decryption step is left out.
     system.activationScripts.setupSecrets = lib.mkForce "";
+    # The window on its own: public messages (#161) move its timer to 09:55
+    # and add a warning before each reboot. tests/announce.nix covers those.
+    homeserver.announce.webhookFile = lib.mkForce null;
     # The hook #31 will use. The first command has quotes, an unset variable
     # and a backtick, which must reach bash intact rather than break the
     # script; the second fails, and the reboot must go ahead regardless.

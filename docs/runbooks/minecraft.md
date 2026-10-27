@@ -40,6 +40,11 @@ sudo docker exec -it minecraft-server-1 rcon-cli  # a console; Ctrl-D leaves
 RCON (remote console) is reachable only inside the container: nothing
 publishes its port, and the image makes a new password each time it starts.
 
+Status messages show in the chat as `[nuc] ...`: an update starting and
+finishing, the reboot window's warning, and `nuc-announce` (#161,
+[notifications.md](notifications.md#the-public-channel)). They go through
+`rcon-cli tellraw @a`; a server still starting misses them.
+
 `allow-flight` is on (`ALLOW_FLIGHT` in `compose.yml`, #156). Without it,
 vanilla's movement check kicked a player while they fell, probably because
 lag or one of the pack's mods made the fall look like flying. Every player
