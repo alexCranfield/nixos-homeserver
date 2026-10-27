@@ -12,7 +12,9 @@
 # Tuesday 10:00 UTC (Coordinated Universal Time), Alex's choice (2026-10-21):
 # 04:00 Mountain daylight time, 03:00 standard, the day after the weekly
 # flake.lock pull request (docs/runbooks/updates.md). The clock is UTC
-# (system.nix), so the window does not move with daylight saving.
+# (system.nix), so the window does not move with daylight saving. With public
+# messages on (announce.nix, #161), the timer starts at 09:55 and the reboot
+# follows a five-minute warning.
 {
   config,
   lib,

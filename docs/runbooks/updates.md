@@ -129,7 +129,11 @@ nothing; a configuration-only change never reboots the nuc. If they differ, it
 waits up to 30 minutes for a comin deploy in progress to finish (and goes ahead
 after that even if one is still running: switch-to-configuration installs the
 boot entry before it activates, so the next boot should be a complete system),
-runs the pre-reboot commands, then reboots. The disk unlocks from the TPM
+runs the pre-reboot commands, then reboots. With public messages on (#161),
+the timer runs at 09:55 instead, and a pre-reboot command posts a
+five-minute warning, in Discord and in game, and waits it out, so the reboot
+still comes at about 10:00 ([notifications.md](notifications.md#the-public-channel)).
+The disk unlocks from the TPM
 (Trusted Platform Module); in the one recorded reboot, on 2026-10-20, SSH
 answered 47 s after the reboot command ([deploy.md](deploy.md), Record).
 

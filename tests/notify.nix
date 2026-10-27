@@ -75,6 +75,8 @@ pkgs.testers.runNixOSTest {
     services.tailscale.authKeyFile = lib.mkForce null;
     homeserver.notify.webhookFile = lib.mkForce "/run/notify-test/webhook";
     homeserver.notify.roleFile = lib.mkForce "/run/notify-test/role";
+    # Public messages (#161) have their own test, tests/announce.nix.
+    homeserver.announce.webhookFile = lib.mkForce null;
     systemd.tmpfiles.rules = [
       "C /run/notify-test/webhook 0400 root root - ${pkgs.writeText "webhook" url}"
       "C /run/notify-test/role 0400 root root - ${pkgs.writeText "role" role}"

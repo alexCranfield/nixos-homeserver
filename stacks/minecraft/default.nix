@@ -106,4 +106,9 @@ in
     };
   };
   homeserver.notify.units = lib.mkIf (config.homeserver.stacks ? minecraft) [ "minecraft-whitelist" ];
+
+  # Public status messages show in the game's chat too (#161).
+  homeserver.announce.minecraftContainers = lib.mkIf (config.homeserver.stacks ? minecraft) [
+    "minecraft-server-1"
+  ];
 }

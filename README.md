@@ -153,7 +153,7 @@ flake.lock                         pinned revisions; commit every change
 hosts/nuc/default.nix              the host: imports disko, hardware + base; encrypted-boot settings
 hosts/nuc/disko.nix                the disk: ESP (EFI System Partition), btrfs in LUKS2 (Linux Unified Key Setup), swapfile
 hosts/nuc/network.nix              the LAN port by MAC address, DHCP, nothing open on the LAN
-hosts/nuc/notify.nix               the nuc's Discord webhook and role, from sops
+hosts/nuc/notify.nix               the nuc's Discord webhooks (alerts and public) and role, from sops
 hosts/nuc/hardware-configuration.nix   kernel modules, detected on the nuc (#13)
 hosts/installer/default.nix        live USB: latest kernel, survey tools, ops key
 keys/ops.pub                       the admin SSH public key (private half on the workstation)
@@ -166,6 +166,7 @@ modules/base/system.nix            UTC clock, locale, boot menu retention, git a
 modules/base/comin.nix             comin: the host deploys itself from `main`
 modules/base/reboot-window.nix     weekly window that reboots only for a new kernel or kernel parameters
 modules/base/notify.nix            Discord alerts: failed units and deploys, boot, shutdown
+modules/base/announce.nix          public status messages, in Discord and in game: updates, the reboot window, announcements
 modules/base/vm.nix                SSH into `just vm` on 127.0.0.1:2222; no effect on a real host
 modules/containers/docker.nix      rootful Docker: ports on loopback unless named, nobody in the docker group
 modules/containers/compose-stack.nix   homeserver.stacks: a compose file becomes stack-<name>.service; public ports, limits, crash alerts
@@ -192,6 +193,7 @@ tests/headscale.nix                the stand-in for Tailscale's servers, shared 
 tests/game-access.nix              VM test: a friend reaches a game port over the tailnet and nothing else, the LAN does not; controls without the rule and on lan0
 tests/game-access.py               its test script
 tests/notify.nix                   VM test: failed units and deploys, boot and shutdown post to a stand-in webhook, with the cooldown
+tests/announce.nix                 VM test: public messages reach a stand-in webhook and game, the window warns before it reboots
 tests/notify.py                    its test script
 tests/docker.nix                   VM test: published ports bind to loopback on every network; controls without each setting
 tests/docker.py                    its test script

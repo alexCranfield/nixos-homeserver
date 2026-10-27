@@ -1,8 +1,16 @@
 # Notifications: Discord
 
-Ticket 2.5 (#20). The nuc posts to one Discord channel through a webhook. The
-configuration is `modules/base/notify.nix`, with the nuc's secrets wired in
-`hosts/nuc/notify.nix`.
+Ticket 2.5 (#20). The nuc posts to two Discord channels through webhooks:
+
+- **the alerts channel**, Alex's own: failures, with their logs, pinging
+  `@nuc-mods`. The configuration is `modules/base/notify.nix`, and most of
+  this runbook is about it.
+- **the public channel** (#161), for everyone who uses the nuc: updates,
+  restarts and announcements, also shown in the Minecraft server's chat.
+  The configuration is `modules/base/announce.nix`; see
+  [The public channel](#the-public-channel) below.
+
+The nuc's secrets for both are wired in `hosts/nuc/notify.nix`.
 
 ## What posts
 
@@ -43,7 +51,8 @@ usually is. Only the one role can be pinged: each message tells Discord so
 2026-10-21, Discord recorded the test message as pinging the role and not
 everyone (`mention_everyone: false`).
 
-A deploy does not post: switching configuration leaves the up and down unit
+A deploy does not post here (the public channel announces it): switching
+configuration leaves the up and down unit
 running even when the deploy changes it (`restartIfChanged = false`, tested),
 and successful deployments are left quiet so the channel shows only what needs
 attention. The exceptions are deploys that add or remove the unit itself: the
@@ -135,6 +144,78 @@ output to itself, so the deployment hook logs under its own name:
 ```bash
 ssh nuc 'journalctl -t notify-comin-deployment -n 20 --no-pager'
 ```
+
+## The public channel
+
+Ticket #161. Short status messages for everyone who uses the nuc, in a second
+channel, `nuc-alerts-public`, and in the chat of each Minecraft server that is
+running. Discord gets the icon and the time in UTC; the game gets
+`[nuc] <text>`, with any link as a clickable "More info".
+
+| When | Message | In game |
+|---|---|---|
+| comin is about to deploy a merge | 🔵 `Applying update. Services on the nuc may restart briefly. More info: <pull request>` | yes |
+| The deploy finished | 🟢 `Update complete. More info: <pull request>` | yes |
+| The deploy failed | 🔴 `Update failed; the server is unchanged. More info: <pull request>`; the error goes to the alerts channel | no |
+| The reboot window is about to reboot (Tuesday 09:55 UTC) | 🟠 `Scheduled maintenance: the nuc restarts at 10:00 UTC (in 5 minutes).` | yes, plus `The nuc restarts in 1 minute.` |
+| The nuc has booted (within its first 10 minutes, so not the deploy that adds the unit) | 🟢 `The nuc is back up.` | no, nobody is connected yet |
+| `sudo nuc-announce "TEXT" [LINK]` on the nuc | 📢 the text | yes |
+
+- **No pings, nothing private.** Nobody is ever mentioned: `@everyone` in a
+  message stays text, though Discord highlights it. No message carries a
+  log, a unit name, a hostname or the kernel version. Discord formats the
+  text as Markdown, inside bold, so `*` or `_` in an announcement may render
+  as formatting; keep announcements under about 1,900 characters, Discord's
+  limit less the time and icon.
+- **Every update gets the same wording,** whether or not it restarts
+  anything. Updates are applied at once, with no warning before one restarts
+  a game (Alex, 2026-10-27). For a big change, announce it first by hand.
+- **"Applying update" comes from comin's build hook.** comin has no hook
+  before it deploys; its build hook runs just before, after the build. A
+  build of the system already running (a merge that changes only docs, or
+  comin starting again) is not announced. The link is the pull request from
+  the `(#N)` at the end of the squash merge's subject, or else the commit.
+- **An outcome is posted only for an announced update.** The build hook
+  leaves a marker in `/run/announce-comin` for each build it announces, and
+  the deployment hook posts "complete" or "failed" only for one with a
+  marker. Without that, a docs-only merge right after a real update would
+  post a bare "Update complete": comin 0.14.0 compares a new build with the
+  deployment *before* the last one (`IsAlreadyDeployed`), so it switches
+  again to the system already running, which changes nothing.
+- **Posting holds comin up for a moment.** Its hooks run in line: a post
+  that Discord or a game server is slow to take holds the deploy for up to
+  about a minute (curl's 30 seconds of retries, 20 seconds per server), then
+  is logged and given up.
+- **Known gaps.** Two merges in quick succession can post "Applying" twice
+  and "complete" once, when the second replaces the first before it
+  deploys. After a failed deploy and then a reboot, comin builds the failed
+  commit again and does not redeploy it, so "Applying" can appear with
+  nothing after it. And "the server is unchanged" is the agreed wording, but
+  a switch that fails partway may have changed some services.
+- **The reboot window warns only when it will reboot.** It checks for a
+  pending reboot first, as it always has. With public messages on, its timer
+  starts at 09:55, and the reboot follows the five-minute warning, at about
+  10:00 (`homeserver.announce.rebootWarning`).
+- **The game.** Each server in `homeserver.announce.minecraftContainers` gets
+  the message through `rcon-cli tellraw`, as the snapshot hooks reach RCON
+  (remote console). The Minecraft stack adds `minecraft-server-1`. A server
+  that is stopped or still starting is skipped; a refusal is logged.
+
+To announce something, such as planned maintenance:
+
+```bash
+ssh nuc 'sudo nuc-announce "Down Saturday 14:00 UTC for a disk swap" https://github.com/alexCranfield/nixos-homeserver/issues/<n>'
+```
+
+**Setting it up.** In Discord, make the channel readable by everyone, with
+only the webhook able to post. Edit it, Integrations, Webhooks, New Webhook,
+Copy Webhook URL, then add the URL as `discord-public-webhook` with
+`just secrets-edit notify.yaml`. The URL is handled as the alerts channel's is.
+
+**Checking it.** A failed post is in the journal of whatever sent it:
+`comin-post-build` or `comin-post-deployment` (`journalctl -t <name>`), the
+reboot window, or `announce-online.service`. A message the game refused is
+logged the same way, with the server's reply.
 
 ## Record
 
