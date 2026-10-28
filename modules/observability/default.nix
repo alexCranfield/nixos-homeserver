@@ -9,7 +9,10 @@
 #  - cAdvisor: each container's CPU, memory and network;
 #  - comin's own exporter (modules/base/comin.nix): fetch, evaluation, build
 #    and deployment results, which #27's rules read;
-#  - itself.
+#  - itself;
+#  - the blackbox exporter, which probes the LAN gateway and the system's DNS,
+#    and node-exporter's textfile collector, which carries Tailscale's state
+#    (probes.nix).
 #
 # All of them are native services, not containers: ADR (Architecture Decision
 # Record) 0006 gives no container the Docker socket, and the metrics keep
@@ -85,6 +88,8 @@ let
       config.services.grafana.settings;
 in
 {
+  imports = [ ./probes.nix ];
+
   options.homeserver.observability.grafanaAdminPasswordFile = lib.mkOption {
     type = lib.types.path;
     description = ''

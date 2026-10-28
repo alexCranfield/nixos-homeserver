@@ -61,7 +61,16 @@ def open_ports(out):
     return sorted(int(p) for p in re.findall(r"^(\d+)/tcp\s+open\b", out, re.M))
 
 
-ALL_UP = {"node": "up", "cadvisor": "up", "comin": "up", "prometheus": "up"}
+# The blackbox jobs are up whenever the exporter answers, whether or not the
+# probe it runs succeeds.
+ALL_UP = {
+    "node": "up",
+    "cadvisor": "up",
+    "comin": "up",
+    "prometheus": "up",
+    "blackbox_gateway": "up",
+    "blackbox_dns": "up",
+}
 
 start_all()
 nuc.wait_for_unit("multi-user.target")
@@ -113,6 +122,32 @@ with subtest("node-exporter reports systemd units"):
     result = query('node_systemd_unit_state{name="sshd.service",state="active"}')
     print(result)
     assert [r["value"][1] for r in result] == ["1"], result
+
+with subtest("probes and Tailscale state are scraped"):
+    # Tailscale is not logged in here, so it is not running; the gauge must
+    # still be there, as 0, rather than missing. Under emulation the first
+    # timer run can take a while.
+    deadline = time.monotonic() + 180
+    while not (series := query("homeserver_tailscale_running")):
+        assert time.monotonic() < deadline, "no homeserver_tailscale_running"
+        time.sleep(5)
+    print(series)
+    assert [r["value"][1] for r in series] == ["0"], series
+    health = query("homeserver_tailscale_health_messages")
+    print(health)
+    assert health, "no homeserver_tailscale_health_messages"
+    # Whatever the probes find in this network, each job's target is the
+    # exporter, which answers, and each probe reports a result.
+    for job in ("blackbox_gateway", "blackbox_dns"):
+        deadline = time.monotonic() + 120
+        while not (up := query(f'up{{job="{job}"}} == 1')):
+            assert time.monotonic() < deadline, f"{job} is not up"
+            time.sleep(5)
+        while not (probe := query(f'probe_success{{job="{job}"}}')):
+            assert time.monotonic() < deadline, f"no probe_success for {job}"
+            time.sleep(5)
+        print(job, probe)
+    nuc.wait_for_open_port(9115)
 
 with subtest("Grafana is healthy and requires a login"):
     nuc.wait_for_unit("grafana.service")
@@ -242,7 +277,7 @@ with subtest("Grafana does not phone home"):
 with subtest("everything listens on loopback"):
     listeners = nuc.succeed("ss -ltnH")
     print(listeners)
-    for port in (9090, 9100, 9338, 3000):
+    for port in (9090, 9100, 9115, 9338, 3000):
         local = [
             line.split()[3]
             for line in listeners.splitlines()
@@ -255,7 +290,7 @@ with subtest("nothing new on the LAN"):
     # Nothing on `lan` pulls in network-online.target; reaching the nuc is
     # what matters.
     lan.wait_until_succeeds(f"ping -c 1 -W 2 {LAN_IP}", timeout=60)
-    out = lan.succeed(f"nmap -Pn -p 3000,4243,9090,9100,9338 {LAN_IP}")
+    out = lan.succeed(f"nmap -Pn -p 3000,4243,9090,9100,9115,9338 {LAN_IP}")
     print(out)
     assert open_ports(out) == [], open_ports(out)
 
