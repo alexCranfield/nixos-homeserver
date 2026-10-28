@@ -146,11 +146,11 @@ let
             })
             (event "TailnetDisconnected" {
               expr = ''
-                (homeserver_tailscale_running == 0 or homeserver_tailscale_health_messages > 0)
+                homeserver_tailscale_running == 0
                 unless on() (${failed "tailscaled"})
               '';
               summary = "The nuc is not connected to the tailnet (for ${t.TailnetDisconnected.for})";
-              description = "Tailscale is not running and logged in, or reports health warnings.";
+              description = "Tailscale is not running and logged in.";
             })
             (event "GatewayUnreachable" {
               expr = ''probe_success{job="blackbox_gateway"} == 0'';
@@ -163,9 +163,12 @@ let
               description = "The blackbox exporter's DNS probe fails.";
             })
             (event "OomKill" {
-              expr = "increase(container_oom_events_total[5m]) > 0";
-              summary = "Out-of-memory kill in {{ if $labels.name }}{{ $labels.name }}{{ else }}{{ $labels.id }}{{ end }}";
-              description = "The kernel killed a process for running out of memory in {{ if $labels.name }}container {{ $labels.name }}{{ else }}slice {{ $labels.id }}{{ end }} (cAdvisor's container_oom_events_total rose in the last 5 minutes).";
+              # Named containers only: cgroup v2 counts a kill in memory.events
+              # of every ancestor too, so the stack slice, /stack.slice and the
+              # root would each raise the same alert.
+              expr = ''increase(container_oom_events_total{name!=""}[5m]) > 0'';
+              summary = "Out-of-memory kill in container {{ $labels.name }}";
+              description = "The kernel killed a process for running out of memory in container {{ $labels.name }} (cAdvisor's container_oom_events_total rose in the last 5 minutes).";
             })
           ];
         }

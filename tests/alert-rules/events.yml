@@ -110,8 +110,8 @@ tests:
         values: "1x10"
       - series: 'node_systemd_unit_state{name="bar.service",state="failed"}'
         values: "0x10"
-      - series: 'node_systemd_unit_state{name="fooXservice",state="failed"}'
-        values: "0x10"
+      - series: 'node_systemd_unit_state{name="sshdXservice",state="failed"}'
+        values: "1x10"
     alert_rule_test:
       - eval_time: 0s
         alertname: UnitFailed
@@ -123,6 +123,14 @@ tests:
             exp_annotations:
               summary: "Unit foo.service failed"
               description: "systemd reports foo.service in the failed state. The notifier does not watch this unit."
+          # An unescaped "." in the watched-unit regex would hide this one.
+          - exp_labels:
+              severity: event
+              name: sshdXservice
+              state: failed
+            exp_annotations:
+              summary: "Unit sshdXservice failed"
+              description: "systemd reports sshdXservice in the failed state. The notifier does not watch this unit."
 
   # CominFetchFailed, for 30m.
   - interval: 15s
@@ -218,9 +226,9 @@ tests:
               job: node
             exp_annotations:
               summary: "The nuc is not connected to the tailnet (for 2m)"
-              description: "Tailscale is not running and logged in, or reports health warnings."
+              description: "Tailscale is not running and logged in."
 
-  # Health warnings alone also count.
+  # Health warnings alone do not: the metric is for dashboards.
   - interval: 15s
     input_series:
       - series: 'homeserver_tailscale_running{job="node"}'
@@ -230,13 +238,7 @@ tests:
     alert_rule_test:
       - eval_time: 120s
         alertname: TailnetDisconnected
-        exp_alerts:
-          - exp_labels:
-              severity: event
-              job: node
-            exp_annotations:
-              summary: "The nuc is not connected to the tailnet (for 2m)"
-              description: "Tailscale is not running and logged in, or reports health warnings."
+        exp_alerts: []
 
   # Connected and healthy.
   - interval: 15s
@@ -321,12 +323,18 @@ tests:
         exp_alerts: []
 
   # OomKill, for 0s: a counter rise of 1 fires at the sample that shows it,
-  # naming the container; a slice with no container name is named by its id.
+  # naming the container. cgroup v2 counts one kill on the container's scope
+  # and on each ancestor slice (here with no name label), yet only the named
+  # container alerts, once.
   - interval: 15s
     input_series:
       - series: 'container_oom_events_total{name="game",id="/docker/abc"}'
         values: "0 0 0 1 1 1 1 1"
-      - series: 'container_oom_events_total{id="/stack.slice/stack-hello.slice"}'
+      - series: 'container_oom_events_total{id="/stack.slice/stack-x.slice"}'
+        values: "0 0 0 1 1 1 1 1"
+      - series: 'container_oom_events_total{id="/stack.slice"}'
+        values: "0 0 0 1 1 1 1 1"
+      - series: 'container_oom_events_total{id="/"}'
         values: "0 0 0 1 1 1 1 1"
       - series: 'container_oom_events_total{name="quiet",id="/docker/def"}'
         values: "0x7"
@@ -342,11 +350,5 @@ tests:
               name: game
               id: /docker/abc
             exp_annotations:
-              summary: "Out-of-memory kill in game"
+              summary: "Out-of-memory kill in container game"
               description: "The kernel killed a process for running out of memory in container game (cAdvisor's container_oom_events_total rose in the last 5 minutes)."
-          - exp_labels:
-              severity: event
-              id: /stack.slice/stack-hello.slice
-            exp_annotations:
-              summary: "Out-of-memory kill in /stack.slice/stack-hello.slice"
-              description: "The kernel killed a process for running out of memory in slice /stack.slice/stack-hello.slice (cAdvisor's container_oom_events_total rose in the last 5 minutes)."
