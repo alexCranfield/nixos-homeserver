@@ -216,6 +216,9 @@
         # condition has held for its duration, and stays quiet short of it.
         alert-rules = import ./tests/alert-rules.nix { inherit pkgs; };
 
+        # Ticket #27: the relay from Alertmanager to Discord, unit-tested.
+        alert-relay = import ./tests/alert-relay.nix { inherit pkgs; };
+
         # Fails `nix flake check` if the server stops using the dev shell's Nix,
         # for example after a `nix.package` override on the host.
         devshell-nix-matches-server =

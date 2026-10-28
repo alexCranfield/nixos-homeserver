@@ -88,7 +88,10 @@ let
       config.services.grafana.settings;
 in
 {
-  imports = [ ./probes.nix ];
+  imports = [
+    ./alerting.nix
+    ./probes.nix
+  ];
 
   options.homeserver.observability.grafanaAdminPasswordFile = lib.mkOption {
     type = lib.types.path;
@@ -327,6 +330,19 @@ in
               url = "http://127.0.0.1:${toString ports.prometheus}";
               isDefault = true;
               editable = false;
+            }
+            # Shows what is firing and silenced (the alert rules, #27); the
+            # alerts themselves are posted by Alertmanager, not Grafana.
+            {
+              name = "Alertmanager";
+              type = "alertmanager";
+              uid = "alertmanager";
+              url = "http://127.0.0.1:9093";
+              editable = false;
+              jsonData = {
+                implementation = "prometheus";
+                handleGrafanaManagedAlerts = false;
+              };
             }
           ];
         };
