@@ -94,6 +94,16 @@ in
   };
 
   config = {
+    # Failures post to the alerts channel (modules/base/notify.nix).
+    homeserver.notify.units = [
+      "prometheus"
+      "prometheus-node-exporter"
+      "cadvisor"
+      "grafana"
+      "grafana-admin-password"
+      "tailscale-serve-grafana"
+    ];
+
     services.prometheus = {
       enable = true;
       listenAddress = "127.0.0.1";
