@@ -163,6 +163,51 @@ nobody is playing.
 Resistance ends when a player dies, so a player who respawns into chunks
 that are still loading is not protected.
 
+### Offline chunk loading
+
+Chunks a team force-loads with FTB Chunks (the pack's claims map) stay
+loaded while every member of the team is offline, so farms and machines
+keep running (#165). Two settings in the world's
+`world/serverconfig/ftbchunks-world.snbt` do this:
+
+- `force_load_mode: "always"`. The pack's `"default"` keeps chunks loaded
+  offline only for a team with a player holding the FTB Ranks permission
+  `ftbchunks.chunk_load_offline`, which no rank here grants.
+- `max_idle_days_before_unforce: 7.0d`. Once nobody in a team has logged
+  in for seven days, its chunks stop being force-loaded, so an abandoned
+  base does not run for ever. Whether they come back when someone logs in
+  again has not been checked here; if not, the player force-loads them
+  again from the map.
+
+Each team can still force-load at most 25 chunks
+(`max_force_loaded_chunks`), and those chunks tick around the clock, which
+costs memory and CPU (central processing unit) time with nobody on.
+
+The file is part of the world, not this repo. The mod rewrites it at each
+start, and the pack's `defaultconfigs` copy is used only when a world is
+created, so it cannot be declared in `compose.yml` the way the
+join-protection files are. The nightly snapshots keep it with the world.
+To change it, with nobody online:
+
+```bash
+sudo systemctl stop stack-minecraft
+sudoedit /srv/data/minecraft/world/serverconfig/ftbchunks-world.snbt
+sudo systemctl start stack-minecraft
+```
+
+Stop the stack before editing: the server reads the file only at start.
+A world made from scratch starts with the pack's defaults again, so these
+two lines would need setting again.
+
+To check it, with nobody online, test a chunk a team has force-loaded:
+`sudo docker exec minecraft-server-1 rcon-cli -- execute if loaded <x> 64
+<z>`, with block coordinates inside the chunk (`execute in
+minecraft:the_nether if loaded ...` for the Nether). `Test passed` means it
+is loaded. The `--` stops `rcon-cli` reading a negative coordinate as an
+option of its own. The teams' claims, with `force_loaded` on the force-loaded ones,
+are in `world/ftbchunks/<team>.snbt`, in chunk coordinates (multiply by
+16 for block coordinates).
+
 ## Updating the pack
 
 1. Find the new file on the pack's CurseForge Files tab. Its ID is the last
@@ -209,3 +254,4 @@ kills it, by which time everything is saved.
 | Restart | `systemctl restart stack-minecraft` returned after 102 s, active. A new container (`577d4d51b7fd` became `cd9709db767c`), the same world seed (`4723322516846976875`) before and after, and the pack and Forge reported already installed, nothing downloaded |
 | Access over Tailscale | 2026-10-25, after the tailnet policy gained `tcp:25565` (#135). The nuc's packet filter then had two rules: Alex's devices to 22 and 25565, and shared users to 25565 only. Alex joined from his own device at 17:47; the nuc logged `stack-port accept 25565/tcp IN=tailscale0` |
 | A friend through a share | 18:13, two friends who had accepted shares connected; both source addresses matched the shared-users rule. The one whitelisted in #148 joined. The other, not yet listed, was turned away: `You are not white-listed on this server!`. #149 added them; it deployed at 18:19:46 (91 s from recreate to healthy) |
+| Offline chunk loading | 2026-10-28, with nobody online (#165). One team, three members, had 15 force-loaded chunks, 11 in the overworld and 4 in the Nether. Before: `execute if loaded` failed at a force-loaded chunk in each, as at an unclaimed chunk far away. The stack stopped in 5 s, with every dimension reporting `All chunks are saved`; the two values set; healthy again 92 s after the start, and the whitelist sync ran. The mod rewrote the file at start and kept both. After: both force-loaded chunks passed, the far chunk still failed. Tick time, five minutes after the start, with nobody on: overworld 2.08 to 10.52 ms, all dimensions 3.42 to 11.76 ms, 20 TPS (ticks per second) throughout; CPU 8 % to 35 %; memory 15.05 GiB before, 14.06 GiB after the fresh start |
