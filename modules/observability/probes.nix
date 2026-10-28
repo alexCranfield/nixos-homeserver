@@ -9,7 +9,10 @@
 #  - The blackbox exporter, which Prometheus asks to probe two things: the
 #    LAN (local area network) gateway with ICMP (Internet Control Message
 #    Protocol) echo, and the system resolver with a DNS (Domain Name System)
-#    lookup. The nixpkgs module grants it CAP_NET_RAW, which ICMP needs.
+#    lookup. The exporter runs without capabilities (the nixpkgs exporters
+#    drop them all, including CAP_NET_RAW), so ICMP goes through unprivileged
+#    ICMP datagram sockets, which the kernel allows for the groups in
+#    `net.ipv4.ping_group_range`; an assertion below keeps that setting.
 {
   config,
   lib,
@@ -76,6 +79,13 @@ in
   };
 
   config = {
+    assertions = [
+      {
+        assertion = (config.boot.kernel.sysctl."net.ipv4.ping_group_range" or null) == "0 2147483647";
+        message = "homeserver.alerting: the ICMP probe needs unprivileged ping sockets, so net.ipv4.ping_group_range must be \"0 2147483647\" (NixOS's default); the exporter has no CAP_NET_RAW.";
+      }
+    ];
+
     homeserver.notify.units = [
       "tailscale-state"
       "prometheus-blackbox-exporter"
