@@ -192,6 +192,13 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 3.4 (#25): Prometheus scrapes the host, its containers and
+        # comin, and nothing that collects metrics is reachable from the LAN.
+        observability = import ./tests/observability.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
         # Ticket 3.2 (#23): compose files under stacks/ publish only declared
         # ports, and mount neither the Docker socket nor anything outside
         # their stack's data directory (ADR 0006).

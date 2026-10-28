@@ -93,6 +93,7 @@ drift and the server can be rebuilt from scratch.
 | Automated dependency updates with a supply-chain cooldown | [updates runbook](docs/runbooks/updates.md) |
 | Kernel reboots only in a weekly maintenance window | [updates runbook](docs/runbooks/updates.md) |
 | Alerting on failures, boots and shutdowns | [notifications runbook](docs/runbooks/notifications.md) |
+| Metrics and dashboards, provisioned from the repo, reachable over the tailnet only | [observability runbook](docs/runbooks/observability.md) |
 | Rollback drilled on the real machine, with timings | [rollback runbook](docs/runbooks/rollback.md) |
 | Rebuild from scratch: a full wipe and reinstall, timed | [reinstall runbook](docs/runbooks/reinstall.md) |
 | Decisions and procedures written down | [ADRs](docs/adr/), [runbooks](docs/runbooks/), [build plan](docs/PLAN.md) |
@@ -112,20 +113,20 @@ flowchart LR
         subgraph docker["Docker: Compose stacks, each a systemd unit"]
             games["Minecraft · Palworld · Satisfactory<br/>(phase 4)"]
             llm["Ollama + Open WebUI<br/>(phase 5)"]
-            grafana["Grafana<br/>(phase 3)"]
         end
-        prom["Prometheus and<br/>node-exporter:<br/>metrics for Grafana<br/>(phase 3)"]
+        obs["Prometheus, exporters, Grafana:<br/>metrics and dashboards"]
         restic["restic, nightly<br/>(phase 3)"]
     end
     discord["Discord #nuc-alerts"]
     nas["NAS<br/>(phase 3)"]
     admin -->|"over Tailscale only"| ts
+    admin -->|"Grafana through Tailscale Serve"| obs
     gh -->|"comin pulls"| comin
     players -.->|"Tailscale share:<br/>game ports only"| games
     notify -->|webhook| discord
     restic -.->|"encrypted backups"| nas
     classDef planned stroke-dasharray: 5 5,color:#888,stroke:#888
-    class games,llm,grafana,prom,restic,nas planned
+    class games,llm,restic,nas planned
 ```
 
 Solid boxes run today; dashed boxes are planned, with the phase that builds
@@ -291,7 +292,7 @@ does not re-encrypt anything on its own.
 | [0. Workstation and repo foundations](https://github.com/alexCranfield/nixos-homeserver/milestone/1) | Done; the machine user for bot pull requests (#61) remains |
 | [1. Bare-metal install and base OS](https://github.com/alexCranfield/nixos-homeserver/milestone/2) | Done: installed 2026-10-18, wiped and reinstalled from the runbook 2026-10-19; follow-ups open |
 | [2. GitOps, updates, rollback](https://github.com/alexCranfield/nixos-homeserver/milestone/3) | Live: self-deploy (#16), weekly updates (#17), reboot window (#18), rollback drill (#19) and alerting (#20). Open: whether to auto-merge update pull requests (#17, due late November) and two comin bugs (#110, #123) |
-| [3. Containers, observability, backups](https://github.com/alexCranfield/nixos-homeserver/milestone/4) | Started: Docker is live (#22); Compose stacks run as systemd units, with public ports declared in Nix and enforced by the firewall (#23). Each stack's data has its own subvolume, nightly snapshots and a one-command rollback (#24). Next: observability (#25) |
+| [3. Containers, observability, backups](https://github.com/alexCranfield/nixos-homeserver/milestone/4) | Started: Docker is live (#22); Compose stacks run as systemd units, with public ports declared in Nix and enforced by the firewall (#23). Each stack's data has its own subvolume, nightly snapshots and a one-command rollback (#24). Prometheus, its exporters and Grafana collect and draw the host's and containers' metrics, Grafana reachable over the tailnet only (#25). Next: alert rules (#27) |
 | [4. Game servers](https://github.com/alexCranfield/nixos-homeserver/milestone/5) | Planned |
 | [5. Local LLMs](https://github.com/alexCranfield/nixos-homeserver/milestone/6) | Planned |
 | [6. Development environment](https://github.com/alexCranfield/nixos-homeserver/milestone/7) | Planned |

@@ -1,5 +1,7 @@
 # Acceptance test for ticket 1.5 (#12): ops logs in to the nuc over the tailnet
-# from another network, and the tailnet sees only SSH.
+# from another network, and the tailnet sees only SSH. Since ticket 3.4 (#25)
+# it also sees Grafana, published by Tailscale Serve, which the access policy
+# can close.
 #
 # Three VMs (virtual machines) on two networks:
 #
@@ -46,6 +48,7 @@ pkgs.testers.runNixOSTest {
     {
       imports = [
         ../hosts/nuc
+        (import ./grafana-password.nix { inherit pkgs; }).module
         trustCert
       ];
       # The host's stacks pull images, and the build sandbox has no internet;
@@ -100,6 +103,7 @@ pkgs.testers.runNixOSTest {
   testScript = ''
     LAN_IP = ${builtins.toJSON lanIp}
     SNAKEOIL_KEY = ${builtins.toJSON "${keys.snakeOilPrivateKey}"}
+    GRAFANA_PASSWORD = ${builtins.toJSON (import ./grafana-password.nix { inherit pkgs; }).password}
   ''
   + builtins.readFile ./tailscale.py;
 }

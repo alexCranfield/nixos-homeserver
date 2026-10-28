@@ -124,6 +124,15 @@ remember.
    interface) calls through it. Enforced by the check in 3. Monitoring is the usual
    reason for mounting it, so cAdvisor and node-exporter run as native NixOS
    services, not containers.
+
+   *Note, 2026-10-27 (ticket 3.4, #25):* Grafana runs natively too
+   (`services.grafana`), not as the Compose stack the plan first had. The
+   dashboards then keep working when Docker is what's broken, which is when
+   they're most wanted, and the data source, dashboards and admin password
+   come from Nix and sops. A container would add little isolation over the
+   nixpkgs module's systemd sandboxing. It is still bound to `127.0.0.1` and
+   published with Tailscale Serve (5), over plain HTTP: HTTPS would put the
+   tailnet's name in the public Certificate Transparency logs (#163).
 8. **`no-new-privileges` daemon-wide**, so a process inside a container cannot
    gain privileges through a setuid binary or file capabilities. Entrypoints
    that start as root and drop to a user with `gosu` or `su-exec` still work;

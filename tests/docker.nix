@@ -57,7 +57,10 @@ pkgs.testers.runNixOSTest {
   defaults.nixpkgs.pkgs = pkgs;
 
   nodes.nuc = {
-    imports = [ ../hosts/nuc ];
+    imports = [
+      ../hosts/nuc
+      (import ./grafana-password.nix { inherit pkgs; }).module
+    ];
     # The host's stacks pull images, and the build sandbox has no internet;
     # tests/compose-stack.nix covers them.
     homeserver.stacks = lib.mkForce { };

@@ -39,8 +39,10 @@
   # random port, always on), and Tailscale SSH and Serve when turned on. The
   # tailnet's access policy limits SSH and Serve; the peer API it lets through
   # on purpose, and checks each request itself (docs/runbooks/tailscale.md).
-  # tests/tailscale.nix checks that the peer API is the only such port, and
-  # that it still answers once the policy closes everything but SSH.
+  # Serve is on for Grafana, port 3000 (modules/observability, #25).
+  # tests/tailscale.nix checks that the peer API and Serve's 3000 are the only
+  # such ports, that the policy closes 3000 unless it grants it, and that the
+  # peer API still answers once the policy closes everything but SSH.
   #
   # Tailscale's own UDP (User Datagram Protocol) port, 41641, stays closed.
   # Direct connections usually still form, since the nuc sends first and the

@@ -74,8 +74,8 @@ Once, before #14. Menu names are from the admin console at
    "grants": [
      // Your own devices reach each other as before.
      {"src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["*"]},
-     // They reach the nuc on SSH and the game ports.
-     {"src": ["autogroup:member"], "dst": ["tag:server"], "ip": ["tcp:22", "tcp:25565"]},
+     // They reach the nuc on SSH, Grafana and the game ports.
+     {"src": ["autogroup:member"], "dst": ["tag:server"], "ip": ["tcp:22", "tcp:3000", "tcp:25565"]},
      // Everyone the nuc is shared with: the game ports and nothing else.
      {"src": ["autogroup:shared"], "dst": ["tag:server"], "ip": ["tcp:25565"]},
    ],
@@ -91,9 +91,15 @@ Once, before #14. Menu names are from the admin console at
 
    The default rule is `"src": ["*"], "dst": ["*"]`, under `grants` or, in
    an older tailnet, `acls`; delete it. Nothing names `tag:server` as a
-   source, so a compromised nuc reaches no other device. Tailscale Serve
-   (ADR 0006) will add its ports to the second rule. The peer API stays
-   reachable from every device whatever the policy says (above).
+   source, so a compromised nuc reaches no other device. `tcp:3000` is
+   Grafana, published by Tailscale Serve (ticket 3.4, #25,
+   `docs/runbooks/observability.md`); it is in your devices' rule only, so
+   share recipients never reach it. Serve answers inside `tailscaled`, out
+   of the firewall's sight, so this rule is what closes it to everyone
+   else; `tests/tailscale.nix` checks that a policy without it filters
+   3000. Other admin interfaces published with Serve add their ports to
+   the second rule the same way. The peer API stays reachable from every
+   device whatever the policy says (above).
 
    Empty the policy's `"ssh"` section (`"ssh": [],`). Those rules are for
    Tailscale SSH, which nothing here uses (Windows and Android cannot serve

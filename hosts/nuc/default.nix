@@ -13,9 +13,11 @@
     ./secrets.nix
     ./tailscale.nix
     ./notify.nix
+    ./observability.nix
     ../../modules/base
     ../../modules/containers/docker.nix
     ../../modules/containers/compose-stack.nix
+    ../../modules/observability
     ../../stacks/hello
     ../../stacks/minecraft
   ];

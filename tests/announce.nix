@@ -92,7 +92,10 @@ pkgs.testers.runNixOSTest {
   defaults.nixpkgs.pkgs = pkgs;
 
   nodes.nuc = {
-    imports = [ ../hosts/nuc ];
+    imports = [
+      ../hosts/nuc
+      (import ./grafana-password.nix { inherit pkgs; }).module
+    ];
     # The host's stacks pull images, and the build sandbox has no internet.
     homeserver.stacks = lib.mkForce { };
     # As in tests/notify.nix: no sops secret can be decrypted here, so the
