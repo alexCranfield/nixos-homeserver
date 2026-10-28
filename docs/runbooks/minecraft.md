@@ -166,9 +166,8 @@ that are still loading is not protected.
 ### Offline chunk loading
 
 Chunks a team force-loads with FTB (Feed The Beast) Chunks, the pack's
-claims map, stay
-loaded while every member of the team is offline, so farms and machines
-keep running (#165). Two settings in the world's
+claims map, stay loaded while every member of the team is offline, so
+farms and machines keep running (#165). Two settings in the world's
 `world/serverconfig/ftbchunks-world.snbt` do this:
 
 - `force_load_mode: "always"`. The pack's `"default"` keeps chunks loaded
@@ -185,9 +184,10 @@ Each team can still force-load at most 25 chunks
 costs memory and CPU (central processing unit) time with nobody on.
 
 The file is part of the world, not this repo. The mod rewrites it at each
-start, and the pack's `defaultconfigs` copy is used only when the file does
-not exist (a new world, or the file deleted), so it cannot be declared in `compose.yml` the way the
-join-protection files are. The nightly snapshots keep it with the world.
+start, and the pack's `defaultconfigs` copy is used only when the file
+does not exist (a new world, or the file deleted), so it cannot be
+declared in `compose.yml` the way the join-protection files are. The
+nightly snapshots keep it with the world.
 To change it, with nobody online:
 
 ```bash
