@@ -1,0 +1,169 @@
+# Threshold alerts on the host (group homeserver-host). Series step and
+# evaluation are both 15 s. A rate() needs two samples, so the rate-based
+# alerts first hold at 15s and fire one `for` after that.
+rule_files:
+  - rules.yml
+evaluation_interval: 15s
+
+tests:
+  # DiskFilling: above 85% used, for 10m.
+  - interval: 15s
+    input_series:
+      - series: 'node_filesystem_size_bytes{mountpoint="/"}'
+        values: "100x60"
+      - series: 'node_filesystem_avail_bytes{mountpoint="/"}'
+        values: "13x60"
+    alert_rule_test:
+      - eval_time: 585s
+        alertname: DiskFilling
+        exp_alerts: []
+      - eval_time: 600s
+        alertname: DiskFilling
+        exp_alerts:
+          - exp_labels:
+              severity: threshold
+              mountpoint: /
+            exp_annotations:
+              summary: "Disk / is 87% full (threshold 85% for 10m)"
+              description: "The one btrfs filesystem, holding /, /srv, /nix and Docker's data, is filling up."
+
+  # 84% used is below the threshold; another mount point is not watched.
+  - interval: 15s
+    input_series:
+      - series: 'node_filesystem_size_bytes{mountpoint="/"}'
+        values: "100x60"
+      - series: 'node_filesystem_avail_bytes{mountpoint="/"}'
+        values: "16x60"
+      - series: 'node_filesystem_size_bytes{mountpoint="/boot"}'
+        values: "100x60"
+      - series: 'node_filesystem_avail_bytes{mountpoint="/boot"}'
+        values: "1x60"
+    alert_rule_test:
+      - eval_time: 600s
+        alertname: DiskFilling
+        exp_alerts: []
+
+  # HostMemoryLow: available below 10%, for 15m.
+  - interval: 15s
+    input_series:
+      - series: "node_memory_MemTotal_bytes"
+        values: "1000x70"
+      - series: "node_memory_MemAvailable_bytes"
+        values: "80x70"
+    alert_rule_test:
+      - eval_time: 885s
+        alertname: HostMemoryLow
+        exp_alerts: []
+      - eval_time: 900s
+        alertname: HostMemoryLow
+        exp_alerts:
+          - exp_labels:
+              severity: threshold
+            exp_annotations:
+              summary: "Available memory is 8% (threshold below 10% for 15m)"
+              description: "The host has little memory left for new work."
+
+  - interval: 15s
+    input_series:
+      - series: "node_memory_MemTotal_bytes"
+        values: "1000x70"
+      - series: "node_memory_MemAvailable_bytes"
+        values: "110x70"
+    alert_rule_test:
+      - eval_time: 900s
+        alertname: HostMemoryLow
+        exp_alerts: []
+
+  # HostCpuHigh: above 90% busy, for 15m. Two cores, each 95% busy (idle
+  # grows by 0.75 s per 15 s step).
+  - interval: 15s
+    input_series:
+      - series: 'node_cpu_seconds_total{mode="idle",cpu="0"}'
+        values: "0+0.75x100"
+      - series: 'node_cpu_seconds_total{mode="idle",cpu="1"}'
+        values: "0+0.75x100"
+    alert_rule_test:
+      - eval_time: 900s
+        alertname: HostCpuHigh
+        exp_alerts: []
+      - eval_time: 915s
+        alertname: HostCpuHigh
+        exp_alerts:
+          - exp_labels:
+              severity: threshold
+            exp_annotations:
+              summary: "CPU is 95% busy across all cores (threshold 90% for 15m)"
+              description: "All cores together have been busy for a long spell."
+
+  # 85% busy is below the threshold.
+  - interval: 15s
+    input_series:
+      - series: 'node_cpu_seconds_total{mode="idle",cpu="0"}'
+        values: "0+2.25x100"
+      - series: 'node_cpu_seconds_total{mode="idle",cpu="1"}'
+        values: "0+2.25x100"
+    alert_rule_test:
+      - eval_time: 915s
+        alertname: HostCpuHigh
+        exp_alerts: []
+
+  # TemperatureHigh, for 5m: within 5 degrees of the sensor's crit mark.
+  - interval: 15s
+    input_series:
+      - series: 'node_hwmon_temp_celsius{chip="platform_coretemp_0",sensor="temp1"}'
+        values: "95x40"
+      - series: 'node_hwmon_temp_crit_celsius{chip="platform_coretemp_0",sensor="temp1"}'
+        values: "100x40"
+    alert_rule_test:
+      - eval_time: 285s
+        alertname: TemperatureHigh
+        exp_alerts: []
+      - eval_time: 300s
+        alertname: TemperatureHigh
+        exp_alerts:
+          - exp_labels:
+              severity: threshold
+              chip: platform_coretemp_0
+              sensor: temp1
+            exp_annotations:
+              summary: "Sensor platform_coretemp_0/temp1 is at 95 °C (threshold 5 °C below its crit mark, or 85 °C without one, for 5m)"
+              description: "A hardware sensor is close to the limit its own chip reports."
+
+  # 94 degrees against a crit of 100 is just below; and a sensor that has a
+  # crit mark does not fall back to 85, so 90 against 100 stays quiet.
+  - interval: 15s
+    input_series:
+      - series: 'node_hwmon_temp_celsius{chip="a",sensor="temp1"}'
+        values: "94x40"
+      - series: 'node_hwmon_temp_crit_celsius{chip="a",sensor="temp1"}'
+        values: "100x40"
+      - series: 'node_hwmon_temp_celsius{chip="b",sensor="temp1"}'
+        values: "90x40"
+      - series: 'node_hwmon_temp_crit_celsius{chip="b",sensor="temp1"}'
+        values: "100x40"
+    alert_rule_test:
+      - eval_time: 300s
+        alertname: TemperatureHigh
+        exp_alerts: []
+
+  # A sensor with no crit series uses 85: 85 fires, 84 does not.
+  - interval: 15s
+    input_series:
+      - series: 'node_hwmon_temp_celsius{chip="nocrit",sensor="temp1"}'
+        values: "85x40"
+      - series: 'node_hwmon_temp_celsius{chip="nocrit",sensor="temp2"}'
+        values: "84x40"
+    alert_rule_test:
+      - eval_time: 285s
+        alertname: TemperatureHigh
+        exp_alerts: []
+      - eval_time: 300s
+        alertname: TemperatureHigh
+        exp_alerts:
+          - exp_labels:
+              severity: threshold
+              chip: nocrit
+              sensor: temp1
+            exp_annotations:
+              summary: "Sensor nocrit/temp1 is at 85 °C (threshold 5 °C below its crit mark, or 85 °C without one, for 5m)"
+              description: "A hardware sensor is close to the limit its own chip reports."
