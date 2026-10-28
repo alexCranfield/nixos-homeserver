@@ -132,10 +132,50 @@ with subtest("the password follows its secret after the first start"):
     nuc.succeed("systemctl restart grafana-admin-password.service")
     grafana("/api/user", user="admin:new-password")
     grafana("/api/user", user=ADMIN, expect=401)
+    # Grafana's own reading of the file (its `$__file{}` provider) trims
+    # spaces and newlines at both ends; the sync must agree with it, or the
+    # first start and every later one would set different passwords.
+    nuc.succeed("printf '  spaced-password \\n' > /run/grafana-test/password")
+    nuc.succeed("systemctl restart grafana-admin-password.service")
+    grafana("/api/user", user="admin:spaced-password")
+    # A secret of more than one line is refused, not cut to its first line.
+    nuc.succeed("printf 'first\\nsecond\\n' > /run/grafana-test/password")
+    nuc.fail("systemctl restart grafana-admin-password.service")
+    grafana("/api/user", user="admin:spaced-password")
     # And back, for the subtests that follow.
     nuc.succeed(f"printf %s '{GRAFANA_PASSWORD}' > /run/grafana-test/password")
     nuc.succeed("systemctl restart grafana-admin-password.service")
     grafana("/api/user", user=ADMIN)
+
+with subtest("the password unit fails when Grafana isn't healthy"):
+    # Rather than running the CLI against a database the server may still be
+    # creating. Grafana is stopped (taking the unit with it), and the unit
+    # started alone.
+    nuc.succeed("systemctl stop grafana.service")
+    nuc.fail("systemctl start grafana-admin-password.service")
+    print(nuc.succeed("journalctl -u grafana-admin-password -b -n 3 -o cat"))
+    nuc.succeed("systemctl start grafana.service")
+    nuc.wait_for_unit("grafana-admin-password.service")
+    grafana("/api/user", user=ADMIN)
+
+with subtest("the oneshots give up, time out and so alert"):
+    # A unit that retries for ever never reaches `failed`, so it never posts
+    # (modules/base/notify.nix); one that hangs holds up a deploy.
+
+    def prop(unit, name):
+        return nuc.succeed(f"systemctl show -P {name} {unit}").strip()
+
+    for unit in ("tailscale-serve-grafana", "grafana-admin-password"):
+        timeout = prop(unit, "TimeoutStartUSec")
+        print(unit, timeout)
+        assert timeout != "infinity", (unit, timeout)
+    # Serve: 5 attempts within 5 minutes, 5 s apart, so the limit is reached.
+    serve = [
+        prop("tailscale-serve-grafana", p)
+        for p in ("StartLimitBurst", "StartLimitIntervalUSec", "RestartUSec")
+    ]
+    print(serve)
+    assert serve == ["5", "5min", "5s"], serve
 
 with subtest("the secret key was made once"):
     key = "/var/lib/grafana/secret_key"
@@ -147,7 +187,8 @@ with subtest("the secret key was made once"):
     nuc.wait_for_open_port(3000)
     assert nuc.succeed(f"sha256sum {key}") == before, "the key changed"
     # The key unit is skipped once the key exists, and not failed.
-    print(nuc.succeed("systemctl show -P ConditionResult,Result grafana-secret-key"))
+    cond = nuc.succeed("systemctl show -P ConditionResult,Result grafana-secret-key").split()
+    assert cond == ["no", "success"], cond
     grafana("/api/user", user=ADMIN)
 
 with subtest("the data source is provisioned and healthy"):
@@ -201,7 +242,7 @@ with subtest("Grafana does not phone home"):
 with subtest("everything listens on loopback"):
     listeners = nuc.succeed("ss -ltnH")
     print(listeners)
-    for port in (9090, 9100, 8081, 3000):
+    for port in (9090, 9100, 9338, 3000):
         local = [
             line.split()[3]
             for line in listeners.splitlines()
@@ -214,7 +255,7 @@ with subtest("nothing new on the LAN"):
     # Nothing on `lan` pulls in network-online.target; reaching the nuc is
     # what matters.
     lan.wait_until_succeeds(f"ping -c 1 -W 2 {LAN_IP}", timeout=60)
-    out = lan.succeed(f"nmap -Pn -p 3000,4243,8081,9090,9100 {LAN_IP}")
+    out = lan.succeed(f"nmap -Pn -p 3000,4243,9090,9100,9338 {LAN_IP}")
     print(out)
     assert open_ports(out) == [], open_ports(out)
 

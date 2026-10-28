@@ -15,7 +15,7 @@ dashboards keep working when Docker is what's broken.
 |---|---|---|
 | Prometheus | 127.0.0.1:9090 | Scrapes the four below every 15 s and stores the results |
 | node-exporter | 127.0.0.1:9100 | The host: CPU, memory, disks, network, temperatures, and each systemd unit's state |
-| cAdvisor | 127.0.0.1:8081 | Each container's CPU, memory and network (8080 is the `hello` stack's) |
+| cAdvisor | 127.0.0.1:9338 | Each container's CPU, memory and network (not its default 8080, which apps and the tests use) |
 | comin's exporter | 127.0.0.1:4243 | Fetch, evaluation, build and deployment results |
 | Grafana | 127.0.0.1:3000 | Dashboards; on the tailnet at `http://nuc:3000` through Tailscale Serve |
 
@@ -62,8 +62,9 @@ just secrets-edit observability.yaml
 Then merge as usual. When comin deploys, sops-nix writes the new value and
 restarts `grafana-admin-password.service`, which sets it in Grafana with
 `grafana cli admin reset-admin-password`. The same unit runs after every
-Grafana start, so a password changed in Grafana's own UI is put back to the
-sops one at the next restart. sops is the only place it is set.
+Grafana start, so a password changed in Grafana's own UI (user interface) is
+put back to the sops one at the next restart. sops is the only place it is
+set.
 
 The unit fails, and posts, if Grafana does not report the change: `grafana
 cli` exits 0 even when it finds no admin user, so the unit reads its output
@@ -84,14 +85,15 @@ Both are provisioned from the repo and can't be changed or deleted in the
 UI. A change made there is not saved. To change or add a dashboard:
 
 1. Build it in Grafana (a new, unsaved dashboard is fine), then **Export →
-   Export as JSON**.
+   Export as JSON** (JavaScript Object Notation).
 2. Save the JSON under `modules/observability/dashboards/`, set its
    `datasource` references to `{"type": "prometheus", "uid": "prometheus"}`,
    and copy it into the `dashboards` derivation in the module, as
    `game-servers.json` is.
 3. For a grafana.com dashboard, fetch it by revision and hash instead, as the
    two there are (`grafanaCom <id> <revision> <hash>`), with the hash from
-   `nix-prefetch-url --type sha256 <url>` converted by `nix hash convert`.
+   `nix-prefetch-url --type sha256 <url>` converted by
+   `nix hash convert --hash-algo sha256 <hash>`.
    Replace its `${DS_PROMETHEUS}` placeholder, if any, with `prometheus`.
 4. Add its title to the dashboards subtest in `tests/observability.py`.
 

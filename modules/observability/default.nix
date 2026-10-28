@@ -22,8 +22,9 @@
 # and can't be changed in its UI (user interface), so a reinstall brings them
 # back as they were.
 #
-# Everything listens on 127.0.0.1 only. Port 8080, cAdvisor's default, is the
-# hello stack's, so cAdvisor takes 8081.
+# Everything listens on 127.0.0.1 only. cAdvisor's default, 8080, is the hello
+# stack's, and 8081 a container port the VM tests publish (found by CI), so
+# cAdvisor takes 9338, which nothing here uses.
 {
   config,
   lib,
@@ -35,7 +36,7 @@ let
   ports = {
     prometheus = 9090;
     node = 9100;
-    cadvisor = 8081;
+    cadvisor = 9338;
     # Fixed by comin; its address is set in modules/base/comin.nix.
     comin = 4243;
     grafana = 3000;
@@ -88,8 +89,9 @@ in
     type = lib.types.path;
     description = ''
       File holding the password of Grafana's `admin` user, readable by the
-      `grafana` user. Read when Grafana first creates its database; see
-      docs/runbooks/observability.md for changing it afterwards.
+      `grafana` user. Grafana reads it when it first creates its database,
+      and `grafana-admin-password.service` sets it again after every start,
+      so the file stays the password (docs/runbooks/observability.md).
     '';
   };
 
@@ -164,6 +166,8 @@ in
         UMask = "0077";
       };
       script = ''
+        # Left behind, read-only, if a run died before the rename.
+        rm -f ${secretKey}.tmp
         head -c 32 /dev/urandom | ${pkgs.coreutils}/bin/base64 > ${secretKey}.tmp
         chmod 0400 ${secretKey}.tmp
         mv ${secretKey}.tmp ${secretKey}
@@ -176,6 +180,14 @@ in
     # (hosts/nuc/observability.nix restarts it). `grafana cli` exits 0 even
     # when it finds no admin user to change, so success is read from what it
     # prints.
+    #
+    # The password is read as Grafana's own file provider reads it, trimmed
+    # of spaces and newlines at both ends, so the first start and the later
+    # ones agree; a secret of more than one line is refused rather than cut
+    # to its first line, as the CLI's stdin would. A Grafana that isn't
+    # healthy fails the unit rather than leaving the CLI on a database the
+    # server may still be making, and the time limit keeps a stuck CLI from
+    # holding up a deploy.
     systemd.services.grafana-admin-password = {
       description = "Set Grafana's admin password from its secret";
       after = [ "grafana.service" ];
@@ -186,6 +198,7 @@ in
         RemainAfterExit = true;
         User = "grafana";
         WorkingDirectory = config.services.grafana.dataDir;
+        TimeoutStartSec = 330;
       };
       path = [
         config.services.grafana.package
@@ -193,14 +206,32 @@ in
         pkgs.gnugrep
       ];
       script = ''
-        # The server makes the database and the admin user on its first start.
-        for _ in $(seq 60); do
-          curl -fsS -o /dev/null http://127.0.0.1:${toString ports.grafana}/api/health && break
+        password=$(< ${cfg.grafanaAdminPasswordFile})
+        password=''${password#"''${password%%[![:space:]]*}"}
+        password=''${password%"''${password##*[![:space:]]}"}
+        if [[ -z $password || $password == *$'\n'* ]]; then
+          echo "the password file must hold one non-empty line" >&2
+          exit 1
+        fi
+
+        # The server makes the database and the admin user on its first start,
+        # which can take minutes (its migrations); later starts take seconds.
+        healthy=
+        for _ in $(seq 150); do
+          if curl -fsS -o /dev/null http://127.0.0.1:${toString ports.grafana}/api/health; then
+            healthy=1
+            break
+          fi
           sleep 2
         done
-        out=$(grafana cli --homepath ${config.services.grafana.dataDir} --config ${grafanaIni} \
-          admin reset-admin-password --password-from-stdin \
-          < ${cfg.grafanaAdminPasswordFile} 2>&1)
+        if [[ -z $healthy ]]; then
+          echo "Grafana not healthy after 300 s; password not set" >&2
+          exit 1
+        fi
+
+        out=$(printf '%s\n' "$password" \
+          | grafana cli --homepath ${config.services.grafana.dataDir} --config ${grafanaIni} \
+            admin reset-admin-password --password-from-stdin 2>&1)
         if ! grep -q "Admin password changed successfully" <<< "$out"; then
           printf '%s\n' "$out" >&2
           exit 1
@@ -235,9 +266,17 @@ in
         RemainAfterExit = true;
         ExecStart = "${lib.getExe config.services.tailscale.package} serve --bg --http=${toString ports.grafana} http://127.0.0.1:${toString ports.grafana}";
         ExecStop = "${lib.getExe config.services.tailscale.package} serve --http=${toString ports.grafana} off";
-        # tailscaled may not be ready to take Serve settings at once.
+        # tailscaled may not be ready to take Serve settings at once. Five
+        # tries, then the unit fails and so posts (modules/base/notify.nix);
+        # without the limit it would retry for ever, never failing. The time
+        # limit keeps a stuck `tailscale serve` from holding up a deploy.
         Restart = "on-failure";
         RestartSec = 5;
+        TimeoutStartSec = 60;
+      };
+      unitConfig = {
+        StartLimitIntervalSec = 300;
+        StartLimitBurst = 5;
       };
     };
 
@@ -247,6 +286,9 @@ in
         server = {
           http_addr = "127.0.0.1";
           http_port = ports.grafana;
+          # How Grafana names itself in links it makes (alerts from #27,
+          # shared links); the default would say localhost.
+          root_url = "http://nuc:${toString ports.grafana}/";
         };
         security = {
           admin_user = "admin";

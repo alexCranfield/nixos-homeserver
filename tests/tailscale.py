@@ -215,10 +215,11 @@ with subtest("the access policy closes all but SSH and the peer API"):
     out = client.succeed(f"nmap -Pn -p 22,3000,8080,{PEERAPI} {NUC_TS_IP}")
     print(out)
     # Serve's 3000 is closed by the policy: share recipients, whom the real
-    # policy gives only the game port, never reach Grafana. 8080 is now closed by the policy as well as open in the firewall. The
-    # peer API is not: tailscaled lets its connections past the policy on
-    # purpose and checks each request itself (net/tstun/wrap.go, "Let peerapi
-    # through the filter; its ACLs are handled at L7").
+    # policy gives only the game port, never reach Grafana. 8080 is now closed
+    # by the policy as well as open in the firewall. The peer API is not:
+    # tailscaled lets its connections past the policy on purpose and checks
+    # each request itself (net/tstun/wrap.go, "Let peerapi through the
+    # filter; its ACLs are handled at L7").
     assert open_ports(out) == sorted([22, PEERAPI]), open_ports(out)
     client.succeed(f"{SSH} ops@nuc.tailnet true")
 
