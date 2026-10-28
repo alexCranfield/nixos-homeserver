@@ -34,7 +34,8 @@ let
     relay = 9095;
   };
   ruleFile = pkgs.writeText "alert-rules.yml" (
-    # JSON is valid YAML, and Prometheus's rule loader reads it as such.
+    # JSON (JavaScript Object Notation) is valid YAML (YAML Ain't Markup
+    # Language), and Prometheus's rule loader reads it as such.
     builtins.toJSON (
       rules.mkRules {
         inherit lib;
@@ -105,11 +106,15 @@ in
                 {
                   url = "http://127.0.0.1:${toString ports.relay}/";
                   send_resolved = true;
+                  # Above the relay's own limit per post (alert-relay.py), and
+                  # under group_interval, after which Alertmanager would
+                  # retry anyway.
+                  timeout = "4m";
                 }
               ];
             }
           ];
-          # A dead gateway also fails the DNS probe and drops the tailnet:
+          # A dead gateway also fails the DNS (Domain Name System) probe and drops the tailnet:
           # one message about the cause is enough. No `equal` labels: the
           # three alerts come from different jobs and share none.
           inhibit_rules = [

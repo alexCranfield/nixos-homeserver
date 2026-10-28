@@ -3,8 +3,9 @@
 #
 #   alert-relay.py SENDER WEBHOOK_FILE ROLE_FILE HOST PORT
 #
-# Serves POST / on 127.0.0.1:PORT. Each alert in the body (Alertmanager's
-# webhook format, version 4) becomes one call of
+# Serves HTTP (Hypertext Transfer Protocol) POST / on 127.0.0.1:PORT. Each
+# alert in the body (Alertmanager's webhook format, version 4) becomes one call
+# of
 #
 #   SENDER WEBHOOK_FILE (ROLE_FILE|-) ICON TITLE
 #
@@ -21,17 +22,22 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 FIRING = "🔴"
 RESOLVED = "✅"
-# A hung sender must not hold the reply for ever; Alertmanager's own timeout
-# is 10 s, and it retries.
+# A hung sender must not hold the reply for ever. Alertmanager 0.31 puts no
+# limit of its own on a webhook call unless the receiver sets `timeout`
+# (modules/observability/alerting.nix sets 4 minutes); what bounds a
+# notification otherwise is its context, max(group_interval, 10 s), about 5
+# minutes here (10 s is only notify.MinTimeout, the lower bound). A post that
+# outlives that is retried while this one still completes, so it double-posts:
+# this limit must stay well under it, even for a request of several alerts.
 SEND_TIMEOUT = 60
 
 
 def parse_time(s):
-    """RFC 3339 with up to nanoseconds, which datetime cannot read."""
+    """RFC (Request for Comments) 3339 with up to nanoseconds, which datetime cannot read."""
     m = re.fullmatch(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d+))?(Z|[+-]\d\d:\d\d)", s)
     if not m:
         return None
@@ -121,7 +127,9 @@ def serve(sender, webhook_file, role_file, host, port):
             # failures, which handle() reports.
             pass
 
-    HTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    # One thread per request: a request held up by a slow post must not queue
+    # the next behind it.
+    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
 
 
 if __name__ == "__main__":

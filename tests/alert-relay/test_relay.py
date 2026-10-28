@@ -4,6 +4,9 @@ import json
 import os
 import stat
 import tempfile
+import threading
+import time
+import urllib.request
 import unittest
 
 spec = importlib.util.spec_from_file_location("alert_relay", os.environ["RELAY"])
@@ -86,6 +89,47 @@ class MessagesTest(unittest.TestCase):
         [(_, title, body, _)] = relay.messages({"alerts": [a]}, "nuc")
         self.assertEqual(title, "nuc: DiskFilling")
         self.assertEqual(body, "")
+
+
+class ServerTest(unittest.TestCase):
+    def test_requests_are_served_in_parallel(self):
+        with tempfile.TemporaryDirectory() as d:
+            sender = os.path.join(d, "sender")
+            with open(sender, "w") as f:
+                f.write("#!/bin/sh\ncat > /dev/null\nsleep 2\n")
+            os.chmod(sender, stat.S_IRWXU)
+            # Port 0 is not usable through serve(); pick a free one.
+            import socket
+
+            with socket.socket() as s:
+                s.bind(("127.0.0.1", 0))
+                port = s.getsockname()[1]
+            threading.Thread(
+                target=relay.serve, args=(sender, "/w", "/r", "nuc", port), daemon=True
+            ).start()
+            for _ in range(50):
+                try:
+                    socket.create_connection(("127.0.0.1", port), timeout=1).close()
+                    break
+                except OSError:
+                    time.sleep(0.1)
+            codes = []
+
+            def post():
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/", data=json.dumps({"alerts": [alert()]}).encode()
+                )
+                codes.append(urllib.request.urlopen(req, timeout=10).status)
+
+            start = time.monotonic()
+            ts = [threading.Thread(target=post) for _ in range(2)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join()
+            took = time.monotonic() - start
+        self.assertEqual(codes, [200, 200])
+        self.assertLess(took, 3.5)
 
 
 if __name__ == "__main__":
