@@ -1,6 +1,6 @@
 # Test script for tests/tailscale.nix. `nuc`, `client` and `headscale` are the
-# test driver's machines; LAN_IP and SNAKEOIL_KEY are defined by the Nix file in
-# front of this script.
+# test driver's machines; LAN_IP, SNAKEOIL_KEY and GRAFANA_PASSWORD are defined
+# by the Nix file in front of this script.
 #
 # LAN: local area network. DNS: Domain Name System. TCP: Transmission Control
 # Protocol. API: application programming interface. CI: continuous integration.
@@ -109,28 +109,37 @@ with subtest("ops logs in over the tailnet by the nuc's MagicDNS name"):
     print(f"SSH_CONNECTION: {conn}")
     assert conn[2] == NUC_TS_IP, conn
 
-with subtest("a full TCP scan over the tailnet finds SSH and Tailscale's peer API"):
+with subtest("a full TCP scan over the tailnet finds SSH, the peer API and Serve"):
     nuc.wait_for_open_port(8080)
+    # Grafana, published on the tailnet by Tailscale Serve (#25). Like the peer
+    # API, Serve answers inside tailscaled, so the firewall never sees it;
+    # unlike the peer API, the access policy does limit it (below).
+    nuc.wait_for_unit("tailscale-serve-grafana.service")
+    nuc.wait_for_open_port(3000)
     # tailscaled's peer API (Taildrop and similar), on a random port on the
     # tailnet address. tailscaled answers it inside its own network stack, so
     # the nuc's firewall never sees those packets and cannot close it (nor can
     # the access policy, below). Found by this scan.
     listeners = nuc.succeed(f"ss -ltnpH src {NUC_TS_IP}")
     print(listeners)
-    peerapi = [
+    tailscaled_ports = [
         int(line.split()[3].rsplit(":", 1)[1])
         for line in listeners.splitlines()
         if "tailscaled" in line
     ]
+    # Serve's port shows here too: tailscaled also listens on the address
+    # itself for the nuc's own connections to it.
+    assert 3000 in tailscaled_ports, listeners
+    peerapi = [p for p in tailscaled_ports if p != 3000]
     assert len(peerapi) == 1, listeners
     PEERAPI = peerapi[0]
     # Alone a scan takes about 2.5 minutes. On CI runners a dropped probe
     # once missed the peer API port (#109's first run), so the scan is
-    # repeated, up to three times, until one scan finds exactly SSH and the
-    # peer API. Any other port, in any scan, fails the test at once. Three
+    # repeated, up to three times, until one scan finds exactly SSH, the peer
+    # API and Serve. Any other port, in any scan, fails the test at once. Three
     # stalled scans (10 minutes each, no ports reported) still fail well
     # within the test's one-hour limit.
-    expected = {22, PEERAPI}
+    expected = {22, PEERAPI, 3000}
     for attempt in range(1, 4):
         out = client.succeed(
             f"nmap -Pn -p- -T4 --max-retries 1 --host-timeout 10m {NUC_TS_IP}"
@@ -140,8 +149,28 @@ with subtest("a full TCP scan over the tailnet finds SSH and Tailscale's peer AP
         assert found <= expected, f"unexpected open ports: {sorted(found - expected)}"
         if found == expected:
             break
-        print(f"scan {attempt} found {sorted(found)}, not both known ports")
+        print(f"scan {attempt} found {sorted(found)}, not all known ports")
     assert found == expected, sorted(found)
+
+with subtest("Grafana answers over the tailnet through Serve"):
+    out = client.succeed("curl -fsS http://nuc.tailnet:3000/api/health")
+    print(out)
+    assert json.loads(out)["database"] == "ok", out
+    # A browser's login: Grafana checks the Origin against the Host it was
+    # reached by, here the tailnet name through Serve's proxy.
+    login = json.dumps({"user": "admin", "password": GRAFANA_PASSWORD})
+    status = client.succeed(
+        "curl -sS -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' "
+        f"-H 'Origin: http://nuc.tailnet:3000' -d '{login}' http://nuc.tailnet:3000/login"
+    )
+    assert status == "200", status
+    # Control: a wrong password through the same path is refused.
+    bad = json.dumps({"user": "admin", "password": "wrong"})
+    status = client.succeed(
+        "curl -sS -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' "
+        f"-H 'Origin: http://nuc.tailnet:3000' -d '{bad}' http://nuc.tailnet:3000/login"
+    )
+    assert status == "401", status
 
 with subtest("negative control: the scan sees a port opened on tailscale0"):
     nuc.succeed(
@@ -154,10 +183,10 @@ with subtest("negative control: the scan sees a port opened on tailscale0"):
 with subtest("the access policy closes all but SSH and the peer API"):
     CLIENT_TS_IP = client.succeed("tailscale ip -4").strip()
     # Controls: with no policy, the nuc reaches the client, and the client
-    # reaches 8080 (opened above) and the peer API.
+    # reaches 8080 (opened above), Serve and the peer API.
     nuc.succeed(f"ping -c 1 -W 2 {CLIENT_TS_IP}")
-    out = client.succeed(f"nmap -Pn -p 22,8080,{PEERAPI} {NUC_TS_IP}")
-    assert open_ports(out) == sorted([22, 8080, PEERAPI]), open_ports(out)
+    out = client.succeed(f"nmap -Pn -p 22,3000,8080,{PEERAPI} {NUC_TS_IP}")
+    assert open_ports(out) == sorted([22, 3000, 8080, PEERAPI]), open_ports(out)
     PEERAPI_BEFORE_POLICY = " ".join(
         client.succeed(PEERAPI_DEBUG.format(ip=NUC_TS_IP, port=PEERAPI)).split()
     )
@@ -183,14 +212,47 @@ with subtest("the access policy closes all but SSH and the peer API"):
     client.wait_until_succeeds(
         f"nmap -Pn -p 8080 {NUC_TS_IP} | grep -q '^8080/tcp *filtered'", timeout=60
     )
-    out = client.succeed(f"nmap -Pn -p 22,8080,{PEERAPI} {NUC_TS_IP}")
+    out = client.succeed(f"nmap -Pn -p 22,3000,8080,{PEERAPI} {NUC_TS_IP}")
     print(out)
-    # 8080 is now closed by the policy as well as open in the firewall. The
+    # Serve's 3000 is closed by the policy: share recipients, whom the real
+    # policy gives only the game port, never reach Grafana. 8080 is now closed by the policy as well as open in the firewall. The
     # peer API is not: tailscaled lets its connections past the policy on
     # purpose and checks each request itself (net/tstun/wrap.go, "Let peerapi
     # through the filter; its ACLs are handled at L7").
     assert open_ports(out) == sorted([22, PEERAPI]), open_ports(out)
     client.succeed(f"{SSH} ops@nuc.tailnet true")
+
+with subtest("the policy opens Serve when it grants the port"):
+    # The real policy's rule for Alex's devices also grants tcp:3000
+    # (docs/runbooks/tailscale.md).
+    set_policy(
+        [
+            {
+                "action": "accept",
+                "src": ["test@"],
+                "proto": "tcp",
+                "dst": ["tag:server:22,3000"],
+            }
+        ]
+    )
+    client.wait_until_succeeds(
+        f"nmap -Pn -p 3000 {NUC_TS_IP} | grep -q '^3000/tcp *open'", timeout=60
+    )
+    client.succeed("curl -fsS -o /dev/null http://nuc.tailnet:3000/api/health")
+    # Back to SSH only, as the subtests below expect.
+    set_policy(
+        [
+            {
+                "action": "accept",
+                "src": ["test@"],
+                "proto": "tcp",
+                "dst": ["tag:server:22"],
+            }
+        ]
+    )
+    client.wait_until_succeeds(
+        f"nmap -Pn -p 3000 {NUC_TS_IP} | grep -q '^3000/tcp *filtered'", timeout=60
+    )
 
 with subtest("past the policy, the peer API still checks each request"):
     # An HTTP request gets through to tailscaled's own access check, which
@@ -217,3 +279,31 @@ with subtest("SSH is open on tailscale0 only"):
     out = headscale.succeed(f"nmap -Pn -p 22 {LAN_IP}")
     print(out)
     assert re.search(r"^22/tcp\s+filtered\b", out, re.M), out
+
+with subtest("stopping the Serve unit removes the port"):
+    # Serve's configuration lives in tailscaled's state, so a unit that only
+    # set it would leave it behind when removed from the configuration.
+    # Stopping the unit takes it back. Checked from the client, so through
+    # Serve: the nuc's own connections to its tailnet address never reach
+    # tailscaled. The policy grants 3000 again for this.
+    set_policy(
+        [
+            {
+                "action": "accept",
+                "src": ["test@"],
+                "proto": "tcp",
+                "dst": ["tag:server:22,3000"],
+            }
+        ]
+    )
+    url = "http://nuc.tailnet:3000/api/health"
+    client.wait_until_succeeds(f"curl -fsS -m 5 -o /dev/null {url}", timeout=60)
+    assert ":3000" in nuc.succeed("tailscale serve status")
+    nuc.succeed("systemctl stop tailscale-serve-grafana.service")
+    status = nuc.succeed("tailscale serve status 2>&1 || true")
+    print(status)
+    assert ":3000" not in status, status
+    client.fail(f"curl -fsS -m 5 -o /dev/null {url}")
+    # Control: started again, it answers again.
+    nuc.succeed("systemctl start tailscale-serve-grafana.service")
+    client.wait_until_succeeds(f"curl -fsS -m 5 -o /dev/null {url}", timeout=60)

@@ -198,6 +198,39 @@ in
       '';
     };
 
+    # Grafana on the tailnet: Tailscale Serve proxies the nuc's tailnet
+    # address, port 3000, to Grafana on loopback, over plain HTTP. HTTPS would
+    # need a certificate for the tailnet's name, and every public certificate
+    # is published in the Certificate Transparency logs; WireGuard already
+    # encrypts the traffic (#163 is HTTPS on a name of our own). Serve answers
+    # inside tailscaled, so the firewall never sees it, but the tailnet's
+    # access policy does limit it (docs/runbooks/tailscale.md).
+    #
+    # Not nixpkgs' `services.tailscale.serve`: that configures Tailscale
+    # Services (`svc:` names approved in the admin console), not this
+    # machine's own Serve. Serve's configuration persists in tailscaled's
+    # state, so stopping the unit, as removing it from the configuration
+    # does, takes the port back.
+    systemd.services.tailscale-serve-grafana = {
+      description = "Publish Grafana on the tailnet with Tailscale Serve";
+      # Runs once the nuc is logged in; the VM tests start autoconnect late,
+      # and this follows it.
+      wantedBy = [ "tailscaled-autoconnect.service" ];
+      after = [
+        "tailscaled-autoconnect.service"
+        "grafana.service"
+      ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${lib.getExe config.services.tailscale.package} serve --bg --http=${toString ports.grafana} http://127.0.0.1:${toString ports.grafana}";
+        ExecStop = "${lib.getExe config.services.tailscale.package} serve --http=${toString ports.grafana} off";
+        # tailscaled may not be ready to take Serve settings at once.
+        Restart = "on-failure";
+        RestartSec = 5;
+      };
+    };
+
     services.grafana = {
       enable = true;
       settings = {
