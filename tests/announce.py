@@ -94,7 +94,12 @@ APPLYING = "Applying update. Services on the nuc may restart briefly."
 shutil.rmtree(nuc.shared_dir / "webhook", ignore_errors=True)
 
 nuc.wait_for_unit("multi-user.target")
-nuc.wait_for_unit("fakemc.service")
+# On a slow runner Docker's containerd can time out on its first start while
+# the rest of the host boots (Grafana's first start among it, #25); Docker
+# restarts itself, but the stand-in's start has already failed on it. The
+# real stacks only want Docker (#23), so this is the test's unit alone.
+nuc.wait_for_unit("docker.service")
+nuc.succeed("systemctl start fakemc.service")
 KERNEL = nuc.succeed("uname -r").strip()
 
 with subtest("the host announces it is up, in Discord only"):
