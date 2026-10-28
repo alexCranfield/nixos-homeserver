@@ -14,7 +14,7 @@ snapshots in [data-layout.md](data-layout.md).
 | The unit | `stack-minecraft.service`; the container is `minecraft-server-1` |
 | The world, mods and configuration | `/srv/data/minecraft`, owned by `stack-minecraft` (40001) |
 | The port | TCP (Transmission Control Protocol) 25565, admitted from `tailscale0` only |
-| Secrets | `secrets/minecraft.yaml`: `CF_API_KEY`, the CurseForge API (application programming interface) key, mounted into the container as a file; `env`, the whitelist, as the stack's `.env` |
+| Secrets | `secrets/minecraft.yaml`: `CF_API_KEY`, the CurseForge API (application programming interface) key, mounted into the container as a file; `env`, the whitelist, read by `minecraft-whitelist.service` |
 | Memory | a 12 GiB Java heap (`MEMORY=12G`), and 18 GiB for the whole stack (`resources.memoryMax`) |
 
 ## What is pinned
@@ -40,6 +40,11 @@ sudo docker exec -it minecraft-server-1 rcon-cli  # a console; Ctrl-D leaves
 RCON (remote console) is reachable only inside the container: nothing
 publishes its port, and the image makes a new password each time it starts.
 
+Status messages show in the chat as `[nuc] ...`: an update starting and
+finishing, the reboot window's warning, and `nuc-announce` (#161,
+[notifications.md](notifications.md#the-public-channel)). They go through
+`rcon-cli tellraw @a`; a server still starting misses them.
+
 `allow-flight` is on (`ALLOW_FLIGHT` in `compose.yml`, #156). Without it,
 vanilla's movement check kicked a player while they fell, probably because
 lag or one of the pack's mods made the fall look like flying. Every player
@@ -51,43 +56,57 @@ writes the setting into `server.properties` at each start; to check it:
 
 The players allowed in are friends' names, so they are kept out of this
 public repo: they are the `WHITELIST` line under the `env` key of
-`secrets/minecraft.yaml`, which becomes the stack's `.env`. To change it, on
-the workstation:
+`secrets/minecraft.yaml`. To change it, on the workstation:
 
 ```bash
 sops secrets/minecraft.yaml
 ```
 
-and edit the `env` key, which holds dotenv lines, names comma-separated:
+and edit the `env` key, names comma-separated (the key holds dotenv lines,
+from when it was the stack's `.env`):
 
 ```yaml
 env: |
   WHITELIST=FirstPlayer,SecondPlayer
 ```
 
-Commit the file and merge. The changed secret reloads the stack, which
-recreates the container, disconnecting everyone online (#153 is to change
-that for additions). The list then replaces the server's whitelist
-(`EXISTING_WHITELIST_FILE=SYNCHRONIZE`); `ENFORCE_WHITELIST` kicks anyone
-removed from it. A missing or empty `WHITELIST` fails every compose command on the stack,
-stop included, naming the key, rather than running a server no one can
-join; restore the line to stop or start it again. To let someone
-in at once, before the merge, run `rcon-cli whitelist add <name>` as well;
-the next start drops them if the file does not list them.
+Commit the file and merge. Nobody is disconnected (#153). The changed
+secret restarts `minecraft-whitelist.service`, which compares the list with
+the running server's and applies the difference through RCON: `whitelist
+add` for a new name, who can join at once, and `whitelist remove` for a
+dropped one, whom the server kicks at once, since it enforces its whitelist
+(`ENFORCE_WHITELIST`). Names match whatever their case. The same unit runs
+after every start or restart of the stack, so a server restored from an
+older snapshot, which stops and starts the stack, ends up with the current
+list too. The server keeps the list in `/data/whitelist.json` between
+starts. A deploy that only reloads the stack, even one that recreates the
+container, does not run the unit; the new container reads the same file.
 
-Check each name's spelling before merging. The image looks every name up
-online when the container starts, and a name it cannot find stops the
-start: the log shows `Could not resolve user from Playerdb: <name>`, the
-container exits, and Docker starts it again, over and over. On a deploy or
-at boot the unit's failure is what posts to Discord; after a change to a
-running stack, the crash watcher posts the restarts, with the container's
-last log lines, names included. This happened in the timing run before
-#28's merge, with a made-up name.
+```bash
+systemctl status minecraft-whitelist   # the last sync and what it changed
+sudo docker exec minecraft-server-1 rcon-cli whitelist list
+```
 
-The same lookup needs Playerdb to be reachable. If the internet or Playerdb
-is down when the container starts, at boot say, the start is expected to
-fail the same way (not tested), and Docker keeps retrying. Once it is back,
-`sudo systemctl restart stack-minecraft`.
+Check each name's spelling before merging. The server looks each new name
+up with Mojang when it is added, and one it cannot find (`That player does
+not exist`) fails the unit, which posts to Discord with its log, names
+included. So does anything that is not a valid player name (3 to 16
+letters, digits and underscores). The other names in the same edit are
+still applied, and the server keeps running. A failed unit is tried again
+on the next deploy, and posts again, until the name is fixed. Fix the name
+and merge again, or run `sudo systemctl start minecraft-whitelist` once
+Mojang's lookup is back if that was the cause.
+
+The unit runs only while the stack is up. It waits up to 15 minutes for
+the server to be healthy, which also covers a deploy that recreates the
+container at the same moment, and fails, with the same alert, if it is
+not. `sudo systemctl start minecraft-whitelist` then applies the list.
+
+A missing `WHITELIST` line, or one that names no one, also fails the unit,
+and the server's whitelist is left as it was rather than emptied.
+
+To let someone in before a merge, `rcon-cli whitelist add <name>` works as
+well, but the next sync removes anyone the file does not list.
 
 ### Join protection
 
@@ -144,6 +163,61 @@ nobody is playing.
 Resistance ends when a player dies, so a player who respawns into chunks
 that are still loading is not protected.
 
+### Offline chunk loading
+
+Chunks a team force-loads with FTB (Feed The Beast) Chunks, the pack's
+claims map, stay loaded while every member of the team is offline, so
+farms and machines keep running (#165). Two settings in the world's
+`world/serverconfig/ftbchunks-world.snbt` do this:
+
+- `force_load_mode: "always"`. The pack's `"default"` keeps chunks loaded
+  offline only for a team with a player holding the FTB Ranks permission
+  `ftbchunks.chunk_load_offline`, which no rank here grants.
+- `max_idle_days_before_unforce: 7.0d`. Once nobody in a team has logged
+  in for seven days, its chunks stop being force-loaded, so an abandoned
+  base does not run for ever. Whether they come back when someone logs in
+  again has not been checked here; if not, the player force-loads them
+  again from the map.
+
+Each team can still force-load at most 25 chunks
+(`max_force_loaded_chunks`), and those chunks tick around the clock, which
+costs memory and CPU (central processing unit) time with nobody on.
+
+The file is part of the world, not this repo. The mod rewrites it at each
+start, and the pack's `defaultconfigs` copy is used only when the file
+does not exist (a new world, or the file deleted), so it cannot be
+declared in `compose.yml` the way the join-protection files are. The
+nightly snapshots keep it with the world.
+To change it, with nobody online:
+
+```bash
+sudo systemctl stop stack-minecraft
+sudoedit /srv/data/minecraft/world/serverconfig/ftbchunks-world.snbt
+sudo systemctl start stack-minecraft
+```
+
+Stop the stack before editing. The mod writes the file out itself, so an
+edit made while the server runs may be overwritten; with the stack stopped
+it is read at the next start (as on 2026-10-28, the record below). The
+stop saves the world first. `systemctl start` returns only once the server
+is healthy, about a minute and a half. `sudoedit` keeps the file's owner,
+`stack-minecraft`. A new world, or the file deleted, starts from the
+pack's defaults again, so these two lines would need setting again.
+
+To check it, with nobody online, test a chunk a team has force-loaded:
+
+```bash
+sudo docker exec minecraft-server-1 rcon-cli -- execute if loaded <x> 64 <z>
+sudo docker exec minecraft-server-1 rcon-cli -- execute in minecraft:the_nether if loaded <x> 64 <z>
+```
+
+with block coordinates inside the chunk. `Test passed` means it is loaded.
+Pick a chunk away from spawn and from other teams' loaders, which keep
+chunks loaded too. The `--` stops `rcon-cli` reading a negative coordinate
+as an option of its own. The teams' claims are in
+`world/ftbchunks/<team>.snbt`, in chunk coordinates (multiply by 16 for
+block coordinates); force-loaded ones have a `force_loaded` field.
+
 ## Updating the pack
 
 1. Find the new file on the pack's CurseForge Files tab. Its ID is the last
@@ -190,3 +264,4 @@ kills it, by which time everything is saved.
 | Restart | `systemctl restart stack-minecraft` returned after 102 s, active. A new container (`577d4d51b7fd` became `cd9709db767c`), the same world seed (`4723322516846976875`) before and after, and the pack and Forge reported already installed, nothing downloaded |
 | Access over Tailscale | 2026-10-25, after the tailnet policy gained `tcp:25565` (#135). The nuc's packet filter then had two rules: Alex's devices to 22 and 25565, and shared users to 25565 only. Alex joined from his own device at 17:47; the nuc logged `stack-port accept 25565/tcp IN=tailscale0` |
 | A friend through a share | 18:13, two friends who had accepted shares connected; both source addresses matched the shared-users rule. The one whitelisted in #148 joined. The other, not yet listed, was turned away: `You are not white-listed on this server!`. #149 added them; it deployed at 18:19:46 (91 s from recreate to healthy) |
+| Offline chunk loading | 2026-10-28, with nobody online (#165). One team, three members, had 15 force-loaded chunks, 11 in the overworld and 4 in the Nether. Before: `execute if loaded` failed at a force-loaded chunk in each, as at an unclaimed chunk far away. The stack stopped in 5 s, with every dimension reporting `All chunks are saved`; the two values set; healthy again 92 s after the start, and the whitelist sync ran. The mod rewrote the file at start and kept both. After: both force-loaded chunks passed, the far chunk still failed. With nobody on, before, then five minutes after the start (so the later figures may settle lower): overworld tick time 2.08 to 10.52 ms, all dimensions 3.42 to 11.76 ms, 20 TPS (ticks per second) throughout; CPU 8 % to 35 %. Memory not comparable, as the JVM (Java virtual machine) had just restarted |

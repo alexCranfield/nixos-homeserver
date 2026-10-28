@@ -28,11 +28,56 @@
 #  - The metrics exporter on loopback. The firewall already denies it from
 #    outside; binding it to 127.0.0.1 means a firewall mistake cannot expose it.
 #    Phase 3 (#25) may scrape it locally.
-{ inputs, ... }:
+#
+# comin takes one command per hook. `homeserver.comin.postBuild` and
+# `postDeployment` collect commands from several modules (notify.nix,
+# announce.nix) and run each in turn; one that fails is logged and does not
+# stop the next.
+{
+  config,
+  lib,
+  pkgs,
+  inputs,
+  ...
+}:
+let
+  cfg = config.homeserver.comin;
+  # comin keeps a hook's output to itself, logging only its exit status
+  # (deployer.go in 0.14.0), so failures go to the journal from here.
+  hook =
+    name: commands:
+    pkgs.writeShellScript name (
+      ''
+        exec 2> >(${pkgs.systemd}/bin/systemd-cat --identifier ${name} --priority err)
+      ''
+      + lib.concatMapStrings (cmd: ''
+        ${cmd} || echo ${lib.escapeShellArg "${cmd}"} "failed (exit $?)" >&2
+      '') commands
+    );
+  hookOption =
+    when:
+    lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = ''
+        Commands comin runs ${when}, in order, each with comin's `COMIN_*`
+        variables in its environment.
+      '';
+    };
+in
 {
   imports = [ inputs.comin.nixosModules.comin ];
 
-  services.comin = {
+  options.homeserver.comin = {
+    postBuild = hookOption "after each build of a commit, before deploying it (also when the build was already in the store)";
+    postDeployment = hookOption "after each deployment";
+  };
+
+  config.services.comin = {
+    postBuildCommand = lib.mkIf (cfg.postBuild != [ ]) (hook "comin-post-build" cfg.postBuild);
+    postDeploymentCommand = lib.mkIf (cfg.postDeployment != [ ]) (
+      hook "comin-post-deployment" cfg.postDeployment
+    );
     enable = true;
     remotes = [
       {

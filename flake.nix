@@ -162,6 +162,13 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket #161: public status messages reach the public webhook and the
+        # game's chat, pinging no one, and the reboot window warns first.
+        announce = import ./tests/announce.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
         # Ticket 3.1 (#22): ports Docker publishes without an address bind
         # to loopback, on every network, and nobody has the docker group.
         docker = import ./tests/docker.nix {

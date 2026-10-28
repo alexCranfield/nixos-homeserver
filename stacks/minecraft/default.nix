@@ -1,10 +1,26 @@
 # The `minecraft` stack: see compose.yml. Ticket 4.1 (#28).
-{ config, lib, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+let
+  whitelistSync = pkgs.writeShellApplication {
+    name = "minecraft-whitelist";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.docker
+      pkgs.gnugrep
+      pkgs.gnused
+    ];
+    text = builtins.readFile ./whitelist-sync.sh;
+  };
+in
 {
   homeserver.stacks.minecraft = {
     composeFile = ./compose.yml;
     services = [ "server" ];
-    envSecret = "minecraft-env";
     # Friends reach it only through Tailscale sharing (ADR 0011).
     publicPorts = [
       {
@@ -50,11 +66,49 @@
       restartUnits = [ "stack-minecraft.service" ];
     };
 
-    # The stack's .env: dotenv lines, such as the whitelist, under the `env`
-    # key. Compose reads it as root, so it keeps sops-nix's default owner.
+    # The whitelist: a `WHITELIST=` line of comma-separated names under the
+    # `env` key, which predates #153. Only minecraft-whitelist.service reads
+    # it, as root; the stack has no .env, so a change recreates nothing.
     minecraft-env = {
       sopsFile = ../../secrets/minecraft.yaml;
       key = "env";
+      restartUnits = [ "minecraft-whitelist.service" ];
     };
   };
+
+  # Applies that list to the running server (whitelist-sync.sh): when the
+  # secret changes, and after each start or restart of the stack, so a server
+  # started from an older snapshot or a fresh world ends up with the same
+  # names. A deploy that only reloads the stack does not run it: a recreated
+  # container keeps /data/whitelist.json.
+  systemd.services.minecraft-whitelist = lib.mkIf (config.homeserver.stacks ? minecraft) {
+    description = "Apply the Minecraft whitelist from secrets/minecraft.yaml";
+    # Only once the stack has started: a failed start is the stack's alert,
+    # not a second one from here.
+    after = [ "stack-minecraft.service" ];
+    requisite = [ "stack-minecraft.service" ];
+    # A stop or restart of the stack carries over, and its Wants= starts this
+    # again after each start.
+    partOf = [ "stack-minecraft.service" ];
+    wantedBy = [
+      "stack-minecraft.service"
+      "multi-user.target"
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      # Stays active after a run, so a deploy, which starts multi-user.target,
+      # does not run it again. A changed secret restarts it.
+      RemainAfterExit = true;
+      ExecStart = "${lib.getExe whitelistSync} ${config.sops.secrets.minecraft-env.path} minecraft-server-1";
+      # It waits up to 15 minutes for the server to be ready, as the stack
+      # allows a start that long (a pack update reinstalls mods).
+      TimeoutStartSec = "20min";
+    };
+  };
+  homeserver.notify.units = lib.mkIf (config.homeserver.stacks ? minecraft) [ "minecraft-whitelist" ];
+
+  # Public status messages show in the game's chat too (#161).
+  homeserver.announce.minecraftContainers = lib.mkIf (config.homeserver.stacks ? minecraft) [
+    "minecraft-server-1"
+  ];
 }
