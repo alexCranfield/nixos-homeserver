@@ -97,6 +97,7 @@ pkgs.testers.runNixOSTest {
     {
       imports = [
         ../hosts/nuc
+        (import ./grafana-password.nix { inherit pkgs; }).module
         trustCert
       ];
       virtualisation.memorySize = 2048;

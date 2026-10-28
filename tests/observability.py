@@ -1,6 +1,6 @@
 # Test script for tests/observability.nix. `nuc` and `lan` are the test
-# driver's machines; LAN_IP and PYTHON are defined by the Nix file in front of
-# this script.
+# driver's machines; LAN_IP, PYTHON and GRAFANA_PASSWORD are defined by the Nix
+# file in front of this script.
 #
 # LAN: local area network. API: application programming interface. JSON:
 # JavaScript Object Notation.
@@ -39,6 +39,24 @@ def wait_for_health(want, timeout=120):
         time.sleep(3)
 
 
+GRAFANA = "http://127.0.0.1:3000"
+
+
+def grafana(path, user=None, data=None, expect=200):
+    # curl prints the status code last; -o keeps the body apart from it.
+    auth = f"-u '{user}'" if user else ""
+    body = f"-H 'Content-Type: application/json' -d '{json.dumps(data)}'" if data else ""
+    status = nuc.succeed(
+        f"curl -sS -o /tmp/grafana.out -w '%{{http_code}}' {auth} {body} '{GRAFANA}{path}'"
+    ).strip()
+    out = nuc.succeed("cat /tmp/grafana.out")
+    assert status == str(expect), f"{path}: {status}, wanted {expect}: {out}"
+    return json.loads(out) if out.strip() else None
+
+
+ADMIN = f"admin:{GRAFANA_PASSWORD}"
+
+
 def open_ports(out):
     return sorted(int(p) for p in re.findall(r"^(\d+)/tcp\s+open\b", out, re.M))
 
@@ -60,7 +78,11 @@ with subtest("negative control: a stopped exporter shows down"):
     print(wait_for_health(ALL_UP))
 
 with subtest("cAdvisor sees the test container by name"):
-    nuc.wait_for_unit("probe.service")
+    # Under emulation (no KVM), Docker's containerd can time out on its first
+    # start while everything else boots; Docker restarts itself, but the
+    # probe's start has already failed on it. Start it once Docker is up.
+    nuc.wait_for_unit("docker.service")
+    nuc.succeed("systemctl start probe.service")
     deadline = time.monotonic() + 120
     while not (series := query('container_memory_usage_bytes{name="probe"}')):
         assert time.monotonic() < deadline, "no series for the probe container"
@@ -92,10 +114,94 @@ with subtest("node-exporter reports systemd units"):
     print(result)
     assert [r["value"][1] for r in result] == ["1"], result
 
+with subtest("Grafana is healthy and requires a login"):
+    nuc.wait_for_unit("grafana.service")
+    nuc.wait_for_open_port(3000)
+    print(grafana("/api/health"))
+    grafana("/api/search", expect=401)
+
+with subtest("the admin password works and a wrong one is refused"):
+    print(grafana("/api/user", user=ADMIN))
+    grafana("/api/user", user="admin:wrong", expect=401)
+
+with subtest("the password follows its secret after the first start"):
+    nuc.wait_for_unit("grafana-admin-password.service")
+    # As sops-nix does when the secret changes: a new file, then a restart of
+    # the unit (hosts/nuc/observability.nix).
+    nuc.succeed("printf %s new-password > /run/grafana-test/password")
+    nuc.succeed("systemctl restart grafana-admin-password.service")
+    grafana("/api/user", user="admin:new-password")
+    grafana("/api/user", user=ADMIN, expect=401)
+    # And back, for the subtests that follow.
+    nuc.succeed(f"printf %s '{GRAFANA_PASSWORD}' > /run/grafana-test/password")
+    nuc.succeed("systemctl restart grafana-admin-password.service")
+    grafana("/api/user", user=ADMIN)
+
+with subtest("the secret key was made once"):
+    key = "/var/lib/grafana/secret_key"
+    print(nuc.succeed(f"stat -c '%a %U %s' {key}"))
+    assert nuc.succeed(f"stat -c '%a %U' {key}").strip() == "400 grafana"
+    assert int(nuc.succeed(f"stat -c %s {key}")) >= 32
+    before = nuc.succeed(f"sha256sum {key}")
+    nuc.succeed("systemctl restart grafana.service")
+    nuc.wait_for_open_port(3000)
+    assert nuc.succeed(f"sha256sum {key}") == before, "the key changed"
+    # The key unit is skipped once the key exists, and not failed.
+    print(nuc.succeed("systemctl show -P ConditionResult,Result grafana-secret-key"))
+    grafana("/api/user", user=ADMIN)
+
+with subtest("the data source is provisioned and healthy"):
+    health = grafana("/api/datasources/uid/prometheus/health", user=ADMIN)
+    print(health)
+    assert health["status"] == "OK", health
+
+with subtest("the three dashboards are in the nuc folder"):
+    found = {
+        d["title"]: d.get("folderTitle")
+        for d in grafana("/api/search?type=dash-db", user=ADMIN)
+    }
+    print(found)
+    want = {"Node Exporter Full", "cadvisor dashboard", "Game servers"}
+    assert want <= set(found), found
+    assert all(found[t] == "nuc" for t in want), found
+
+with subtest("a query through Grafana returns data"):
+    result = grafana(
+        "/api/ds/query",
+        user=ADMIN,
+        data={
+            "from": "now-5m",
+            "to": "now",
+            "queries": [
+                {
+                    "refId": "A",
+                    "datasource": {"type": "prometheus", "uid": "prometheus"},
+                    "expr": "node_load1",
+                    "instant": True,
+                }
+            ],
+        },
+    )
+    frames = result["results"]["A"]["frames"]
+    print(frames)
+    assert frames and frames[0]["data"]["values"], result
+
+with subtest("Grafana does not phone home"):
+    settings = grafana("/api/frontend/settings", user=ADMIN)
+    # Grafana 13's frontend settings no longer carry reportingEnabled; the
+    # running configuration below covers it.
+    print(settings.get("newsFeedEnabled"), settings.get("buildInfo", {}).get("version"))
+    assert settings.get("newsFeedEnabled") is False, settings.get("newsFeedEnabled")
+    # The running configuration, as Grafana read it.
+    analytics = grafana("/api/admin/settings", user=ADMIN)["analytics"]
+    print(analytics)
+    for key in ("check_for_updates", "check_for_plugin_updates", "reporting_enabled"):
+        assert analytics[key] == "false", (key, analytics[key])
+
 with subtest("everything listens on loopback"):
     listeners = nuc.succeed("ss -ltnH")
     print(listeners)
-    for port in (9090, 9100, 8081):
+    for port in (9090, 9100, 8081, 3000):
         local = [
             line.split()[3]
             for line in listeners.splitlines()

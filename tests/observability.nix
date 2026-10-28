@@ -1,5 +1,6 @@
-# Acceptance test for ticket 3.4 (#25): the nuc collects its own metrics, and
-# nothing that collects them is reachable from the LAN (local area network).
+# Acceptance test for ticket 3.4 (#25): the nuc collects its own metrics and
+# draws them in Grafana, and nothing that does either is reachable from the
+# LAN (local area network).
 #
 # Two VMs (virtual machines) on one network:
 #
@@ -8,7 +9,9 @@
 #    cAdvisor to find: the build sandbox has no internet to pull a real image.
 #  - `lan` is another device on the LAN, which scans the nuc.
 #
-# The tailnet side, Grafana through Tailscale Serve, is in tests/tailscale.nix.
+# Grafana is checked through its API on the nuc itself: logins, its data
+# source, its dashboards, and that it doesn't phone home. The tailnet side,
+# Grafana through Tailscale Serve, is in tests/tailscale.nix.
 {
   pkgs,
   inputs,
@@ -43,7 +46,10 @@ pkgs.testers.runNixOSTest {
   nodes.nuc =
     { config, ... }:
     {
-      imports = [ ../hosts/nuc ];
+      imports = [
+        ../hosts/nuc
+        (import ./grafana-password.nix { inherit pkgs; }).module
+      ];
       # The host's stacks pull images, and the build sandbox has no internet.
       homeserver.stacks = lib.mkForce { };
       # As in tests/announce.nix: no sops secret can be decrypted here.
@@ -84,6 +90,7 @@ pkgs.testers.runNixOSTest {
   testScript = ''
     LAN_IP = ${builtins.toJSON lanIp}
     PYTHON = ${builtins.toJSON "${pkgs.python3}/bin/python3"}
+    GRAFANA_PASSWORD = ${builtins.toJSON (import ./grafana-password.nix { inherit pkgs; }).password}
   ''
   + builtins.readFile ./observability.py;
 }

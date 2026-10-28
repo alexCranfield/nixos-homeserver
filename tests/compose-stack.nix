@@ -130,7 +130,10 @@ pkgs.testers.runNixOSTest {
   defaults.nixpkgs.pkgs = pkgs;
 
   nodes.nuc = {
-    imports = [ ../hosts/nuc ];
+    imports = [
+      ../hosts/nuc
+      (import ./grafana-password.nix { inherit pkgs; }).module
+    ];
     virtualisation.vlans = [ 1 ];
     # As in tests/docker.nix: no secret can be decrypted here.
     services.tailscale.authKeyFile = lib.mkForce null;

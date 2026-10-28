@@ -46,6 +46,7 @@ pkgs.testers.runNixOSTest {
     {
       imports = [
         ../hosts/nuc
+        (import ./grafana-password.nix { inherit pkgs; }).module
         trustCert
       ];
       # The host's stacks pull images, and the build sandbox has no internet;
