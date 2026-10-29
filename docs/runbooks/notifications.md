@@ -14,6 +14,21 @@ The nuc's secrets for both are wired in `hosts/nuc/notify.nix`.
 
 ## What posts
 
+Four things post to the alerts channel, each for what the others cannot see:
+
+- **the failure notifier** (`notify-failure@`): a watched unit that fails;
+- **comin's deploy hook**: a failed deployment;
+- **the stack watcher** (`modules/containers/stack-watch.sh`): a Compose stack's
+  container that crashes;
+- **Alertmanager, through the alert relay** (#27): what Prometheus's rules
+  catch, such as a target that stops answering, a disk filling or a container
+  short of memory. Its messages are 🔴 with a ✅ when the problem clears, and
+  the rules, silences and troubleshooting are in the
+  [observability runbook](observability.md#alerts).
+
+The rules skip what the first three already report, so one problem is one
+message. The table below covers the first two, the boot messages and shutdowns.
+
 | Event | Message | Pings `@nuc-mods` |
 |---|---|---|
 | A watched unit fails | 🔴 `nuc: <unit> failed`, with its last 20 log lines | yes |
@@ -70,12 +85,15 @@ message is not waited for.
   hook after a failed evaluation, and its build hook reports a build cancelled
   by a newer commit the same way as a failed one, and once per retry. CI
   (continuous integration) builds the same configuration before merge, so a
-  failure there is the nuc's disk or network. Until phase 3's alert rules (#27)
-  watch comin's metrics, `comin status` on the nuc shows it
-  ([deploy.md](deploy.md)).
+  failure there is the nuc's disk or network. The alert rules `CominFetchFailed`,
+  `CominEvalFailed` and `CominBuildFailed` (#27) watch comin's metrics and post
+  these; `comin status` on the nuc also shows it ([deploy.md](deploy.md)).
 - **Being down.** The nuc cannot report an outage while it lasts; the boot
   message says afterwards that the last boot ended badly, not when. A check
   from outside is #112.
+- **A failed alert post.** The alert relay cannot tell Discord that Discord is
+  unreachable. It logs the failure (`journalctl -u alert-relay -b`) and
+  Alertmanager retries; a phone push as a second channel is #170.
 
 How the boot message knows: `notify-online.service` keeps a marker file,
 `/var/lib/notify-online/running`, from start to stop, and syncs the disk each

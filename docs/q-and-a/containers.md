@@ -142,3 +142,37 @@ container. Native Grafana also gets security updates through the `flake.lock`
 bump, with no image tag to pin and follow.
 
 </details>
+
+### Are there alerts for containers, such as a Minecraft container that is under-provisioned?
+
+*2026-10-28*
+
+> do you have alerts for containers, say if the minecraft container is under-provisioned?
+
+<details>
+<summary>Answer</summary>
+
+Yes, four, and they watch the stack rather than the single container, because
+limits are set per stack (`stack-<name>.slice`), not per container:
+
+- `StackMemoryNearLimit`: the stack's memory is above 90 % of its own
+  `memoryMax` for 15 minutes. This is the "about to be killed" warning.
+- `StackMemoryStalled` and `StackCpuStarved`: processes in the stack wait for
+  memory (10 % of the time) or for a core (25 %). These use the kernel's
+  pressure stall information (PSI), which shows a stack that is short of a
+  resource before it hits a hard limit, and also a stack with no limit that
+  the host as a whole is squeezing.
+- `OomKill`: the kernel killed a process for lack of memory in a named
+  container. This is an event, so it posts at once.
+
+A fifth, `ContainerCpuHigh`, catches one container taking more than 75 % of
+the whole host's CPU for 15 minutes.
+
+What they cannot see is inside the game: the server falling behind its 20
+ticks per second, or Java's heap running short while the container's memory
+looks fine. Those need the Minecraft exporter, so they are added to #168.
+Minecraft idles at about 84 % of its 18G limit (measured 2026-10-28), close
+enough to the 90 % line that the first week's noise review matters. The
+thresholds are in [the observability runbook](../runbooks/observability.md#alerts).
+
+</details>

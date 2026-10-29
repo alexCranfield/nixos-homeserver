@@ -3,7 +3,7 @@
 Ticket 3.4 (#25). The nuc collects its own metrics and draws them in Grafana,
 which Alex opens from his own devices over the tailnet. The configuration is
 `modules/observability/default.nix`; the admin password's secret is wired in
-`hosts/nuc/observability.nix`. Alert rules on these metrics are #27.
+`hosts/nuc/observability.nix`. Alert rules on these metrics are ticket 3.6 (#27), in [Alerts](#alerts) below.
 
 ## What runs where
 
@@ -13,10 +13,13 @@ dashboards keep working when Docker is what's broken.
 
 | Service | Listens on | What it does |
 |---|---|---|
-| Prometheus | 127.0.0.1:9090 | Scrapes the four below every 15 s and stores the results |
+| Prometheus | 127.0.0.1:9090 | Scrapes the four below, and the blackbox probes, every 15 s; stores the results and evaluates the alert rules |
 | node-exporter | 127.0.0.1:9100 | The host: CPU, memory, disks, network, temperatures, and each systemd unit's state |
 | cAdvisor | 127.0.0.1:9338 | Each container's CPU, memory and network (not its default 8080, which apps and the tests use) |
 | comin's exporter | 127.0.0.1:4243 | Fetch, evaluation, build and deployment results |
+| Alertmanager | 127.0.0.1:9093 | Groups what Prometheus fires and passes it to the relay; its cluster listener (9094) is off |
+| alert relay | 127.0.0.1:9095 | Turns Alertmanager's webhook calls into Discord posts |
+| blackbox exporter | 127.0.0.1:9115 | Probes the LAN gateway (ping) and the nuc's resolver (a DNS lookup) for Prometheus |
 | Grafana | 127.0.0.1:3000 | Dashboards; on the tailnet at `http://nuc:3000` through Tailscale Serve |
 
 Nothing here is reachable from the LAN (local area network): all of it is
@@ -24,7 +27,7 @@ on loopback, and `tests/observability.nix` scans the LAN address to check.
 The only way in from outside the nuc is Grafana, through Serve, from devices
 the tailnet's access policy allows.
 
-Failures of any of these units post to the alerts channel, like other
+Failures of any of these units, the last three included, post to the alerts channel, like other
 watched units ([notifications runbook](notifications.md)).
 
 ## Opening Grafana
@@ -150,3 +153,175 @@ tailscale serve status
 Serve answers inside `tailscaled`, so the nuc's firewall never sees those
 connections. The tailnet's access policy is what limits who reaches 3000;
 `tests/tailscale.nix` checks that a policy without `tcp:3000` closes it.
+
+## Alerts
+
+Ticket 3.6 (#27). Prometheus evaluates the rules in
+`modules/observability/rules.nix`, Alertmanager groups what fires
+(`modules/observability/alerting.nix`), and a small relay
+(`modules/observability/alert-relay.py`) posts it to the alerts channel through
+`homeserver-notify`, the same sender as the failure messages, so there is no new
+secret. A firing alert posts 🔴 and pings `@nuc-mods`; when it clears, a ✅
+follows (`nuc: resolved: ...`, with how long it lasted) and pings no one. Each
+alert is its own message, and one that stays firing is repeated every 12 hours.
+
+Everything is on loopback. Without a Discord webhook (`homeserver.notify`),
+Alertmanager and the relay do not run and Prometheus only evaluates the rules.
+
+### The rules
+
+There are two kinds. An **event** alert reports something that happened and
+posts as soon as it can; its `for` is short or zero. A **threshold** alert
+reports a condition that has lasted, so its `for` is long enough to ignore
+normal busy spells. The values below are the deployed defaults, from the
+`defaults` set in `rules.nix`.
+
+| Alert | Kind | Fires when | Threshold | For |
+|---|---|---|---|---|
+| `TargetDown` | event | A scrape target (any job) does not answer; cAdvisor and comin are skipped while their own unit is failed (the notifier posts that) | none | 1 m |
+| `UnitFailed` | event | A systemd unit is `failed` that the notifier does not watch | none | 0 s |
+| `CominFetchFailed` | event | comin's last fetch of the repository failed | none | 30 m |
+| `CominEvalFailed` | event | comin's last evaluation failed | none | 0 s |
+| `CominBuildFailed` | event | comin's last build failed | none | 5 m |
+| `TailnetDisconnected` | event | Tailscale is not running and logged in (skipped while `tailscaled` is failed) | none | 2 m |
+| `GatewayUnreachable` | event | The LAN gateway does not answer ping | none | 2 m |
+| `DnsFailing` | event | A DNS lookup through the nuc's resolver fails | none | 2 m |
+| `OomKill` | event | The kernel killed a process for lack of memory in a named container | none | 0 s |
+| `DiskFilling` | threshold | `/` (the one btrfs filesystem: `/srv`, `/nix` and Docker's data too) is fuller than | 85 % | 10 m |
+| `HostMemoryLow` | threshold | Available memory is below | 10 % | 15 m |
+| `HostCpuHigh` | threshold | CPU busy across all cores is above | 90 % | 15 m |
+| `TemperatureHigh` | threshold | A sensor is within a margin of its own `crit` mark, or above a fixed limit if it has none | 5 degrees below `crit`; 85 degrees without one | 5 m |
+| `ContainerCpuHigh` | threshold | One container uses more than this share of the whole host's CPU | 75 % | 15 m |
+| `StackMemoryNearLimit` | threshold | A stack slice's memory is above this share of its own `memoryMax` | 90 % | 15 m |
+| `StackMemoryStalled` | threshold | Processes in a stack slice wait for memory (pressure stall information, "some") this share of the time | 10 % | 10 m |
+| `StackCpuStarved` | threshold | Processes in a stack slice are ready but wait for a core this share of the time | 25 % | 15 m |
+
+Notes on a few of them:
+
+- `UnitFailed` skips the units in `homeserver.notify.units`, so a failed
+  watched unit posts once, from the notifier. The same goes for the symptoms of
+  such a failure: `TargetDown` does not fire for cAdvisor or comin while their
+  unit is failed, and `TailnetDisconnected` not while `tailscaled` is.
+- `GatewayUnreachable` is the cause when the LAN goes: while it fires,
+  `DnsFailing` and `TailnetDisconnected` are held back, so the outage is one
+  post.
+- `OomKill` reads cAdvisor's kill counter over the last 5 minutes, for named
+  containers only (the counter is also raised for each parent cgroup).
+- The stack alerts read the stack's slice (`stack-<name>.slice`), not a single
+  container, because limits are set per stack.
+- The ICMP (Internet Control Message Protocol) probe needs the kernel setting
+  `net.ipv4.ping_group_range` to allow unprivileged ping sockets, because the
+  exporter has no `CAP_NET_RAW`. NixOS's default is right; an assertion fails
+  the build if a host changes it.
+- The gateway to ping is `homeserver.alerting.gateway`, default `192.168.1.1`.
+
+### Timing
+
+Measured in the VM test (`tests/alerting.nix`), from the cause to the post:
+
+- `TargetDown`: about 50 s after stopping an exporter, its 1 m `for` included.
+- `UnitFailed`: about 15 to 20 s.
+- The event alerts have `keep_firing_for` of 2 m (all but `TargetDown`). One
+  missed scrape, such as a deploy restarting node-exporter, marks the series
+  stale, and without this every standing alert would resolve and fire again.
+  The cost is that a cleared alert's ✅ arrives up to 2 minutes late, and that
+  `GatewayUnreachable` keeps holding back `DnsFailing` and
+  `TailnetDisconnected` for 2 minutes after the gateway recovers.
+- `OomKill` resolves about 7 minutes after the kill: the 5 minute window plus
+  those 2.
+
+### Tuning
+
+Thresholds and durations are one set in one place. To change one, add an entry
+in `hosts/nuc`, naming only what changes (it is merged over the defaults, so
+other alerts and the other field keep theirs):
+
+```nix
+homeserver.alerting.thresholds.DiskFilling = {
+  value = 90;
+  for = "30m";
+};
+```
+
+An event alert has no `value`; give it `{ for = "..."; }`. Merge as usual and
+comin deploys it. The alert names in the table are the keys.
+
+**Noise review.** The ticket asks for a week of watching for alerts that fire
+on normal use. It is due 2026-11-05. An alert that fires on normal use is a bug
+in its rule: raise its threshold or `for`, or change the rule.
+
+### Stacks that are under-provisioned
+
+`StackMemoryNearLimit` compares a slice with the `memoryMax` the stack itself
+sets, so a stack with no limit never fires it, and a limit set too low does
+(limits for stacks without one are #32). `StackMemoryStalled` and
+`StackCpuStarved` catch a stack that is short of memory or CPU without hitting
+a limit. Minecraft idles at about 84 % of its 18G limit (measured 2026-10-28),
+under the 90 % line but not by much, so watch it during the noise week.
+
+### What is not alerted
+
+- **A failed watched unit, a failed deploy, a crashed container.** The
+  notifier and the stack watcher already post them ([notifications
+  runbook](notifications.md)); a second message would be a duplicate. The one
+  accepted duplicate: node-exporter itself crashing gives the notifier's post
+  and `TargetDown`.
+- **The nuc being down.** Alerting runs on it. A check from outside is #112.
+- **A failed notification.** The nuc cannot tell Discord that Discord is
+  unreachable. The relay logs the failure to its journal, and Alertmanager
+  retries. A second channel, a phone push, is #170.
+- **Disk health (SMART, Self-Monitoring, Analysis and Reporting Technology):**
+  #46. **Minecraft's tick rate and Java heap:** #168, with the player counts.
+
+### Silencing
+
+During planned work, silence an alert rather than letting it ping. In Grafana
+(on the tailnet, [above](#opening-grafana)): Alerting, Silences, with the
+Alertmanager data source selected; the same page lists the active alerts. Or
+over SSH, on the nuc:
+
+```bash
+amtool --alertmanager.url=http://127.0.0.1:9093 silence add alertname=DiskFilling --duration 2h --comment 'resizing the disk'
+amtool --alertmanager.url=http://127.0.0.1:9093 silence query
+amtool --alertmanager.url=http://127.0.0.1:9093 silence expire <id>
+```
+
+A silenced alert posts nothing, firing or resolved, while the silence lasts.
+Silences are kept in Alertmanager's state, not in the repo.
+
+### Testing an alert by hand
+
+Stop node-exporter for 2 minutes and watch the alerts channel:
+
+```bash
+ssh nuc 'sudo systemctl stop prometheus-node-exporter'
+# wait 2 minutes, then
+ssh nuc 'sudo systemctl start prometheus-node-exporter'
+```
+
+🔴 `nuc: Scrape target node is down (for 1m)` arrives after about a minute, and ✅
+`resolved` a minute or two after the start. Stopping it by hand does not fail
+the unit, so the notifier stays quiet. The VM test does the same with all the
+alerts and a deliberate break of each check.
+
+### When an alert does not arrive
+
+Follow the path from the end:
+
+```bash
+ssh nuc 'journalctl -u alert-relay -b --no-pager'      # failed posts, with the exit status
+ssh nuc 'journalctl -u alertmanager -b --no-pager'     # delivery to the relay
+ssh nuc 'curl -s 127.0.0.1:9090/api/v1/alerts'         # what Prometheus has pending or firing
+ssh nuc 'curl -s 127.0.0.1:9093/api/v2/alerts'         # what Alertmanager holds, and silenced or inhibited
+```
+
+If an alert is in Prometheus but not in Alertmanager, check the Alertmanager
+unit. If it is in both and silenced or inhibited, that is the reason. The
+relay answers Alertmanager with an error when a post fails, and Alertmanager
+then retries.
+
+Alertmanager and the relay have start limits: five failed starts in 15 minutes
+(Alertmanager, which must also be ready within 100 s) or in 5 minutes (relay),
+and then the unit stays `failed`, which the notifier posts. So a relay that
+cannot start, for example with a missing secret, ends in a failure message
+instead of restarting for ever.
