@@ -178,6 +178,27 @@ pkgs.testers.runNixOSTest {
     # the VM panicked in subtest 5). The nuc runs the kernel's default, 0.
     boot.kernel.sysctl."vm.panic_on_oom" = 0;
 
+    # The negative control of subtest 6: UnitFailed for one unit, without
+    # keep_firing_for, so a scrape gap drops it and it fires again as a new
+    # alert. Silenced by the test, so it never posts.
+    services.prometheus.ruleFiles = [
+      (pkgs.writeText "gap-control.yml" (
+        builtins.toJSON {
+          groups = [
+            {
+              name = "test-gap-control";
+              rules = [
+                {
+                  alert = "GapControl";
+                  expr = ''node_systemd_unit_state{name="fail-b.service",state="failed"} == 1'';
+                }
+              ];
+            }
+          ];
+        }
+      ))
+    ];
+
     # A stack's slice as modules/containers/compose-stack.nix makes one:
     # the dash puts it under stack.slice.
     systemd.slices.stack-oomtest.sliceConfig.MemoryMax = "64M";

@@ -123,6 +123,24 @@ def prom(expr):
     return json.loads(out)["data"]["result"]
 
 
+def active_at(alertname, unit):
+    """When Prometheus's alert for the unit became active, or None. A
+    resolved alert that fires again is a new alert, with a new time."""
+    out = json.loads(nuc.succeed("curl -fsS http://127.0.0.1:9090/api/v1/alerts"))
+    for a in out["data"]["alerts"]:
+        if a["labels"]["alertname"] == alertname and a["labels"].get("name") == unit:
+            return a["activeAt"]
+    return None
+
+
+def wait_active_at(alertname, unit, timeout=120):
+    deadline = time.monotonic() + timeout
+    while (at := active_at(alertname, unit)) is None:
+        assert time.monotonic() < deadline, f"no {alertname} for {unit}"
+        time.sleep(1)
+    return at
+
+
 def unit_failed(unit):
     return f"Unit {unit}.service failed"
 
@@ -312,6 +330,14 @@ with subtest("5. OomKill and StackMemoryNearLimit: a container past its slice's 
     assert len(received()) == m + 2, received()[m:]
 
 with subtest("6. two alerts firing, one resolving: the other is not posted again"):
+    amtool = f"amtool --alertmanager.url={AM}"
+    # GapControl (tests/alerting.nix) is UnitFailed without keep_firing_for,
+    # the negative control for the scrape gap below. Silenced throughout, so
+    # it never posts.
+    nuc.succeed(
+        f"{amtool} silence add alertname=GapControl --duration 2h"
+        " --author test --comment 'negative control'"
+    )
     n = len(received())
     nuc.succeed("systemd-run --unit fail-a false")
     nuc.succeed("systemd-run --unit fail-b false")
@@ -325,26 +351,36 @@ with subtest("6. two alerts firing, one resolving: the other is not posted again
     # (keep_firing_for in rules.nix) rather than resolve and post again.
     # TargetDown is silenced meanwhile: the gap itself is not what this
     # checks, and it may last past TargetDown's 30 s.
-    amtool = f"amtool --alertmanager.url={AM}"
     gap_silence = nuc.succeed(
         f"{amtool} silence add alertname=TargetDown --duration 10m"
         " --author test --comment 'scrape gap'"
     ).strip()
+    held_since = wait_active_at("UnitFailed", "fail-b.service")
+    control_since = wait_active_at("GapControl", "fail-b.service")
+    print("before the gap:", held_since, control_since)
     nuc.succeed("systemctl stop prometheus-node-exporter.service")
     deadline = time.monotonic() + 120
     while not prom('up{job="node"} == 0'):
         assert time.monotonic() < deadline, "no failed scrape of node-exporter"
+        time.sleep(1)
+    # The control has gone with the series: the gap is long enough to drop
+    # an alert that does not ride it out.
+    deadline = time.monotonic() + 120
+    while active_at("GapControl", "fail-b.service") is not None:
+        assert time.monotonic() < deadline, "GapControl survived the gap"
         time.sleep(1)
     nuc.succeed("systemctl start prometheus-node-exporter.service")
     deadline = time.monotonic() + 120
     while not prom('up{job="node"} == 1'):
         assert time.monotonic() < deadline, "node-exporter not scraped again"
         time.sleep(1)
-    # Without keep_firing_for the alert would be gone from Prometheus now.
-    held = prom('ALERTS{alertname="UnitFailed",alertstate="firing",name="fail-b.service"}')
-    print(held)
-    assert held, "UnitFailed for fail-b did not ride out the gap"
-
+    # The control fires again as a new alert; UnitFailed is the same alert
+    # it was before the gap, never resolved.
+    control_after = wait_active_at("GapControl", "fail-b.service")
+    held_after = active_at("UnitFailed", "fail-b.service")
+    print("after the gap:", held_after, control_after)
+    assert control_after != control_since, (control_since, control_after)
+    assert held_after == held_since, (held_since, held_after)
 
     # Two more group intervals (1 minute here) for a re-post to show up.
     time.sleep(150)
