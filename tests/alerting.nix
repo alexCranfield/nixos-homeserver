@@ -160,7 +160,8 @@ pkgs.testers.runNixOSTest {
       StackMemoryStalled = quiet;
       StackCpuStarved = quiet;
     };
-    services.prometheus.globalConfig.evaluation_interval = "5s";
+    # The host sets 15s; a plain value here would conflict with it.
+    services.prometheus.globalConfig.evaluation_interval = lib.mkForce "5s";
     # The option is a plain attribute set, merged one level deep, so the
     # route is given whole: the host's, with one timing changed.
     services.prometheus.alertmanager.configuration = lib.mkForce (
