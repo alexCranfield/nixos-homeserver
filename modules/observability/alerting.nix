@@ -87,12 +87,34 @@ in
         wants = [ "alertmanager.service" ];
       };
       # Started means ready to take alerts, not merely launched (the unit is
-      # Type=simple), or the ordering above would gain nothing.
-      systemd.services.alertmanager.postStart = ''
-        until ${lib.getExe pkgs.curl} -fsS -o /dev/null http://127.0.0.1:${toString ports.alertmanager}/-/ready; do
-          sleep 1
-        done
-      '';
+      # Type=simple), or the ordering above would gain nothing. The wait is
+      # bounded: an Alertmanager that is not ready within 100 seconds fails
+      # its start (the time limit is a little longer, so the script's own
+      # message is what the journal shows), and after five such starts in
+      # 15 minutes the unit stays failed, which the notifier posts
+      # (modules/base/notify.nix). Without the limit the module's
+      # Restart=always would restart it for ever, never failing. 100 seconds,
+      # not less: a loaded emulated test VM took 65 to get it ready.
+      systemd.services.alertmanager = {
+        postStart = ''
+          deadline=$((SECONDS + 100))
+          until ${lib.getExe pkgs.curl} -fsS -o /dev/null http://127.0.0.1:${toString ports.alertmanager}/-/ready; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "Alertmanager not ready after 100 s" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+        '';
+        serviceConfig = {
+          TimeoutStartSec = 120;
+          RestartSec = 5;
+        };
+        unitConfig = {
+          StartLimitIntervalSec = 900;
+          StartLimitBurst = 5;
+        };
+      };
 
       services.prometheus.alertmanagers = [
         { static_configs = [ { targets = [ "127.0.0.1:${toString ports.alertmanager}" ]; } ]; }
