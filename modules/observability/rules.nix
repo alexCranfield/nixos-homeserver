@@ -85,6 +85,7 @@ let
           severity,
           summary,
           description,
+          rideOutGaps ? false,
         }:
         {
           alert = name;
@@ -92,8 +93,17 @@ let
           inherit (t.${name}) for;
           labels = { inherit severity; };
           annotations = { inherit summary description; };
-        };
-      event = name: args: rule name (args // { severity = "event"; });
+        }
+        // lib.optionalAttrs rideOutGaps { keep_firing_for = gapGrace; };
+      # Event alerts read an exporter's series. One missed scrape (a deploy
+      # restarting node-exporter, a slow cAdvisor) marks those series stale,
+      # and the alert would resolve and fire again at the next scrape: a
+      # resolved post and a new ping for every standing alert. So a firing
+      # event alert stays firing through a gap of up to `gapGrace`, which
+      # also delays each resolved post by that much. TargetDown is the
+      # exception: `up` is written by every scrape, failed or not, so it has
+      # no gaps.
+      event = name: args: rule name ({ rideOutGaps = true; } // args // { severity = "event"; });
       threshold = name: args: rule name (args // { severity = "threshold"; });
 
       # PromQL raw strings (backticks) keep the regex backslashes as written.
@@ -106,6 +116,8 @@ let
       # repeat it as a symptom are held back with `unless on()`.
       failed = unit: ''node_systemd_unit_state{name="${unit}.service",state="failed"} == 1'';
 
+      gapGrace = "2m";
+
       stack = ''id=~"/stack.slice/stack-.+\\.slice"'';
       pct = ''{{ $value | printf "%.0f" }}'';
       thr = name: "${toString t.${name}.value}% for ${t.${name}.for}";
@@ -116,6 +128,7 @@ let
           name = "homeserver-events";
           rules = [
             (event "TargetDown" {
+              rideOutGaps = false;
               expr = ''
                 (up{job!~"cadvisor|comin"} == 0)
                 or (up{job="cadvisor"} == 0 unless on() (${failed "cadvisor"}))

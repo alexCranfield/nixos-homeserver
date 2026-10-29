@@ -132,6 +132,42 @@ tests:
               summary: "Unit sshdXservice failed"
               description: "systemd reports sshdXservice in the failed state. The notifier does not watch this unit."
 
+  # A missed scrape (stale samples at 45 s and 60 s, as Prometheus writes
+  # when a scrape fails) does not resolve UnitFailed: it stays firing
+  # throughout (keep_firing_for 2m). Once the series is gone for good, the
+  # alert resolves 2m after the last sample that held it (105 s), so not at
+  # 210 s and no longer at 240 s.
+  - interval: 15s
+    input_series:
+      - series: 'node_systemd_unit_state{name="foo.service",state="failed"}'
+        values: "1 1 1 stale stale 1 1 1 stale stale stale stale stale stale stale stale stale stale stale stale"
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: UnitFailed
+        exp_alerts: &foo_failed
+          - exp_labels:
+              severity: event
+              name: foo.service
+              state: failed
+            exp_annotations:
+              summary: "Unit foo.service failed"
+              description: "systemd reports foo.service in the failed state. The notifier does not watch this unit."
+      - eval_time: 45s
+        alertname: UnitFailed
+        exp_alerts: *foo_failed
+      - eval_time: 60s
+        alertname: UnitFailed
+        exp_alerts: *foo_failed
+      - eval_time: 75s
+        alertname: UnitFailed
+        exp_alerts: *foo_failed
+      - eval_time: 210s
+        alertname: UnitFailed
+        exp_alerts: *foo_failed
+      - eval_time: 240s
+        alertname: UnitFailed
+        exp_alerts: []
+
   # CominFetchFailed, for 30m.
   - interval: 15s
     input_series:
