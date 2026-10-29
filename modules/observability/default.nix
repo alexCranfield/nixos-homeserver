@@ -119,6 +119,8 @@ in
       listenAddress = "127.0.0.1";
       port = ports.prometheus;
       globalConfig.scrape_interval = "15s";
+      # The default is 1m, which would add up to a minute to every alert (#27).
+      globalConfig.evaluation_interval = "15s";
       # Whichever limit comes first. At this scale a month is expected to take
       # 1 to 2 GB; the size cap is there in case a new exporter is far chattier.
       retentionTime = "30d";

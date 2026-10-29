@@ -1,4 +1,4 @@
-# Alerting, ticket 3.5 (#27): Prometheus evaluates the rules in rules.nix,
+# Alerting, ticket 3.6 (#27): Prometheus evaluates the rules in rules.nix,
 # Alertmanager groups what fires, and a small relay posts it to Discord.
 #
 #  - Prometheus sends firing alerts to Alertmanager, which waits 10 seconds
@@ -72,6 +72,9 @@ in
     }
 
     (lib.mkIf enabled {
+      # amtool, which ships with Alertmanager: the runbook silences alerts with it.
+      environment.systemPackages = [ pkgs.prometheus-alertmanager ];
+
       homeserver.notify.units = [
         "alertmanager"
         "alert-relay"
