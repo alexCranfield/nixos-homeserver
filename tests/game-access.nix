@@ -97,6 +97,8 @@ pkgs.testers.runNixOSTest {
     {
       imports = [
         ../hosts/nuc
+        # No sops secret here; the notifier posts to a sink.
+        ./notify-sink.nix
         (import ./grafana-password.nix { inherit pkgs; }).module
         trustCert
       ];

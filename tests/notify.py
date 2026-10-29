@@ -26,10 +26,24 @@ def unstamped(msg):
     return {**msg, "content": m.group(1) + " " + msg["content"][m.end():]}
 
 
+# Test-only tolerance: under emulation (TCG, QEMU's software emulation, as
+# `just vm-test-tcg` runs it), Docker's containerd can time out on its first
+# start, and Docker's restart stops cAdvisor (part of docker.service) while it
+# is still starting, so cAdvisor fails at boot and the notifier rightly posts
+# it. Under KVM (Kernel-based Virtual Machine) Docker starts the first time.
+# Not what this test is about, and it would shift every count below, so such
+# posts are left out. This test never fails cAdvisor itself.
+CADVISOR_AT_BOOT = re.compile(
+    re.escape(f"{PING}**🔴 nuc: cadvisor.service failed")
+    + r"( \(\d+ more times since the last message, not posted\))?\*\*(\n|$)"
+)
+
+
 def received():
     """Every request body so far, oldest first, read on the host."""
     out = nuc.shared_dir / "webhook"
-    return [unstamped(json.loads(f.read_text())) for f in sorted(out.glob("*.json"))]
+    msgs = [unstamped(json.loads(f.read_text())) for f in sorted(out.glob("*.json"))]
+    return [m for m in msgs if not CADVISOR_AT_BOOT.match(m["content"])]
 
 
 def wait_received(n, timeout=90):
