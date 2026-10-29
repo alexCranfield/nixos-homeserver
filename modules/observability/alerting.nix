@@ -147,6 +147,14 @@ in
         description = "Relay Alertmanager's alerts to Discord";
         wantedBy = [ "multi-user.target" ];
         after = [ "network.target" ];
+        # Five tries in 5 minutes, then the unit stays failed, which the
+        # notifier posts (modules/base/notify.nix). Without the limit a relay
+        # that cannot start, such as one whose secret is missing, restarts
+        # every 5 seconds for ever and never reaches `failed`.
+        unitConfig = {
+          StartLimitIntervalSec = 300;
+          StartLimitBurst = 5;
+        };
         serviceConfig = {
           # %d is the credentials directory, expanded by systemd; the files
           # are readable by this unit alone, as for notify-failure@.
