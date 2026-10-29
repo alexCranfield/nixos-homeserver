@@ -77,6 +77,23 @@ in
         "alert-relay"
       ];
 
+      # Prometheus starts after Alertmanager: an alert it fails to deliver is
+      # sent again only after its resend delay, a minute, so at boot an alert
+      # firing before Alertmanager listened was missing for that long, and an
+      # inhibition whose source alert was the one lost did not hold (found by
+      # tests/alerting.nix, where DnsFailing posted despite a dead gateway).
+      systemd.services.prometheus = {
+        after = [ "alertmanager.service" ];
+        wants = [ "alertmanager.service" ];
+      };
+      # Started means ready to take alerts, not merely launched (the unit is
+      # Type=simple), or the ordering above would gain nothing.
+      systemd.services.alertmanager.postStart = ''
+        until ${lib.getExe pkgs.curl} -fsS -o /dev/null http://127.0.0.1:${toString ports.alertmanager}/-/ready; do
+          sleep 1
+        done
+      '';
+
       services.prometheus.alertmanagers = [
         { static_configs = [ { targets = [ "127.0.0.1:${toString ports.alertmanager}" ]; } ]; }
       ];
