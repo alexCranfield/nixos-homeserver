@@ -13,22 +13,23 @@ dashboards keep working when Docker is what's broken.
 
 | Service | Listens on | What it does |
 |---|---|---|
-| Prometheus | 127.0.0.1:9090 | Scrapes the four below, and the blackbox probes, every 15 s; stores the results and evaluates the alert rules |
+| Prometheus | 127.0.0.1:9090 | Scrapes node-exporter, cAdvisor, comin's exporter, itself and the two blackbox probes every 15 s; stores the results and evaluates the alert rules every 15 s |
 | node-exporter | 127.0.0.1:9100 | The host: CPU, memory, disks, network, temperatures, and each systemd unit's state |
 | cAdvisor | 127.0.0.1:9338 | Each container's CPU, memory and network (not its default 8080, which apps and the tests use) |
 | comin's exporter | 127.0.0.1:4243 | Fetch, evaluation, build and deployment results |
 | Alertmanager | 127.0.0.1:9093 | Groups what Prometheus fires and passes it to the relay; its cluster listener (9094) is off |
 | alert relay | 127.0.0.1:9095 | Turns Alertmanager's webhook calls into Discord posts |
-| blackbox exporter | 127.0.0.1:9115 | Probes the LAN gateway (ping) and the nuc's resolver (a DNS lookup) for Prometheus |
+| blackbox exporter | 127.0.0.1:9115 | Probes the LAN (local area network) gateway (ping) and the nuc's resolver (a DNS, Domain Name System, lookup) for Prometheus |
 | Grafana | 127.0.0.1:3000 | Dashboards; on the tailnet at `http://nuc:3000` through Tailscale Serve |
 
-Nothing here is reachable from the LAN (local area network): all of it is
+Nothing here is reachable from the LAN: all of it is
 on loopback, and `tests/observability.nix` scans the LAN address to check.
 The only way in from outside the nuc is Grafana, through Serve, from devices
 the tailnet's access policy allows.
 
-Failures of any of these units, the last three included, post to the alerts channel, like other
-watched units ([notifications runbook](notifications.md)).
+Failures of any of these units post to the alerts channel, like other watched
+units (the newer ones too: alertmanager, alert-relay,
+prometheus-blackbox-exporter and tailscale-state) ([notifications runbook](notifications.md)).
 
 ## Opening Grafana
 
@@ -217,18 +218,25 @@ Notes on a few of them:
 
 ### Timing
 
-Measured in the VM test (`tests/alerting.nix`), from the cause to the post:
+The VM test (`tests/alerting.nix`) measured, from the cause to the post:
+`TargetDown` about 50 s after stopping an exporter, and `UnitFailed` about 15
+to 20 s. Those figures are not the nuc's: the test evaluates every 5 s, uses a
+`for` of 30 s for `TargetDown` and a 1 m `group_interval`. On the nuc the
+timings below are derived from the deployed configuration (15 s scrape and
+evaluation, `group_wait` 10 s, `group_interval` 5 m), not measured there:
 
-- `TargetDown`: about 50 s after stopping an exporter, its 1 m `for` included.
-- `UnitFailed`: about 15 to 20 s.
-- The event alerts have `keep_firing_for` of 2 m (all but `TargetDown`). One
-  missed scrape, such as a deploy restarting node-exporter, marks the series
-  stale, and without this every standing alert would resolve and fire again.
-  The cost is that a cleared alert's ✅ arrives up to 2 minutes late, and that
-  `GatewayUnreachable` keeps holding back `DnsFailing` and
+- `TargetDown`: roughly 1.5 to 2 minutes after the target stops, its 1 m `for`
+  plus a scrape, an evaluation and the group wait.
+- `UnitFailed`: roughly 10 to 40 s.
+- A ✅ can arrive up to about 5 minutes after the condition clears (the
+  `group_interval`), plus 2 minutes of `keep_firing_for` on the eight event
+  alerts that have it (all but `TargetDown`). One missed scrape, such as a
+  deploy restarting node-exporter, marks the series stale, and without
+  `keep_firing_for` every standing alert would resolve and fire again. It also
+  means `GatewayUnreachable` keeps holding back `DnsFailing` and
   `TailnetDisconnected` for 2 minutes after the gateway recovers.
-- `OomKill` resolves about 7 minutes after the kill: the 5 minute window plus
-  those 2.
+- `OomKill`'s ✅ comes roughly 7 to 12 minutes after the kill: the 5 minute
+  window, the 2 minutes, and up to the group interval.
 
 ### Tuning
 
@@ -299,8 +307,10 @@ ssh nuc 'sudo systemctl stop prometheus-node-exporter'
 ssh nuc 'sudo systemctl start prometheus-node-exporter'
 ```
 
-🔴 `nuc: Scrape target node is down (for 1m)` arrives after about a minute, and ✅
-`resolved` a minute or two after the start. Stopping it by hand does not fail
+🔴 `nuc: Scrape target node is down (for 1m)` arrives roughly 1.5 to 2 minutes
+after the stop, and ✅ `resolved` some minutes after the start (up to about 5
+for the group interval, plus 2 of `keep_firing_for` on the other event alerts;
+`TargetDown` has none). Stopping it by hand does not fail
 the unit, so the notifier stays quiet. The VM test does the same with all the
 alerts and a deliberate break of each check.
 

@@ -79,9 +79,9 @@ and one that turned notifications off would post `nuc is shutting down`.
 delays shutdown or comin's next deployment by that much at most; the boot
 message is not waited for.
 
-## What does not post
+## What does not post here
 
-- **A failed fetch, evaluation or build of `main` on the nuc.** comin runs no
+- **A failed fetch, evaluation or build of `main` on the nuc, from the hooks.** comin runs no
   hook after a failed evaluation, and its build hook reports a build cancelled
   by a newer commit the same way as a failed one, and once per retry. CI
   (continuous integration) builds the same configuration before merge, so a
