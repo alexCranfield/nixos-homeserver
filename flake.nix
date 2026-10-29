@@ -219,6 +219,13 @@
         # Ticket #27: the relay from Alertmanager to Discord, unit-tested.
         alert-relay = import ./tests/alert-relay.nix { inherit pkgs; };
 
+        # Ticket #27: alert conditions on the host reach the webhook through
+        # Prometheus, Alertmanager and the relay, once, and resolve.
+        alerting = import ./tests/alerting.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
         # Fails `nix flake check` if the server stops using the dev shell's Nix,
         # for example after a `nix.package` override on the host.
         devshell-nix-matches-server =
