@@ -201,8 +201,11 @@ Notes on a few of them:
 
 - `UnitFailed` skips the units in `homeserver.notify.units`, so a failed
   watched unit posts once, from the notifier. The same goes for the symptoms of
-  such a failure: `TargetDown` does not fire for cAdvisor or comin while their
-  unit is failed, and `TailnetDisconnected` not while `tailscaled` is.
+  such a failure: `TargetDown` does not fire for cAdvisor, comin or the two
+  blackbox jobs while their unit is failed, and `TailnetDisconnected` not
+  while `tailscaled` is. It also skips the `notify-failure@` units: one of
+  those fails when the notifier cannot reach Discord, and a second post would
+  fail the same way and repeat every 12 hours.
 - `GatewayUnreachable` is the cause when the LAN goes: while it fires,
   `DnsFailing` and `TailnetDisconnected` are held back, so the outage is one
   post.
@@ -229,10 +232,11 @@ evaluation, `group_wait` 10 s, `group_interval` 5 m), not measured there:
   plus a scrape, an evaluation and the group wait.
 - `UnitFailed`: roughly 10 to 40 s.
 - A ✅ can arrive up to about 5 minutes after the condition clears (the
-  `group_interval`), plus 2 minutes of `keep_firing_for` on the eight event
-  alerts that have it (all but `TargetDown`). One missed scrape, such as a
+  `group_interval`), plus 2 minutes of `keep_firing_for` on every alert
+  but `TargetDown`, event and threshold alike. One missed scrape, such as a
   deploy restarting node-exporter, marks the series stale, and without
-  `keep_firing_for` every standing alert would resolve and fire again. It also
+  `keep_firing_for` every standing alert would resolve and fire again (a ✅
+  and, after the full `for`, a second 🔴 for a threshold alert). It also
   means `GatewayUnreachable` keeps holding back `DnsFailing` and
   `TailnetDisconnected` for 2 minutes after the gateway recovers.
 - `OomKill`'s ✅ comes roughly 7 to 12 minutes after the kill: the 5 minute
@@ -309,7 +313,7 @@ ssh nuc 'sudo systemctl start prometheus-node-exporter'
 
 🔴 `nuc: Scrape target node is down (for 1m)` arrives roughly 1.5 to 2 minutes
 after the stop, and ✅ `resolved` some minutes after the start (up to about 5
-for the group interval, plus 2 of `keep_firing_for` on the other event alerts;
+for the group interval, plus 2 of `keep_firing_for` on the other alerts;
 `TargetDown` has none). Stopping it by hand does not fail
 the unit, so the notifier stays quiet. The VM test does the same with all the
 alerts and a deliberate break of each check.

@@ -27,6 +27,32 @@ tests:
               summary: "Disk / is 87% full (threshold 85% for 10m)"
               description: "The one btrfs filesystem, holding /, /srv, /nix and Docker's data, is filling up."
 
+  # A gap in the series (a deploy restarting node-exporter: samples go stale
+  # for about 30 s) does not resolve a firing threshold alert
+  # (keep_firing_for 2m). It is firing at 600 s, through the gap, and after.
+  - interval: 15s
+    input_series:
+      - series: 'node_filesystem_size_bytes{mountpoint="/"}'
+        values: "100x60"
+      - series: 'node_filesystem_avail_bytes{mountpoint="/"}'
+        values: "13x41 stale stale 13x16"
+    alert_rule_test:
+      - eval_time: 630s
+        alertname: DiskFilling
+        exp_alerts: &disk_filling
+          - exp_labels:
+              severity: threshold
+              mountpoint: /
+            exp_annotations:
+              summary: "Disk / is 87% full (threshold 85% for 10m)"
+              description: "The one btrfs filesystem, holding /, /srv, /nix and Docker's data, is filling up."
+      - eval_time: 645s
+        alertname: DiskFilling
+        exp_alerts: *disk_filling
+      - eval_time: 660s
+        alertname: DiskFilling
+        exp_alerts: *disk_filling
+
   # 84% used is below the threshold; another mount point is not watched.
   - interval: 15s
     input_series:

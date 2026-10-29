@@ -100,6 +100,60 @@ tests:
               summary: "Scrape target comin is down (for 1m)"
               description: "Prometheus cannot scrape localhost:4243 (job comin)."
 
+  # Blackbox probe targets down: with the exporter's own unit failed the
+  # notifier posts that, so TargetDown stays quiet for both jobs; with the
+  # unit healthy (or no unit series) each job fires.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="blackbox_gateway",instance="localhost:9115"}'
+        values: "0x20"
+      - series: 'up{job="blackbox_dns",instance="localhost:9115"}'
+        values: "0x20"
+      - series: 'node_systemd_unit_state{name="prometheus-blackbox-exporter.service",state="failed"}'
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 120s
+        alertname: TargetDown
+        exp_alerts: []
+
+  - interval: 15s
+    input_series:
+      - series: 'up{job="blackbox_gateway",instance="localhost:9115"}'
+        values: "0x20"
+      - series: 'up{job="blackbox_dns",instance="localhost:9115"}'
+        values: "0x20"
+      - series: 'node_systemd_unit_state{name="prometheus-blackbox-exporter.service",state="failed"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 120s
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: blackbox_gateway
+              instance: "localhost:9115"
+            exp_annotations:
+              summary: "Scrape target blackbox_gateway is down (for 1m)"
+              description: "Prometheus cannot scrape localhost:9115 (job blackbox_gateway)."
+          - exp_labels:
+              severity: event
+              job: blackbox_dns
+              instance: "localhost:9115"
+            exp_annotations:
+              summary: "Scrape target blackbox_dns is down (for 1m)"
+              description: "Prometheus cannot scrape localhost:9115 (job blackbox_dns)."
+
+  # A failed notify-failure@ unit means the notifier could not post, so
+  # UnitFailed does not repeat it.
+  - interval: 15s
+    input_series:
+      - series: 'node_systemd_unit_state{name="notify-failure@sshd.service.service",state="failed"}'
+        values: "1x10"
+    alert_rule_test:
+      - eval_time: 60s
+        alertname: UnitFailed
+        exp_alerts: []
+
   # UnitFailed, for 0s: a unit nobody watches fires at once; a watched one
   # (sshd) does not, nor does a healthy one.
   - interval: 15s

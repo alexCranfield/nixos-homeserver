@@ -85,7 +85,7 @@ let
           severity,
           summary,
           description,
-          rideOutGaps ? false,
+          rideOutGaps ? true,
         }:
         {
           alert = name;
@@ -95,21 +95,29 @@ let
           annotations = { inherit summary description; };
         }
         // lib.optionalAttrs rideOutGaps { keep_firing_for = gapGrace; };
-      # Event alerts read an exporter's series. One missed scrape (a deploy
-      # restarting node-exporter, a slow cAdvisor) marks those series stale,
-      # and the alert would resolve and fire again at the next scrape: a
-      # resolved post and a new ping for every standing alert. So a firing
-      # event alert stays firing through a gap of up to `gapGrace`, which
-      # also delays each resolved post by that much. TargetDown is the
-      # exception: `up` is written by every scrape, failed or not, so it has
-      # no gaps.
-      event = name: args: rule name ({ rideOutGaps = true; } // args // { severity = "event"; });
+      # Every alert but TargetDown reads an exporter's series. One missed
+      # scrape (a deploy restarting node-exporter, a slow cAdvisor) marks
+      # those series stale, and the alert would resolve and fire again at the
+      # next scrape: a resolved post and a new ping for every standing alert.
+      # So a firing alert, event or threshold, stays firing through a gap of
+      # up to `gapGrace`, which also delays each resolved post by that much.
+      # TargetDown is the exception: `up` is written by every scrape, failed
+      # or not, so it has no gaps.
+      event = name: args: rule name (args // { severity = "event"; });
       threshold = name: args: rule name (args // { severity = "threshold"; });
 
       # PromQL raw strings (backticks) keep the regex backslashes as written.
       # Prometheus anchors a regex matcher, so no ^ and $ here.
       unitRegex = lib.concatMapStringsSep "|" (u: lib.escapeRegex "${u}.service") watchedUnits;
-      notWatched = lib.optionalString (watchedUnits != [ ]) ", name!~`${unitRegex}`";
+      # A failed `notify-failure@` unit means the notifier could not post
+      # (Discord is unreachable): a second post would fail the same way and
+      # repeat every 12 hours, so UnitFailed skips those too.
+      notifyFailure = "notify-failure@.+\\.service";
+      notWatched =
+        if watchedUnits == [ ] then
+          ", name!~`${notifyFailure}`"
+        else
+          ", name!~`${unitRegex}|${notifyFailure}`";
 
       # True while the named unit is in the failed state. Its own failure is
       # posted by the notifier or by UnitFailed, so the alerts that would
@@ -130,7 +138,8 @@ let
             (event "TargetDown" {
               rideOutGaps = false;
               expr = ''
-                (up{job!~"cadvisor|comin"} == 0)
+                (up{job!~"cadvisor|comin|blackbox_.+"} == 0)
+                or (up{job=~"blackbox_.+"} == 0 unless on() (${failed "prometheus-blackbox-exporter"}))
                 or (up{job="cadvisor"} == 0 unless on() (${failed "cadvisor"}))
                 or (up{job="comin"} == 0 unless on() (${failed "comin"}))
               '';
