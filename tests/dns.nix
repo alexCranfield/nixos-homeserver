@@ -41,12 +41,8 @@ let
   # `doubleclick.net` is the name the blocking probe asks for
   # (homeserver.alerting.blockedProbeName, left at its default), so it is
   # listed here as on the real lists.
-  # `doubleclick.net` is the name the blocking probe asks for
-  # (homeserver.alerting.blockedProbeName, left at its default), so it is
-  # listed here as on the real lists.
   adsList = pkgs.writeText "dns-test-ads.txt" ''
     ad.test
-    doubleclick.net
     doubleclick.net
     allowed.test
     ||adsyntax.test^

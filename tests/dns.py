@@ -287,7 +287,7 @@ with subtest("the NAS's address is not in the system closure"):
     found = nuc.succeed(f"grep -rlFI {NAS_IP} $(nix-store -qR {rules})")
     assert "dns-test-nas-targets" in found, found
 
-with subtest("a name that returns a real address fails the blocking probe"):
+with subtest("precondition: the router and NAS stand-ins answer the probe name as intended"):
     # Control for the NAS's pass above: the router stand-in answers the
     # probe name with a real address, which the pass pattern must reject.
     assert dig("doubleclick.net", server=ROUTER_IP) == "192.0.2.31"
