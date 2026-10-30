@@ -44,6 +44,9 @@ in
       };
     };
 
+    # Failures post to the alerts channel (modules/base/notify.nix).
+    homeserver.notify.units = [ "prometheus-unbound-exporter" ];
+
     services.unbound = {
       enable = true;
       # The nuc's own resolver stays the router (hosts/nuc/network.nix).

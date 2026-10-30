@@ -410,11 +410,12 @@ with subtest("the cap deletes the oldest rows, and nothing while under it"):
     assert live < 2_000_000, live
     # Control: the job is idempotent, a second run under the cap deletes
     # nothing more.
+    # Counted on the filler rows alone: Blocky keeps logging the probes'
+    # lookups meanwhile, so the whole table's count moves (it failed once as
+    # "== left").
+    fillers = psql("select count(*) from log_entries where question_name like 'filler-%'")
     nuc.succeed("systemctl start dns-querylog-cap.service")
-    # Not "== left": Blocky keeps logging the probes' lookups meanwhile, and a
-    # row landing between the two counts failed this once (#164, Task 6).
-    assert int(psql("select count(*) from log_entries")) >= left
-    assert psql("select count(*) from log_entries where question_name like 'filler-10000.%'") == "1"
+    assert psql("select count(*) from log_entries where question_name like 'filler-%'") == fillers
     # A cap far below the table never empties it: at least 1000 rows stay.
     m = re.search(r"-f (\S+)", cap_script())
     assert m, cap_script()
@@ -605,11 +606,13 @@ def panel_targets(dashboard):
 def run_target(target, device):
     """Run one panel target through Grafana's /api/ds/query, as the browser
     would. Template variables are filled in by the browser, not the server,
-    so the test fills in `client`; the time macros are the server's."""
+    so the test fills in `client`; the time macros are the server's. A target
+    with a bare `${client}` is left as written, to fail."""
     q = dict(target)
     for key in ("expr", "rawSql"):
         if key in q:
-            q[key] = q[key].replace("${client}", device).replace("$client", device)
+            # As Grafana's `:sqlstring` format: quoted, `'` doubled.
+            q[key] = q[key].replace("${client:sqlstring}", "'" + device.replace("'", "''") + "'")
     q["intervalMs"] = 15000
     q["maxDataPoints"] = 500
     body = json.dumps({"queries": [q], "from": "now-6h", "to": "now"})
@@ -672,8 +675,17 @@ with subtest("query-log panels return rows; the Prometheus ones return series"):
         # "New names" is empty by design when everything was seen before.
         if "New names" not in title:
             assert rows > 0, (title, result)
-    # An empty result is not an error, so a misspelt metric name in a panel
-    # would pass above. Every metric the panels use must exist.
+    # An empty result is not an error, so a misspelt metric name or label in
+    # a panel would pass above. Every Prometheus expr must return a series.
+    # Exempt: the DNSSEC panel, which counts failures and may have no samples
+    # in the window when there are none.
+    print(nuc.succeed("curl -fsS http://127.0.0.1:4000/metrics | grep '^blocky_request_duration_seconds_count'"))
+    for title, target in targets:
+        if target["datasource"]["uid"] != "prometheus" or "DNSSEC" in title:
+            continue
+        frames = run_target(target, device)["results"][target["refId"]]["frames"]
+        print(f"{title} / {target['expr']}: {len(frames)} frames")
+        assert any(f["data"]["values"] and f["data"]["values"][0] for f in frames), (title, target)
     for name in (
         "blocky_query_total", "blocky_response_total", "blocky_cache_hits_total",
         "blocky_cache_misses_total", "blocky_request_duration_seconds_bucket",
@@ -682,3 +694,30 @@ with subtest("query-log panels return rows; the Prometheus ones return series"):
         "unbound_answers_bogus",
     ):
         assert prom_query(name), f"no series for {name}"
+
+with subtest("a quote in a device name doesn't break the client panels"):
+    psql(
+        "insert into log_entries (request_ts, client_ip, client_name, duration_ms, reason, response_type, "
+        "question_type, question_name, effective_tldp, answer, response_code, hostname) "
+        "values (now(), '203.0.113.50', 'a''b', 1, 'BLOCKED (ads)', 'BLOCKED', 'A', 'quote.test', 'test', "
+        "'A (0.0.0.0)', 'NOERROR', 'nuc')"
+    )
+    quoted = [t for _, t in targets if "client:sqlstring" in t.get("rawSql", "")]
+    assert len(quoted) == 2, quoted
+    for target in quoted:
+        result = run_target(target, "a'b")["results"][target["refId"]]
+        assert "error" not in result, result
+        names = [v for f in result["frames"] for col in f["data"]["values"] for v in col]
+        print(names)
+        assert "quote.test" in names, result
+    # Control: the old form, the variable between literal quotes, breaks
+    # (or worse, alters the query) on the same name.
+    old = dict(quoted[0], rawSql=quoted[0]["rawSql"].replace("${client:sqlstring}", "'${client}'"))
+    body = json.dumps({"queries": [dict(old, rawSql=old["rawSql"].replace("${client}", "a'b"))],
+                       "from": "now-6h", "to": "now"})
+    out = nuc.succeed(
+        f"curl -sS -u admin:{GRAFANA_PASSWORD} -H 'Content-Type: application/json'"
+        f" -d @- http://127.0.0.1:3000/api/ds/query <<'JSON'\n{body}\nJSON"
+    )
+    print(out[:400])
+    assert "error" in out, out

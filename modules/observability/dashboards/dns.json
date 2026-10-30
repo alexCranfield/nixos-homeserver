@@ -8,7 +8,7 @@
   "schemaVersion": 39,
   "version": 1,
   "editable": false,
-  "refresh": "30s",
+  "refresh": "5m",
   "time": {
     "from": "now-24h",
     "to": "now"
@@ -194,7 +194,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(blocky_request_duration_seconds_bucket{reason=\"RESOLVED\"}[5m])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(blocky_request_duration_seconds_bucket{response_type=\"RESOLVED\"}[5m])))",
           "legendFormat": "Blocky to Unbound, median",
           "datasource": {
             "type": "prometheus",
@@ -203,7 +203,7 @@
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(blocky_request_duration_seconds_bucket{reason=\"RESOLVED\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(blocky_request_duration_seconds_bucket{response_type=\"RESOLVED\"}[5m])))",
           "legendFormat": "Blocky to Unbound, 95th percentile",
           "datasource": {
             "type": "prometheus",
@@ -402,7 +402,7 @@
       },
       "targets": [
         {
-          "rawSql": "select request_ts as \"Time\", question_name as \"Name\", question_type as \"Type\", response_type as \"Result\", answer as \"Answer\" from log_entries where $__timeFilter(request_ts) and client_name = '${client}' order by request_ts desc limit 500",
+          "rawSql": "select request_ts as \"Time\", question_name as \"Name\", question_type as \"Type\", response_type as \"Result\", answer as \"Answer\" from log_entries where $__timeFilter(request_ts) and client_name = ${client:sqlstring} order by request_ts desc limit 500",
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
@@ -435,7 +435,7 @@
       },
       "targets": [
         {
-          "rawSql": "select request_ts as \"Time\", question_name as \"Name\", reason as \"Why\" from log_entries where $__timeFilter(request_ts) and client_name = '${client}' and response_type = 'BLOCKED' order by request_ts desc limit 500",
+          "rawSql": "select request_ts as \"Time\", question_name as \"Name\", reason as \"Why\" from log_entries where $__timeFilter(request_ts) and client_name = ${client:sqlstring} and response_type = 'BLOCKED' order by request_ts desc limit 500",
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
