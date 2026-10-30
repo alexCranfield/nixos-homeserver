@@ -28,6 +28,22 @@ in
   };
 
   config = lib.mkIf (cfg.listenAddresses != [ ]) {
+    # Unbound's cache, recursion time and DNSSEC failures for Prometheus
+    # (modules/observability/default.nix scrapes it), through the control
+    # socket. A local socket uses no TLS (Transport Layer Security), so the
+    # certificate files the exporter defaults to are switched off. It runs as
+    # the unbound user, which owns the socket, and listens on loopback only.
+    services.prometheus.exporters.unbound = {
+      enable = true;
+      listenAddress = "127.0.0.1";
+      unbound = {
+        host = "unix://${config.services.unbound.localControlSocketPath}";
+        ca = null;
+        certificate = null;
+        key = null;
+      };
+    };
+
     services.unbound = {
       enable = true;
       # The nuc's own resolver stays the router (hosts/nuc/network.nix).
@@ -35,11 +51,7 @@ in
       # DNSSEC validation: fetch and keep the root key up to date. Enforced:
       # a bogus answer is SERVFAIL, never passed on (no val-permissive-mode).
       enableRootTrustAnchor = true;
-      # The control socket, for the Prometheus exporter (Task 6): point
-      # `services.prometheus.exporters.unbound.unbound.host` at
-      # "unix:///run/unbound/unbound.ctl" and set its `ca`, `certificate`
-      # and `key` to null, as a local socket uses no TLS. The exporter runs
-      # as the unbound user, which owns the socket.
+      # The control socket, for the Prometheus exporter below.
       localControlSocketPath = "/run/unbound/unbound.ctl";
       settings.server = {
         interface = [ "127.0.0.1@${toString cfg.unboundPort}" ];

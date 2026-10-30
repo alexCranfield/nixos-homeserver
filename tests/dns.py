@@ -411,7 +411,10 @@ with subtest("the cap deletes the oldest rows, and nothing while under it"):
     # Control: the job is idempotent, a second run under the cap deletes
     # nothing more.
     nuc.succeed("systemctl start dns-querylog-cap.service")
-    assert int(psql("select count(*) from log_entries")) == left
+    # Not "== left": Blocky keeps logging the probes' lookups meanwhile, and a
+    # row landing between the two counts failed this once (#164, Task 6).
+    assert int(psql("select count(*) from log_entries")) >= left
+    assert psql("select count(*) from log_entries where question_name like 'filler-10000.%'") == "1"
     # A cap far below the table never empties it: at least 1000 rows stay.
     m = re.search(r"-f (\S+)", cap_script())
     assert m, cap_script()
@@ -572,3 +575,110 @@ with subtest("an empty blocklist fails the blocking probe, not the resolving one
     nuc.wait_for_open_port(53, NUC_IP)
     # The lists load again after Blocky starts.
     wait_for_probe("dns_blocked", "nuc", 1, timeout=300)
+
+
+def grafana_get(path):
+    return json.loads(
+        nuc.succeed(f"curl -fsS -u admin:{GRAFANA_PASSWORD} http://127.0.0.1:3000{path}")
+    )
+
+
+def prom_query(query):
+    """The result vector of an instant query against Prometheus."""
+    out = nuc.succeed(
+        "curl -fsS -G http://127.0.0.1:9090/api/v1/query --data-urlencode "
+        f"'query={query}'"
+    )
+    return json.loads(out)["data"]["result"]
+
+
+def panel_targets(dashboard):
+    """Every (panel title, target) of the dashboard, rows' children included."""
+    todo = list(dashboard["panels"])
+    while todo:
+        panel = todo.pop(0)
+        todo.extend(panel.get("panels", []))
+        for target in panel.get("targets", []):
+            yield panel["title"], target
+
+
+def run_target(target, device):
+    """Run one panel target through Grafana's /api/ds/query, as the browser
+    would. Template variables are filled in by the browser, not the server,
+    so the test fills in `client`; the time macros are the server's."""
+    q = dict(target)
+    for key in ("expr", "rawSql"):
+        if key in q:
+            q[key] = q[key].replace("${client}", device).replace("$client", device)
+    q["intervalMs"] = 15000
+    q["maxDataPoints"] = 500
+    body = json.dumps({"queries": [q], "from": "now-6h", "to": "now"})
+    out = nuc.succeed(
+        f"curl -sS -u admin:{GRAFANA_PASSWORD} -H 'Content-Type: application/json'"
+        f" -d @- http://127.0.0.1:3000/api/ds/query <<'JSON'\n{body}\nJSON"
+    )
+    return json.loads(out)
+
+
+with subtest("the exporters are scraped and up"):
+    for job in ("blocky", "unbound"):
+        nuc.wait_until_succeeds(
+            "curl -fsS -G http://127.0.0.1:9090/api/v1/query"
+            f" --data-urlencode 'query=up{{job=\"{job}\"}}'"
+            " | grep -F '\"value\":[' | grep -qF '\"1\"]'",
+            timeout=180,
+        )
+    # The exporter's own view of the control socket, not just its web page.
+    nuc.wait_until_succeeds(
+        "curl -fsS http://127.0.0.1:9167/metrics | grep -E '^unbound_up 1'", timeout=60
+    )
+
+with subtest("the DNS dashboard's panels all query without error"):
+    # Fresh lookups, so the query-log panels have rows, and then wait for
+    # Blocky's 30-second batch to write them.
+    for name in ("example.test", "ad.test", "threat.test"):
+        dig(name)
+    nuc.wait_until_succeeds(
+        "sudo -u postgres psql -At blocky -c "
+        "\"select 1 from log_entries where question_name like 'threat.test%'\" | grep -q 1",
+        timeout=120,
+    )
+    dash = grafana_get("/api/dashboards/uid/dns")["dashboard"]
+    assert dash["uid"] == "dns", dash["uid"]
+    targets = list(panel_targets(dash))
+    print(f"{len(targets)} targets in {len(dash['panels'])} panels")
+    assert len(targets) >= 10, targets
+    device = CLIENT_IP
+    for title, target in targets:
+        result = run_target(target, device)
+        errors = [r["error"] for r in result["results"].values() if "error" in r]
+        assert not errors, (title, target, errors)
+    # The `client` variable's own query.
+    var = next(v for v in dash["templating"]["list"] if v["name"] == "client")
+    names = run_target({"refId": "A", "datasource": var["datasource"], "format": "table",
+                        "rawSql": var["query"]}, device)
+    frame = names["results"]["A"]["frames"][0]["data"]["values"]
+    print(frame)
+    assert CLIENT_IP in frame[0], frame
+
+with subtest("query-log panels return rows; the Prometheus ones return series"):
+    for title, target in targets:
+        if target["datasource"]["uid"] != "dns-querylog":
+            continue
+        result = run_target(target, device)
+        frames = result["results"][target["refId"]]["frames"]
+        rows = sum(len(f["data"]["values"][0]) for f in frames if f["data"]["values"])
+        print(f"{title}: {rows} rows")
+        # "New names" is empty by design when everything was seen before.
+        if "New names" not in title:
+            assert rows > 0, (title, result)
+    # An empty result is not an error, so a misspelt metric name in a panel
+    # would pass above. Every metric the panels use must exist.
+    for name in (
+        "blocky_query_total", "blocky_response_total", "blocky_cache_hits_total",
+        "blocky_cache_misses_total", "blocky_request_duration_seconds_bucket",
+        "blocky_denylist_cache_entries", "unbound_cache_hits_total",
+        "unbound_cache_misses_total", "unbound_recursion_time_seconds_avg",
+        "unbound_answers_bogus",
+    ):
+        assert prom_query(name), f"no series for {name}"
