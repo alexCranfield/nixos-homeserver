@@ -163,17 +163,20 @@ in
         "unbound.service"
       ];
       serviceConfig = {
+        # Blocky exits when it can't bind the address, as when the router
+        # boots slower than the nuc after a power cut and lan0 has no address
+        # yet. Keep retrying for as long as that takes: 5 seconds apart at
+        # first, backing off to once a minute. Restart = "on-failure" is
+        # nixpkgs' own. A Blocky that never comes up is reported by the DNS
+        # probe's alert, not by a failed unit.
         RestartSec = 5;
+        RestartSteps = 5;
+        RestartMaxDelaySec = 60;
         LoadCredential = lib.mkIf (cfg.privateHostsFile != null) "private-hosts:${cfg.privateHostsFile}";
       };
-      # Five tries in 5 minutes, then the unit stays failed, which the
-      # notifier posts, as for alert-relay (modules/observability/alerting.nix).
-      # Without the limit an address that never comes would restart Blocky
-      # every 5 seconds for ever and never reach `failed`.
-      unitConfig = {
-        StartLimitIntervalSec = 300;
-        StartLimitBurst = 5;
-      };
+      # No start limit: with one, a slow router left the unit failed for good
+      # after five tries (tests/dns.py, "the LAN address arrives late").
+      unitConfig.StartLimitIntervalSec = 0;
     };
 
     # Port 53 on the LAN port only, never on the tailnet. On lan0 rather than

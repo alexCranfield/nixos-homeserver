@@ -132,6 +132,30 @@ with subtest("the nuc's own resolver is not Blocky"):
     assert NUC_IP not in out, out
     assert ROUTER_IP in out, out
 
+with subtest("Blocky comes up when the LAN address arrives late"):
+    # As after a power cut, when the router boots slower than the nuc: lan0
+    # has no address when Blocky starts, and gets one minutes later.
+    router.succeed("systemctl stop dnsmasq.service")
+    nuc.succeed("networkctl down lan0")
+    nuc.succeed("networkctl up lan0")
+    nuc.wait_until_succeeds(f"! ip -4 addr show lan0 | grep -qF 'inet {NUC_IP}/'", timeout=30)
+    before = int(nuc.succeed("systemctl show -P NRestarts blocky.service"))
+    nuc.succeed("systemctl restart blocky.service")
+    # Blocky can't bind the address, exits with an error, and is restarted.
+    nuc.wait_until_succeeds(
+        f"test $(systemctl show -P NRestarts blocky.service) -gt {before}", timeout=60
+    )
+    print(nuc.succeed("journalctl -u blocky.service -n 30 --no-pager | grep -iE 'bind|exited|start'"))
+    # Longer than five restarts 5 seconds apart, the start limit this used
+    # to have.
+    nuc.succeed("sleep 35")
+    print(nuc.succeed("systemctl show -p ActiveState,Result,NRestarts blocky.service"))
+    router.succeed("systemctl start dnsmasq.service")
+    nuc.wait_until_succeeds(f"ip -4 addr show lan0 | grep -qF 'inet {NUC_IP}/'", timeout=120)
+    # Within the longest gap between retries, 60 seconds, plus a start.
+    nuc.wait_for_open_port(53, NUC_IP, timeout=120)
+    assert dig("example.test") == "192.0.2.10", dig("example.test")
+
 with subtest("Blocky is up after a reboot"):
     nuc.shutdown()
     nuc.start()
