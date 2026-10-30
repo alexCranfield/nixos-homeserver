@@ -186,7 +186,10 @@ LAN device ──► Blocky (lan0:53) ──► Unbound (127.0.0.1) ──► ro
 
 - Blocky writes every query to PostgreSQL on the nuc: time, device, name,
   answer, and whether it was blocked.
-- About 30 days kept, then deleted by Blocky's own retention (my call).
+- 14 days kept, then deleted by Blocky's own retention (Alex,
+  2026-10-29). It holds the whole household's browsing, so it is kept no
+  longer than the curiosity use needs, and the household is told it
+  exists.
 - Not backed up: it is a curiosity log, and losing it loses nothing that
   matters (my call).
 - PostgreSQL listens on its local socket only. Blocky writes; Grafana reads
@@ -260,6 +263,32 @@ threat detection, forwarded to the nuc.
 3. The old Pi-hole keeps running as the secondary. Stopping it (with the nuc
    up) changes nothing for clients; that is an acceptance check, not a
    removal.
+4. Router firewall rules block outbound DNS from the LAN, on port 53 and
+   on 853 (DNS over TLS), except from the nuc and the NAS, so devices with
+   built-in DNS servers (Chromecasts, some TVs and apps) can't go around
+   the blocking (Alex, 2026-10-29). Devices that misbehave afterwards are
+   recorded in the runbook. DNS over HTTPS can't be blocked this way; the
+   `use-application-dns.net` answer covers Firefox, and the rest is
+   accepted.
+
+### What the design accepts (Alex, 2026-10-29)
+
+- **The secondary is a blind spot.** Some devices send part of their
+  lookups to the NAS even while the nuc is up. Those get no threat alerts
+  and aren't on the dashboard until the NAS runs the same module. The
+  monitoring covers most of the house's lookups, not all.
+- **Failover isn't instant.** While the nuc reboots, many devices wait a
+  second or two on it before trying the NAS, so the network feels slightly
+  slow for a few minutes, mostly on Tuesday mornings. Expected, and
+  written in the runbook so it isn't mistaken for a fault.
+
+### Undoing it
+
+If the nuc's DNS misbehaves, the fastest fix is on the router: DHCP hands
+out the NAS only again. The runbook spells it out step by step, including
+how long devices take to pick it up (until they renew their DHCP lease, up
+to a day; reconnecting a device's Wi-Fi or network is faster), and how to
+switch back once fixed.
 
 ### Testing
 
