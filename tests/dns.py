@@ -194,6 +194,35 @@ with subtest("DNS keeps answering with PostgreSQL stopped"):
     assert dig("example.test") == "192.0.2.10", dig("example.test")
     nuc.succeed("systemctl start postgresql")
 
+with subtest("Blocky starts while PostgreSQL is down, and logs again after"):
+    # A PostgreSQL that can't start: stopped, and the start refused, because
+    # starting Blocky otherwise starts PostgreSQL with it (through the grants
+    # unit).
+    nuc.succeed("mkdir -p /run/systemd/system/postgresql.service.d")
+    nuc.succeed(
+        "printf '[Service]\\nExecStartPre=/run/current-system/sw/bin/false\\n'"
+        " > /run/systemd/system/postgresql.service.d/broken.conf"
+    )
+    nuc.succeed("systemctl daemon-reload && systemctl stop postgresql")
+    nuc.succeed("systemctl restart blocky.service")
+    nuc.wait_for_open_port(53, NUC_IP)
+    assert dig("example.test") == "192.0.2.10", dig("example.test")
+    # Blocky 0.29's own fallback to logging on its console.
+    nuc.succeed("journalctl -u blocky.service --no-pager | grep -F 'using console as fallback'")
+    nuc.succeed("rm /run/systemd/system/postgresql.service.d/broken.conf && systemctl daemon-reload")
+    # The refused starts hit systemd's start limit.
+    nuc.succeed("systemctl reset-failed postgresql.service && systemctl start postgresql")
+    nuc.wait_for_unit("postgresql-setup.service")
+    # The timer's job, run directly rather than waiting five minutes.
+    nuc.succeed("systemctl start dns-querylog-reattach.service")
+    nuc.wait_for_open_port(53, NUC_IP)
+    dig("reattached.example.test")
+    nuc.wait_until_succeeds(
+        "sudo -u postgres psql -At blocky -c "
+        "\"select 1 from log_entries where question_name like 'reattached.example.test%'\" | grep -qx 1",
+        timeout=90,
+    )
+
 with subtest("Blocky comes up when the LAN address arrives late"):
     # As after a power cut, when the router boots slower than the nuc: lan0
     # has no address when Blocky starts, and gets one minutes later.

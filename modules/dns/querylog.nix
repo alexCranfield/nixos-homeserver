@@ -10,6 +10,7 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }:
 let
@@ -22,6 +23,8 @@ let
   ];
   quote = name: ''"${name}"'';
   readerList = lib.concatMapStringsSep ", " quote readers;
+
+  pgIsReady = "${config.services.postgresql.finalPackage}/bin/pg_isready -q -t 3 -h /run/postgresql -d ${psqlDatabase}";
 in
 {
   config = lib.mkIf enabled {
@@ -82,13 +85,43 @@ in
       logRetentionDays = 14;
     };
 
-    # Blocky exits when it can't open the log's database at start (as it
-    # does for a missing LAN address), and the restarts in ./default.nix keep
-    # trying. Once running, it keeps answering with PostgreSQL stopped; the
+    # Once running, Blocky keeps answering with PostgreSQL stopped; the
     # wants, not requires, keeps it from being stopped with PostgreSQL.
     systemd.services.blocky = {
       wants = [ "dns-querylog-grants.service" ];
       after = [ "dns-querylog-grants.service" ];
+    };
+
+    # Blocky 0.29 tries three times, 2 seconds apart, to open the log's
+    # database at start, then carries on logging to its console instead (and
+    # DNS keeps answering). It doesn't try again, so a start while PostgreSQL
+    # is down loses the log until Blocky restarts. Every five minutes, if the
+    # current Blocky run said it fell back and PostgreSQL is back, restart it
+    # to log again. A restart is a second without an answer on port 53, so
+    # only when needed.
+    systemd.services.dns-querylog-reattach = {
+      description = "Restart Blocky to log queries again, once PostgreSQL is back";
+      serviceConfig.Type = "oneshot";
+      path = [
+        config.systemd.package
+        pkgs.gnugrep
+      ];
+      script = ''
+        id=$(systemctl show -P InvocationID blocky.service)
+        if [ -n "$id" ] \
+          && journalctl --no-pager _SYSTEMD_INVOCATION_ID="$id" | grep -qF 'using console as fallback' \
+          && ${pgIsReady}; then
+          echo "PostgreSQL is back: restarting Blocky to log queries again"
+          systemctl restart blocky.service
+        fi
+      '';
+    };
+    systemd.timers.dns-querylog-reattach = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "5min";
+        OnUnitActiveSec = "5min";
+      };
     };
   };
 }
