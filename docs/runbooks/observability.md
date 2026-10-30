@@ -43,7 +43,9 @@ folder:
 - **cadvisor dashboard**: containers, filtered by Compose project and
   container name (grafana.com dashboard 19792).
 - **Game servers**: CPU, memory and network of the containers whose names
-  start `minecraft`. Player counts are a follow-up ticket.
+  start `minecraft`. Memory is drawn from zero against the stack's own limit
+  (`memoryMax`, dashed), so the headroom StackMemoryNearLimit watches is
+  visible. Player counts are a follow-up ticket (#168).
 
 ### Why plain HTTP
 
