@@ -67,7 +67,8 @@ so there can be fewer names than the count, or none, and the count is always
 the number to trust. Only valid Minecraft names (1 to 16 of letters, digits
 and `_`) are kept; anything else is dropped, and `\` and `"` are escaped as
 well. The names exist only at runtime, in Prometheus and Grafana, never in
-this repo. When the server does not answer, or is still loading, `up` is 0 and the
+this repo. They are kept for Prometheus's retention window, and anyone who
+can open Grafana over the tailnet can see who played and when. When the server does not answer, or is still loading, `up` is 0 and the
 other two are absent; the unit does not fail, as that is a result. The
 response time includes starting `mc-monitor`, so a few milliseconds are its
 own.

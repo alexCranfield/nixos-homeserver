@@ -227,6 +227,10 @@ with subtest("the player sample's names reach the players panel, and only valid 
     assert wait_for_minecraft("0")["Server answering"] == ["1"]
     nuc.succeed("echo '[\"TestPlayerOne\"]' > /run/fake-mc/sample")
     print(wait_for_names(["TestPlayerOne"]))
+    # More than 12 valid names are cut to 12 (the first 12 in sorted order).
+    many = [f"TestPlayer{i:02d}" for i in range(1, 16)]
+    nuc.succeed(f"echo '{json.dumps(many)}' > /run/fake-mc/sample")
+    print(wait_for_names(many[:12]))
     nuc.succeed("echo '[\"TestPlayerOne\", \"TestPlayerTwo\", \"bad\\\"name\"]' > /run/fake-mc/sample")
     print(wait_for_names(["TestPlayerOne", "TestPlayerTwo"]))
 

@@ -22,8 +22,8 @@
 #    cannot bind to loopback only (it listens on every address), and a
 #    container in `stacks/minecraft` changes that stack's files, which makes
 #    comin's deploy recreate the stack's containers and kick the players.
-#    This is a host unit, so a deploy leaves the server alone. Only the count
-#    is exported, never who is on.
+#    This is a host unit, so a deploy leaves the server alone. It exports the
+#    count and, from the ping's player sample, who is on (at most 12 names).
 {
   config,
   lib,
@@ -194,18 +194,19 @@ in
         # which mc-monitor's JSON prints as `Sample`). The server decides what
         # is in it: vanilla lists at most 12 names, and a pack can hide it, so
         # this can be shorter than the count or empty. A second, best-effort
-        # ping, so the count above never depends on it. Only names that are
-        # valid Minecraft names (1 to 16 of A-Z, a-z, 0-9 and _) are kept, so
-        # nothing else reaches a label; `\` and `"` are escaped as well, which
+        # ping with a short timeout, so the count above never depends on it,
+        # and a hung one cannot hold up the file for long. At most 12 names.
+        # Only names that are valid Minecraft names (1 to 16 of A-Z, a-z, 0-9
+        # and _) are kept, so nothing else reaches a label; `\` and `"` are escaped as well, which
         # a valid name never needs. \A and \z are the ends of the string,
         # where ^ and $ would also match at a newline inside it.
         names=
         if [[ $up == 1 ]]; then
-          names=$(timeout 12 mc-monitor status --json --host 127.0.0.1 --port ${toString minecraftPort} \
-            --timeout 10s 2>/dev/null \
+          names=$(timeout 3 mc-monitor status --json --host 127.0.0.1 --port ${toString minecraftPort} \
+            --timeout 2s 2>/dev/null \
             | jq -r '(.server_info.players.Sample // .server_info.players.sample // [])
                 | map(.name? | select(type == "string" and test("\\A[A-Za-z0-9_]{1,16}\\z")))
-                | unique | .[] | gsub("\\\\"; "\\\\") | gsub("\""; "\\\"")' 2>/dev/null) || names=
+                | unique | .[:12] | .[] | gsub("\\\\"; "\\\\") | gsub("\""; "\\\"")' 2>/dev/null) || names=
         fi
 
         # As tailscale-state: renamed into place, so never half a file.
