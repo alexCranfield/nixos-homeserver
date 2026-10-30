@@ -158,6 +158,226 @@ with subtest("queries land in the log, named or by address"):
     print(out)
     assert CLIENT_IP in out, out
 
+PROM_FILE = "/var/lib/prometheus-node-exporter-text/dns-watch.prom"
+
+
+def metric(selector):
+    """The value of a series in the watch's file (as written), or None."""
+    out = nuc.succeed(f"cat {PROM_FILE} 2>/dev/null || true")
+    for line in out.splitlines():
+        if line.startswith(selector + " "):
+            return float(line.split()[-1])
+    return None
+
+
+def wait_for_metric(selector, condition, timeout=240):
+    """Wait until the series satisfies the condition, ">0", ">4" or "==1".
+    The watch runs every minute and Blocky writes the log in 30-second
+    batches."""
+    m = re.match(r"(>=|<=|==|>|<)\s*(.+)", condition)
+    assert m, condition
+    op, ref = m.groups()
+    ok = {
+        ">": lambda a, b: a > b, "<": lambda a, b: a < b, "==": lambda a, b: a == b,
+        ">=": lambda a, b: a >= b, "<=": lambda a, b: a <= b,
+    }[op]
+
+    def check(_last_try):
+        value = metric(selector)
+        return value is not None and ok(value, float(ref))
+
+    with nuc.nested(f"waiting for {selector} {condition}"):
+        retry(check, timeout)
+
+
+def psql(sql):
+    """Run SQL as the superuser, through a quoted heredoc so that quotes and
+    backslashes reach PostgreSQL as written."""
+    return nuc.succeed(f"sudo -u postgres psql -At blocky <<'SQL'\n{sql}\nSQL").strip()
+
+
+with subtest("the watch runs as dns-watch and its queries work"):
+    # Blocky writes in batches, so the first rows may take a moment.
+    dig("watch-warmup.example.test")
+    nuc.wait_until_succeeds("systemctl start dns-watch.service", timeout=120)
+    wait_for_metric("homeserver_dns_watch_success", "==1", timeout=120)
+    # Peer authentication mapped the dynamic user to the role of its name.
+    assert nuc.succeed("systemctl show -P User dns-watch.service").strip() == "dns-watch"
+    print(nuc.succeed(f"cat {PROM_FILE}"))
+    # Prometheus (through node-exporter) has it too.
+    nuc.wait_until_succeeds(
+        "curl -fsS 'http://127.0.0.1:9090/api/v1/query?query=homeserver_dns_watch_success'"
+        " | grep -qF '\"1\"]'",
+        timeout=180,
+    )
+
+with subtest("record what Blocky writes for blocks and NXDOMAIN"):
+    dig("threat.test")
+    dig("ad.test")
+    client.succeed(f"dig +time=2 +tries=1 @{NUC_IP} use-application-dns.net")
+    nuc.wait_until_succeeds(
+        "sudo -u postgres psql -At blocky -c "
+        "\"select 1 from log_entries where question_name like 'use-application-dns.net%'\" | grep -qx 1",
+        timeout=90,
+    )
+    print(psql(
+        "select reason, response_type, response_code, count(*) from log_entries "
+        "group by 1, 2, 3 order by 4 desc"
+    ))
+    print(psql("select client_ip, client_name, question_name from log_entries where question_name like 'threat.test%'"))
+
+with subtest("a threat-list lookup becomes a metric naming the client and domain"):
+    dig("threat.test")
+    # The client has no name at the router, so its label is its address.
+    wait_for_metric('homeserver_dns_threat_blocks{client="%s",domain="threat.test"}' % CLIENT_IP, ">0")
+
+with subtest("an ad block is not a threat"):
+    dig("ad.test")
+    nuc.wait_until_succeeds(
+        "sudo -u postgres psql -At blocky -c "
+        "\"select 1 from log_entries where question_name like 'ad.test%'\" | grep -qx 1",
+        timeout=90,
+    )
+    nuc.succeed("systemctl start dns-watch.service")
+    prom = nuc.succeed(f"cat {PROM_FILE}")
+    assert 'domain="ad.test"' not in prom, prom
+    # Control: the threat above is still in the same file, so the file was
+    # written after the ad block was logged.
+    assert 'domain="threat.test"' in prom, prom
+
+with subtest("an NXDOMAIN burst raises the recent rate"):
+    # home.arpa goes to the router, which answers no such name for the
+    # unknown ones (example.test would answer for every subdomain).
+    for i in range(50):
+        client.execute(f"dig +short +time=2 +tries=1 @{NUC_IP} nx{i}.home.arpa")
+    wait_for_metric('homeserver_dns_nxdomain_recent{client="%s"}' % CLIENT_IP, ">4")
+    # The baseline is present beside it (the rule joins on the two).
+    assert metric('homeserver_dns_nxdomain_baseline{client="%s"}' % CLIENT_IP) is not None
+
+with subtest("a client's first entry in the last 10 minutes makes it new"):
+    # A client the log has never seen: one row, as Blocky would write it.
+    psql(
+        "insert into log_entries (request_ts, client_ip, client_name, duration_ms, reason, response_type, "
+        "question_type, question_name, effective_tldp, answer, response_code, hostname) "
+        "values (now(), '198.51.100.7', '198.51.100.7', 1, 'RESOLVED', 'RESOLVED', 'A', "
+        "'fresh.test', 'test', 'A (192.0.2.1)', 'NOERROR', 'nuc')"
+    )
+    wait_for_metric('homeserver_dns_new_client{client="198.51.100.7"}', "==1")
+    # The real client's first entry was at the start of the test: it is new
+    # only if that is under 10 minutes ago. Either way the metric must agree
+    # with the log, so a client that is not new has no series.
+    age = float(psql(
+        "select extract(epoch from now() - min(request_ts)) from log_entries "
+        f"where client_ip = '{CLIENT_IP}'"
+    ))
+    print(f"the client's first entry is {age:.0f} s old")
+    value = metric('homeserver_dns_new_client{client="%s"}' % CLIENT_IP)
+    if age < 540:
+        assert value == 1, value
+    elif age > 660:
+        assert value is None, value
+    # Control: a client whose first entry is an hour old is not new, though
+    # it asks now too.
+    for when in ("now() - interval '1 hour'", "now()"):
+        psql(
+            "insert into log_entries (request_ts, client_ip, client_name, duration_ms, reason, response_type, "
+            "question_type, question_name, effective_tldp, answer, response_code, hostname) "
+            f"values ({when}, '198.51.100.8', '', 1, 'RESOLVED', 'RESOLVED', 'A', "
+            "'old.test', 'test', 'A (192.0.2.1)', 'NOERROR', 'nuc')"
+        )
+    nuc.succeed("systemctl start dns-watch.service")
+    assert metric('homeserver_dns_new_client{client="198.51.100.8"}') is None
+    assert metric('homeserver_dns_new_client{client="198.51.100.7"}') == 1
+
+with subtest("a failing query writes success 0 and the unit still succeeds"):
+    nuc.succeed("systemctl stop postgresql")
+    nuc.succeed("systemctl start dns-watch.service")
+    assert metric("homeserver_dns_watch_success") == 0
+    nuc.succeed("systemctl start postgresql")
+    nuc.wait_for_unit("postgresql.service")
+    nuc.wait_until_succeeds("systemctl start dns-watch.service")
+    wait_for_metric("homeserver_dns_watch_success", "==1", timeout=120)
+
+with subtest("label values are escaped"):
+    # A client name with a backslash and a double quote in it (a real one
+    # can't, but the file must stay valid whatever the log holds).
+    psql(
+        "insert into log_entries (request_ts, client_ip, client_name, duration_ms, reason, response_type, "
+        "question_type, question_name, effective_tldp, answer, response_code, hostname) "
+        "values (now(), '198.51.100.9', 'a\\b\"c', 1, 'BLOCKED (threats)', 'BLOCKED', 'A', "
+        "'esc.test', 'test', '0.0.0.0', 'NOERROR', 'nuc')"
+    )
+    nuc.succeed("systemctl start dns-watch.service")
+    prom = nuc.succeed(f"cat {PROM_FILE}")
+    print(prom)
+    assert 'client="a\\\\b\\"c",domain="esc.test"' in prom, prom
+
+with subtest("the query log's size is exported"):
+    size = int(psql("select pg_total_relation_size('log_entries')"))
+    value = metric("homeserver_dns_querylog_bytes")
+    print(size, value)
+    assert value is not None and value > 0 and abs(value - size) < 0.1 * size, (size, value)
+
+def cap_script():
+    """The cap job's script, which holds the cap it was configured with."""
+    unit = nuc.succeed("systemctl cat dns-querylog-cap.service")
+    m = re.search(r"^ExecStart=(\S+)", unit, re.M)
+    assert m, unit
+    return nuc.succeed(f"cat {m.group(1)}")
+
+
+with subtest("the cap deletes the oldest rows, and nothing while under it"):
+    # Filler rows, oldest first, about 400 bytes each: some 4 MB with their
+    # indexes, over the 2 MB cap of the specialisation below and far under
+    # the default cap of 10 GB. Their timestamps are 3 to 10 days old, older
+    # than anything the test itself logged, and inside the 14-day retention.
+    psql(
+        "insert into log_entries (request_ts, client_ip, client_name, duration_ms, reason, response_type, "
+        "question_type, question_name, effective_tldp, answer, response_code, hostname) "
+        "select now() - interval '10 days' + i * interval '1 minute', '203.0.113.9', '203.0.113.9', 1, "
+        "'RESOLVED', 'RESOLVED', 'A', 'filler-' || i || '.' || repeat('x', 200) || '.test', 'test', "
+        "'A (192.0.2.1)', 'NOERROR', 'nuc' from generate_series(1, 10000) i"
+    )
+    rows = int(psql("select count(*) from log_entries"))
+    size = int(psql("select pg_total_relation_size('log_entries')"))
+    print(f"{rows} rows, {size} bytes")
+    assert size > 2_000_000, size
+    # Negative control: under the default cap the job deletes nothing and
+    # vacuums nothing.
+    assert "cap=10000000000" in cap_script(), cap_script()
+    nuc.succeed("systemctl start dns-querylog-cap.service")
+    assert int(psql("select count(*) from log_entries")) >= rows
+    assert psql("select count(*) from log_entries where question_name like 'filler-1.%'") == "1"
+    assert psql("select last_vacuum is null from pg_stat_user_tables where relname = 'log_entries'") == "t"
+
+    nuc.succeed("/run/booted-system/specialisation/tiny-querylog-cap/bin/switch-to-configuration test")
+    assert "cap=2000000 " in cap_script(), cap_script()
+    nuc.succeed("systemctl start dns-querylog-cap.service")
+    left = int(psql("select count(*) from log_entries"))
+    print(f"{left} rows left")
+    assert left < rows * 0.7, (left, rows)
+    # The oldest are gone, the newest remain, deleted in time order.
+    assert psql("select count(*) from log_entries where question_name like 'filler-1.%'") == "0"
+    assert psql("select count(*) from log_entries where question_name like 'filler-10000.%'") == "1"
+    assert psql("select count(*) from log_entries where question_name like 'fresh.test%'") == "1"
+    # Vacuumed (DELETE alone frees no file space).
+    nuc.wait_until_succeeds(
+        "sudo -u postgres psql -At blocky -c "
+        "\"select last_vacuum is not null from pg_stat_user_tables where relname = 'log_entries'\" | grep -qx t",
+        timeout=60,
+    )
+    # The live data is under the cap: rewritten compactly, the table and its
+    # indexes fit. (The file itself does not shrink without this.)
+    psql("vacuum full log_entries")
+    live = int(psql("select pg_total_relation_size('log_entries')"))
+    print(f"live size {live} bytes")
+    assert live < 2_000_000, live
+    # Control: the job is idempotent, a second run under the cap deletes
+    # nothing more.
+    nuc.succeed("systemctl start dns-querylog-cap.service")
+    assert int(psql("select count(*) from log_entries")) == left
+    nuc.succeed("/run/booted-system/bin/switch-to-configuration test")
+
 with subtest("Grafana's role reads and cannot write"):
     nuc.succeed("sudo -u grafana psql -At blocky -c 'select count(*) from log_entries'")
     status, out = nuc.execute("sudo -u grafana psql blocky -c 'delete from log_entries' 2>&1")
@@ -185,8 +405,8 @@ with subtest("Grafana's data source reads the log through its socket"):
 
 with subtest("blocky owns the log's table and dns-watch can only read it"):
     nuc.succeed("sudo -u postgres psql -At blocky -c \"select tableowner from pg_tables where tablename = 'log_entries'\" | grep -qx blocky")
-    # dns-watch (the alert queries, Task 5) has no OS user yet, so check the
-    # privileges rather than connecting as it.
+    # dns-watch (the alert queries) is a dynamic user that exists only while
+    # its unit runs, so check the privileges rather than connecting as it.
     nuc.succeed("sudo -u postgres psql -At blocky -c \"select has_table_privilege('dns-watch', 'log_entries', 'select')\" | grep -qx t")
     nuc.succeed("sudo -u postgres psql -At blocky -c \"select has_table_privilege('dns-watch', 'log_entries', 'delete')\" | grep -qx f")
 

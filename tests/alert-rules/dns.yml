@@ -1,6 +1,10 @@
 # DnsServerDown (for 2m) and DnsServerNotBlocking (for 15m): the LAN's two DNS
 # servers, probed from the nuc. The label `server` names the one, so the
 # summary never needs an address. 15 s is one scrape interval.
+#
+# Below them, the suspicious-activity rules, which read the series the nuc's
+# dns-watch timer writes (modules/dns/watch.nix): DnsThreatBlocked,
+# DnsNxdomainBurst, DnsNewClient, DnsWatchFailing and DnsQueryLogLarge.
 rule_files:
   - rules.yml
 
@@ -77,3 +81,189 @@ tests:
       - eval_time: 25m
         alertname: DnsServerNotBlocking
         exp_alerts: []
+
+  # DnsThreatBlocked (for 0s): fires on the first sample above zero, naming
+  # the client and the domain, and is quiet at zero.
+  - interval: 15s
+    input_series:
+      - series: 'homeserver_dns_threat_blocks{client="laptop",domain="threat.test",instance="target",job="node"}'
+        values: "0x3 3x4"
+    alert_rule_test:
+      - eval_time: 45s
+        alertname: DnsThreatBlocked
+        exp_alerts: []
+      - eval_time: 60s
+        alertname: DnsThreatBlocked
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              client: laptop
+              domain: threat.test
+              instance: target
+              job: node
+            exp_annotations:
+              summary: "laptop asked for threat.test, a name on the threat lists (blocked)"
+              description: "Blocky refused a lookup whose name is on a threat list (malware, phishing) in the last 5 minutes. The device may be infected or the user followed a bad link."
+
+  # DnsNxdomainBurst (for 5m): more than 10 a minute and more than 5 times the
+  # baseline. Fires at its `for`, not 15 s before.
+  - interval: 15s
+    input_series:
+      - series: 'homeserver_dns_nxdomain_recent{client="laptop",instance="target",job="node"}'
+        values: "11x40"
+      - series: 'homeserver_dns_nxdomain_baseline{client="laptop",instance="target",job="node"}'
+        values: "2x40"
+    alert_rule_test:
+      - eval_time: 285s
+        alertname: DnsNxdomainBurst
+        exp_alerts: []
+      - eval_time: 300s
+        alertname: DnsNxdomainBurst
+        exp_alerts:
+          - exp_labels:
+              severity: threshold
+              client: laptop
+              instance: target
+              job: node
+            exp_annotations:
+              summary: "laptop gets 11 NXDOMAIN answers a minute (threshold above 10 a minute and 5 times its baseline, for 5m)"
+              description: "A device is asking for many names that do not exist, as malware generating domain names does."
+
+  # Exactly 10 a minute is not above the threshold; exactly 5 times the
+  # baseline is not above the ratio.
+  - interval: 15s
+    input_series:
+      - series: 'homeserver_dns_nxdomain_recent{client="at-threshold",instance="target",job="node"}'
+        values: "10x80"
+      - series: 'homeserver_dns_nxdomain_baseline{client="at-threshold",instance="target",job="node"}'
+        values: "0x80"
+      - series: 'homeserver_dns_nxdomain_recent{client="at-ratio",instance="target",job="node"}'
+        values: "55x80"
+      - series: 'homeserver_dns_nxdomain_baseline{client="at-ratio",instance="target",job="node"}'
+        values: "11x80"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: DnsNxdomainBurst
+        exp_alerts: []
+
+  # A device whose baseline is already high (60 a minute) stays quiet at 70.
+  - interval: 15s
+    input_series:
+      - series: 'homeserver_dns_nxdomain_recent{client="chatty",instance="target",job="node"}'
+        values: "70x80"
+      - series: 'homeserver_dns_nxdomain_baseline{client="chatty",instance="target",job="node"}'
+        values: "60x80"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: DnsNxdomainBurst
+        exp_alerts: []
+
+  # A burst that ends before the `for` never fires.
+  - interval: 15s
+    input_series:
+      - series: 'homeserver_dns_nxdomain_recent{client="laptop",instance="target",job="node"}'
+        values: "50x18 0x40"
+      - series: 'homeserver_dns_nxdomain_baseline{client="laptop",instance="target",job="node"}'
+        values: "1x60"
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: DnsNxdomainBurst
+        exp_alerts: []
+
+  # DnsNewClient (for 0s): fires on 1, quiet on 0.
+  - interval: 15s
+    input_series:
+      - series: 'homeserver_dns_new_client{client="192.168.1.99",instance="target",job="node"}'
+        values: "0x3 1x4"
+    alert_rule_test:
+      - eval_time: 45s
+        alertname: DnsNewClient
+        exp_alerts: []
+      - eval_time: 60s
+        alertname: DnsNewClient
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              client: 192.168.1.99
+              instance: target
+              job: node
+            exp_annotations:
+              summary: "A new device asked the DNS server for the first time: 192.168.1.99"
+              description: "The client's first entry in the query log is less than 10 minutes old. A guest, or something that should not be on the network."
+
+  # DnsWatchFailing (for 10m), the metric at 0: fires at its `for`, not 15 s
+  # before.
+  - interval: 15s
+    input_series:
+      - series: 'homeserver_dns_watch_success{instance="target",job="node"}'
+        values: "0x60"
+    alert_rule_test:
+      - eval_time: 585s
+        alertname: DnsWatchFailing
+        exp_alerts: []
+      - eval_time: 600s
+        alertname: DnsWatchFailing
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              instance: target
+              job: node
+            exp_annotations:
+              summary: "The DNS query-log watch is not running (for 10m)"
+              description: "The dns-watch timer's queries fail or its file is missing, so the threat, NXDOMAIN and new-client alerts are blind."
+
+  # DnsWatchFailing, the metric absent while node-exporter's other series are
+  # there (the timer never ran, or its file is gone): fires at its `for`.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="node",instance="target"}'
+        values: "1x60"
+    alert_rule_test:
+      - eval_time: 585s
+        alertname: DnsWatchFailing
+        exp_alerts: []
+      - eval_time: 600s
+        alertname: DnsWatchFailing
+        exp_alerts:
+          - exp_labels:
+              severity: event
+            exp_annotations:
+              summary: "The DNS query-log watch is not running (for 10m)"
+              description: "The dns-watch timer's queries fail or its file is missing, so the threat, NXDOMAIN and new-client alerts are blind."
+
+  # DnsWatchFailing stays quiet while the metric is 1, and for a failure that
+  # lasts under the `for`.
+  - interval: 15s
+    input_series:
+      - series: 'homeserver_dns_watch_success{instance="target",job="node"}'
+        values: "0x20 1x60"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: DnsWatchFailing
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: DnsWatchFailing
+        exp_alerts: []
+
+  # DnsQueryLogLarge (value 2 GB, for 15m): fires at its `for` above the
+  # threshold, naming the size; exactly 2 GB is quiet.
+  - interval: 15s
+    input_series:
+      - series: 'homeserver_dns_querylog_bytes{instance="target",job="node"}'
+        values: "2100000000x80"
+      - series: 'homeserver_dns_querylog_bytes{instance="at-threshold",job="node"}'
+        values: "2000000000x80"
+    alert_rule_test:
+      - eval_time: 885s
+        alertname: DnsQueryLogLarge
+        exp_alerts: []
+      - eval_time: 900s
+        alertname: DnsQueryLogLarge
+        exp_alerts:
+          - exp_labels:
+              severity: threshold
+              instance: target
+              job: node
+            exp_annotations:
+              summary: "The DNS query log is 2.1GB (threshold above 2 GB for 15m)"
+              description: "Blocky's query log table in PostgreSQL is growing past what 14 days of use should need. The hard cap (homeserver.dns.queryLogMaxBytes) will delete the oldest rows, so look for a client that floods the server."

@@ -154,6 +154,10 @@ pkgs.testers.runNixOSTest {
           threats = [ ];
         };
       };
+      # The query log's hard cap, tiny, to see the job delete rows.
+      specialisation.tiny-querylog-cap.configuration = {
+        homeserver.dns.queryLogMaxBytes = 2000000;
+      };
       homeserver.alerting.dnsServers.secondaryTargetsFile = "/run/dns-test-sd/nas.json";
       systemd.tmpfiles.rules = [
         "d /run/dns-test 0700 root root -"

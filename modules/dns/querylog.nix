@@ -123,5 +123,34 @@ in
         OnUnitActiveSec = "5min";
       };
     };
+
+    # The hard cap on the log's size (querylog-cap.sql explains the method).
+    # It needs DELETE, which neither Grafana's nor dns-watch's role has, so it
+    # is its own unit, run as the `postgres` operating-system user (peer
+    # authentication, superuser) rather than giving a reader write rights.
+    # Every 10 minutes: the gate is one size lookup, a flood that matters
+    # takes hours to reach the cap (the alert DnsQueryLogLarge fires at
+    # 2 GB, five times lower), and more often would only run the estimate,
+    # which reads the table's newest rows, more.
+    systemd.services.dns-querylog-cap = {
+      description = "Keep the DNS query log under its size cap";
+      after = [ "postgresql.service" ];
+      path = [ config.services.postgresql.finalPackage ];
+      serviceConfig = {
+        Type = "oneshot";
+        User = "postgres";
+        Group = "postgres";
+      };
+      script = ''
+        psql --no-psqlrc -q -d ${psqlDatabase} -v cap=${toString cfg.queryLogMaxBytes} -f ${./querylog-cap.sql}
+      '';
+    };
+    systemd.timers.dns-querylog-cap = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "10min";
+        OnUnitActiveSec = "10min";
+      };
+    };
   };
 }

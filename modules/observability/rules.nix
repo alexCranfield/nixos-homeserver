@@ -8,6 +8,8 @@
 #             `{ for = "10m"; }` plus, for the alerts that have a number to
 #             tune, `value`. TemperatureHigh also has `fallback`, the limit in
 #             degrees Celsius for a sensor that reports no `crit` mark.
+#             DnsNxdomainBurst also has `factor`, how many times its baseline
+#             a client's rate must exceed.
 #             `homeserver.alerting.thresholds` defaults to this.
 #   mkRules   `{ lib, thresholds, watchedUnits }: { groups = [ ... ]; }`.
 #             `thresholds` is merged over `defaults`, so a caller may give only
@@ -34,6 +36,12 @@ let
     # Longer than a list load: at boot Blocky resolves before its lists have
     # loaded (it fails open), and that must not alert.
     DnsServerNotBlocking.for = "15m";
+    # The watch's series (modules/dns/watch.nix). A threat lookup or a new
+    # device is worth knowing at once.
+    DnsThreatBlocked.for = "0s";
+    DnsNewClient.for = "0s";
+    # The timer runs every minute; ten missed minutes is a real fault.
+    DnsWatchFailing.for = "10m";
     OomKill.for = "0s";
 
     # Threshold alerts: long durations, to ignore normal busy spells.
@@ -68,6 +76,15 @@ let
     };
     StackCpuStarved = {
       value = 25; # percent of the time waiting
+      for = "15m";
+    };
+    DnsNxdomainBurst = {
+      value = 10; # NXDOMAIN answers per minute, for one client
+      factor = 5; # and this many times that client's own baseline
+      for = "5m";
+    };
+    DnsQueryLogLarge = {
+      value = 2000000000; # bytes, the log table with its indexes
       for = "15m";
     };
   };
@@ -198,6 +215,22 @@ let
               summary = "DNS server {{ $labels.server }} does not block (for ${t.DnsServerNotBlocking.for})";
               description = "A name on the blocklists, probed against {{ $labels.server }}, comes back with a real address instead of 0.0.0.0. Its lists may have failed to download.";
             })
+            (event "DnsThreatBlocked" {
+              expr = "homeserver_dns_threat_blocks > 0";
+              summary = "{{ $labels.client }} asked for {{ $labels.domain }}, a name on the threat lists (blocked)";
+              description = "Blocky refused a lookup whose name is on a threat list (malware, phishing) in the last 5 minutes. The device may be infected or the user followed a bad link.";
+            })
+            (event "DnsNewClient" {
+              expr = "homeserver_dns_new_client == 1";
+              summary = "A new device asked the DNS server for the first time: {{ $labels.client }}";
+              description = "The client's first entry in the query log is less than 10 minutes old. A guest, or something that should not be on the network.";
+            })
+            (event "DnsWatchFailing" {
+              # absent(): the file is missing (the timer never ran).
+              expr = "homeserver_dns_watch_success == 0 or absent(homeserver_dns_watch_success)";
+              summary = "The DNS query-log watch is not running (for ${t.DnsWatchFailing.for})";
+              description = "The dns-watch timer's queries fail or its file is missing, so the threat, NXDOMAIN and new-client alerts are blind.";
+            })
             (event "OomKill" {
               # Named containers only: cgroup v2 counts a kill in memory.events
               # of every ancestor too, so the stack slice, /stack.slice and the
@@ -205,6 +238,29 @@ let
               expr = ''increase(container_oom_events_total{name!=""}[5m]) > 0'';
               summary = "Out-of-memory kill in container {{ $labels.name }}";
               description = "The kernel killed a process for running out of memory in container {{ $labels.name }} (cAdvisor's container_oom_events_total rose in the last 5 minutes).";
+            })
+          ];
+        }
+        {
+          name = "homeserver-dns";
+          rules = [
+            (threshold "DnsNxdomainBurst" {
+              # Both conditions on the same client. The baseline is 0 for a
+              # client with no history, so its first burst counts.
+              expr = ''
+                homeserver_dns_nxdomain_recent > ${toString t.DnsNxdomainBurst.value}
+                  and
+                homeserver_dns_nxdomain_recent > ${toString t.DnsNxdomainBurst.factor} * homeserver_dns_nxdomain_baseline
+              '';
+              summary = "{{ $labels.client }} gets ${pct} NXDOMAIN answers a minute (threshold above ${toString t.DnsNxdomainBurst.value} a minute and ${toString t.DnsNxdomainBurst.factor} times its baseline, for ${t.DnsNxdomainBurst.for})";
+              description = "A device is asking for many names that do not exist, as malware generating domain names does.";
+            })
+            (threshold "DnsQueryLogLarge" {
+              expr = "homeserver_dns_querylog_bytes > ${toString t.DnsQueryLogLarge.value}";
+              summary = "The DNS query log is {{ $value | humanize }}B (threshold above ${
+                toString (t.DnsQueryLogLarge.value / 1000000000)
+              } GB for ${t.DnsQueryLogLarge.for})";
+              description = "Blocky's query log table in PostgreSQL is growing past what 14 days of use should need. The hard cap (homeserver.dns.queryLogMaxBytes) will delete the oldest rows, so look for a client that floods the server.";
             })
           ];
         }

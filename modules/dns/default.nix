@@ -33,6 +33,7 @@ in
   imports = [
     ./querylog.nix
     ./unbound.nix
+    ./watch.nix
   ];
 
   options.homeserver.dns = {
@@ -96,6 +97,18 @@ in
       type = lib.types.port;
       default = 4000;
       description = "Blocky's API (application programming interface) and metrics, on 127.0.0.1.";
+    };
+
+    queryLogMaxBytes = lib.mkOption {
+      type = lib.types.int;
+      default = 10000000000;
+      description = ''
+        Hard cap, in bytes, on the query log's table and its indexes. Past
+        it, a job deletes the oldest rows until the live data is back under
+        the cap, then vacuums. Blocky's own retention (14 days) is what
+        normally keeps the log small; this is for a flood. The alert
+        DnsQueryLogLarge (2 GB) comes long before.
+      '';
     };
 
     unboundPort = lib.mkOption {
