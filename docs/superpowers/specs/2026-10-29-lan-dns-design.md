@@ -170,6 +170,32 @@ LAN device ──► Blocky (lan0:53) ──► Unbound (127.0.0.1) ──► ro
   - **threats**: HaGeZi's Threat Intelligence Feeds and DandelionSprout's
     anti-malware list. A hit means a device tried to reach a known
     malware, phishing or command-and-control domain.
+- **Formats Blocky can read.** HaGeZi's `adblock/tif.txt` and
+  DandelionSprout's `AntiMalwareAdGuardHome.txt` are in adblock syntax
+  (`||example.com^`), which Blocky is believed not to read: they would
+  silently block nothing. The builder checks, and if so uses the same
+  lists in a domains or hosts format each project publishes (for example
+  HaGeZi's `wildcard/tif-onlydomains.txt`). The blocking test uses a name
+  from each list, so a list that loads empty fails it.
+- **The cutover keeps the same lists**, so it changes nothing users notice
+  and "stopping the old Pi-hole changes nothing" means something.
+
+#### List changes a week after the cutover (Alex, 2026-10-29)
+
+A small separate change, so the query log shows what is newly blocked:
+
+- HaGeZi Multi Pro replaces StevenBlack, EasyList and EasyPrivacy, which
+  overlap heavily.
+- HaGeZi's Windows and Office native tracker list replaces
+  WindowsSpyBlocker.
+- HaGeZi's Apple native tracker list, for the Macs; watched for a week.
+
+Deliberately not blocked: Google (Home speakers, cameras, Pixels; HaGeZi
+publishes no Google list because it breaks the devices), Nintendo consoles
+(online play shares domains with telemetry) and the smart bulbs (their
+apps need the cloud). These are watched on the dashboard instead. The
+Google devices use 8.8.8.8 directly, so they are the first to check after
+the router's outbound-DNS rule.
 
 ### Local names
 
