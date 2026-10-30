@@ -1,6 +1,8 @@
 # A stand-in Minecraft server for tests/observability.nix: it answers the
 # status ping (Server List Ping) on 127.0.0.1:25565 with the player count
-# held in the file given as the first argument, and no player names. The
+# held in the file given as the first argument and, if the second argument
+# names a file, the player sample listed there (a JSON list of names; like
+# the real server's, it can be shorter than the count). Names are made up. The
 # build sandbox has no internet to pull the real image.
 import json
 import socket
@@ -9,6 +11,7 @@ import sys
 import threading
 
 COUNT_FILE = sys.argv[1]
+SAMPLE_FILE = sys.argv[2] if len(sys.argv) > 2 else None
 
 
 def varint(n):
@@ -54,9 +57,16 @@ def handle(conn):
             pkt = read_packet(conn)
             if pkt[0] == 0x00 and len(pkt) == 1:
                 online = int(open(COUNT_FILE).read())
+                players = {"max": 20, "online": online}
+                if SAMPLE_FILE:
+                    names = json.load(open(SAMPLE_FILE))
+                    players["sample"] = [
+                        {"name": n, "id": "00000000-0000-0000-0000-000000000000"}
+                        for n in names
+                    ]
                 status = {
                     "version": {"name": "fake 1.20.1", "protocol": 763},
-                    "players": {"max": 20, "online": online},
+                    "players": players,
                     "description": {"text": "test"},
                 }
                 body = json.dumps(status).encode()

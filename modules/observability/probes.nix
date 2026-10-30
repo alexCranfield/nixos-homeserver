@@ -175,6 +175,7 @@ in
       path = [
         mcMonitor
         pkgs.coreutils
+        pkgs.jq
       ];
       script = ''
         up=0
@@ -189,6 +190,24 @@ in
           seconds=$(printf '%d.%09d' $((ns / 1000000000)) $((ns % 1000000000)))
         fi
 
+        # Who is on, from the status ping's player sample (`players.sample`,
+        # which mc-monitor's JSON prints as `Sample`). The server decides what
+        # is in it: vanilla lists at most 12 names, and a pack can hide it, so
+        # this can be shorter than the count or empty. A second, best-effort
+        # ping, so the count above never depends on it. Only names that are
+        # valid Minecraft names (1 to 16 of A-Z, a-z, 0-9 and _) are kept, so
+        # nothing else reaches a label; `\` and `"` are escaped as well, which
+        # a valid name never needs. \A and \z are the ends of the string,
+        # where ^ and $ would also match at a newline inside it.
+        names=
+        if [[ $up == 1 ]]; then
+          names=$(timeout 12 mc-monitor status --json --host 127.0.0.1 --port ${toString minecraftPort} \
+            --timeout 10s 2>/dev/null \
+            | jq -r '(.server_info.players.Sample // .server_info.players.sample // [])
+                | map(.name? | select(type == "string" and test("\\A[A-Za-z0-9_]{1,16}\\z")))
+                | unique | .[] | gsub("\\\\"; "\\\\") | gsub("\""; "\\\"")' 2>/dev/null) || names=
+        fi
+
         # As tailscale-state: renamed into place, so never half a file.
         tmp=$(mktemp ${textDir}/.minecraft.XXXXXX)
         {
@@ -196,12 +215,19 @@ in
           echo "# TYPE homeserver_minecraft_up gauge"
           echo "homeserver_minecraft_up $up"
           if [[ $up == 1 ]]; then
-            echo "# HELP homeserver_minecraft_players_online Players on the server; a count only, never names."
+            echo "# HELP homeserver_minecraft_players_online Players on the server, from the status ping's count."
             echo "# TYPE homeserver_minecraft_players_online gauge"
             echo "homeserver_minecraft_players_online $players"
             echo "# HELP homeserver_minecraft_response_seconds Time for the status ping, including starting mc-monitor."
             echo "# TYPE homeserver_minecraft_response_seconds gauge"
             echo "homeserver_minecraft_response_seconds $seconds"
+            if [[ -n $names ]]; then
+              echo "# HELP homeserver_minecraft_player_online 1 for each player named in the status ping's sample; the sample can be shorter than the count."
+              echo "# TYPE homeserver_minecraft_player_online gauge"
+              while IFS= read -r name; do
+                echo "homeserver_minecraft_player_online{player=\"$name\"} 1"
+              done <<< "$names"
+            fi
           fi
         } > "$tmp"
         chmod 0644 "$tmp"

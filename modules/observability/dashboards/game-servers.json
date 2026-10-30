@@ -16,55 +16,6 @@
   "description": "Players online, whether the server answers and how fast (#168), then the containers' CPU, memory and network from cAdvisor (ticket 3.4, #25). Tick rate and heap are still to come.",
   "panels": [
     {
-      "id": 1,
-      "type": "timeseries",
-      "title": "Players online",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 16,
-        "x": 0,
-        "y": 0
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "decimals": 0,
-          "min": 0,
-          "custom": {
-            "lineInterpolation": "stepAfter",
-            "fillOpacity": 15
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "homeserver_minecraft_players_online",
-          "legendFormat": "players online"
-        }
-      ]
-    },
-    {
       "id": 2,
       "type": "stat",
       "title": "Server answering",
@@ -74,8 +25,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 16,
+        "w": 12,
+        "x": 0,
         "y": 0
       },
       "fieldConfig": {
@@ -146,9 +97,9 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 8,
-        "x": 16,
-        "y": 4
+        "w": 12,
+        "x": 12,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -181,6 +132,92 @@
       ]
     },
     {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Players online",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "lineInterpolation": "stepAfter",
+            "fillOpacity": 15,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "mode": "normal",
+                  "group": "players"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 40
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "all",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "homeserver_minecraft_players_online",
+          "legendFormat": "players online"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "homeserver_minecraft_player_online",
+          "legendFormat": "{{player}}"
+        }
+      ]
+    },
+    {
       "id": 4,
       "type": "timeseries",
       "title": "CPU",
@@ -192,7 +229,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -235,7 +272,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -307,7 +344,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {

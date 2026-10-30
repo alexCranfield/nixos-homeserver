@@ -156,10 +156,33 @@ def minecraft_series():
     out = {}
     for panel in dash["panels"]:
         if panel["title"] in ("Players online", "Server answering", "Response time"):
+            # Players online has the count (refId A) and, as B, one series per
+            # name; those are read by minecraft_names.
             out[panel["title"]] = [
-                r["value"][1] for t in panel["targets"] for r in query(t["expr"])
+                r["value"][1]
+                for t in panel["targets"]
+                if t["refId"] == "A"
+                for r in query(t["expr"])
             ]
     return out
+
+
+def minecraft_names():
+    # The names the players panel draws, from its own B query: the label sets
+    # Prometheus returns, so a name that is wrong shows up here.
+    dash = json.load(open(DASHBOARD))
+    (panel,) = [p for p in dash["panels"] if p["title"] == "Players online"]
+    (target,) = [t for t in panel["targets"] if t["refId"] == "B"]
+    assert target["legendFormat"] == "{{player}}", target
+    return sorted(r["metric"]["player"] for r in query(target["expr"]))
+
+
+def wait_for_names(want, timeout=180):
+    deadline = time.monotonic() + timeout
+    while (got := minecraft_names()) != want:
+        assert time.monotonic() < deadline, f"wanted {want}, got {got}"
+        time.sleep(5)
+    return got
 
 
 def wait_for_minecraft(want_players, timeout=180):
@@ -174,8 +197,7 @@ def wait_for_minecraft(want_players, timeout=180):
 
 with subtest("the Minecraft player count reaches the dashboard's panels"):
     # Players online follows the server's own count, up to date within a
-    # scrape; the other two panels have data. No names anywhere: the stand-in
-    # reports none, and the metric is a bare count.
+    # scrape; the other two panels have data. The names are checked below.
     got = wait_for_minecraft("3")
     print(got)
     assert got["Server answering"] == ["1"], got
@@ -186,7 +208,43 @@ with subtest("the Minecraft player count reaches the dashboard's panels"):
     print(wait_for_minecraft("0"))
     text = nuc.succeed("cat /var/lib/prometheus-node-exporter-text/minecraft.prom")
     print(text)
-    assert re.fullmatch(r"(#[^\n]*\n|homeserver_minecraft_\w+ [0-9.]+\n)+", text), text
+    # The one label is the player's name; the next subtest checks which.
+    assert re.fullmatch(
+        r'(#[^\n]*\n|homeserver_minecraft_\w+(\{player="\w+"\})? [0-9.]+\n)+', text
+    ), text
+
+with subtest("the player sample's names reach the players panel, and only valid ones"):
+    # The stand-in lists five names: two valid, then one with a quote, one of
+    # 20 characters and one with a newline, none a Minecraft name. Only the
+    # first two may become series, and the count stays the server's own.
+    print(wait_for_names(["TestPlayerOne", "TestPlayerTwo"]))
+    text = nuc.succeed("cat /var/lib/prometheus-node-exporter-text/minecraft.prom")
+    assert 'bad' not in text and 'WayToo' not in text and 'newline' not in text, text
+    assert "homeserver_minecraft_players_online 0" in text, text
+    # A sample that names nobody (a pack that hides it) leaves only the count.
+    nuc.succeed("echo '[]' > /run/fake-mc/sample")
+    print(wait_for_names([]))
+    assert wait_for_minecraft("0")["Server answering"] == ["1"]
+    nuc.succeed("echo '[\"TestPlayerOne\"]' > /run/fake-mc/sample")
+    print(wait_for_names(["TestPlayerOne"]))
+    nuc.succeed("echo '[\"TestPlayerOne\", \"TestPlayerTwo\", \"bad\\\"name\"]' > /run/fake-mc/sample")
+    print(wait_for_names(["TestPlayerOne", "TestPlayerTwo"]))
+
+with subtest("the players graph sits with CPU, memory and network, on the same axis"):
+    dash = json.load(open(DASHBOARD))
+    grid = {p["title"]: p["gridPos"] for p in dash["panels"]}
+    ids = [p["id"] for p in dash["panels"]]
+    assert len(ids) == len(set(ids)), ids
+    players, cpu = grid["Players online"], grid["CPU"]
+    assert players["x"] == cpu["x"] and players["w"] == cpu["w"], (players, cpu)
+    assert players["y"] + players["h"] == cpu["y"], (players, cpu)
+    for title in ("Memory (working set, against the stack's limit)", "Network"):
+        assert grid[title]["x"] == players["x"] and grid[title]["w"] == players["w"], title
+    # The small panels sit above it, not beside it.
+    for title in ("Server answering", "Response time"):
+        assert grid[title]["y"] + grid[title]["h"] <= players["y"], title
+    tip = [p for p in dash["panels"] if p["title"] == "Players online"][0]["options"]["tooltip"]
+    assert tip["mode"] == "all", tip
 
 with subtest("negative control: a server that stops answering shows down, with no count"):
     nuc.succeed("systemctl stop fake-minecraft.service")
