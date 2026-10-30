@@ -26,6 +26,6 @@ pkgs.runCommand "alert-rules" { nativeBuildInputs = [ pkgs.prometheus.cli ]; } '
   cp ${rendered} rules.yml
   cp ${./alert-rules}/*.yml .
   promtool check rules rules.yml
-  promtool test rules events.yml host.yml stacks.yml
+  promtool test rules events.yml host.yml stacks.yml dns.yml
   touch $out
 ''

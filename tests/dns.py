@@ -1,7 +1,7 @@
 # Test script for tests/dns.nix. `nuc`, `router` and `client` are the test
 # driver's machines; NUC_IP and ROUTER_IP are defined by the Nix file in front
 # of this script. CLIENT_IP is the client's address; GRAFANA_PASSWORD is the
-# admin password the test gives Grafana.
+# admin password the test gives Grafana. NAS_IP is the NAS stand-in's address.
 #
 # LAN: local area network. DNS: Domain Name System. NXDOMAIN: the answer "no
 # such name". TCP: Transmission Control Protocol.
@@ -30,6 +30,17 @@ def dig(name, server=NUC_IP, qtype="A"):
     return client.succeed(
         f"dig +short +time=2 +tries=1 @{server} {name} {qtype}"
     ).strip()
+
+
+def wait_for_probe(job, server, value, timeout=180):
+    """Wait until Prometheus (on the nuc) holds probe_success == value for the
+    job and server, then return. It scrapes every 15 seconds."""
+    q = f"probe_success%7Bjob%3D%22{job}%22%2Cserver%3D%22{server}%22%7D"
+    nuc.wait_until_succeeds(
+        f"curl -fsS 'http://127.0.0.1:9090/api/v1/query?query={q}'"
+        f" | grep -F '\"value\":[' | grep -qF '\"{value}\"]'",
+        timeout=timeout,
+    )
 
 
 with subtest("resolves a normal name"):
@@ -254,3 +265,42 @@ with subtest("Blocky is up after a reboot"):
     nuc.wait_for_open_port(53, NUC_IP)
     print(nuc.succeed("systemctl show -p NRestarts blocky.service"))
     assert dig("example.test") == "192.0.2.10", dig("example.test")
+
+with subtest("both servers are probed and pass"):
+    for job in ("dns_resolve", "dns_blocked"):
+        for server in ("nuc", "nas"):
+            wait_for_probe(job, server, 1)
+
+with subtest("the NAS's address is not in the system closure"):
+    # Everything Prometheus and the exporter run from, their configuration
+    # included. The address reaches Prometheus only through the file that
+    # tmpfiles writes at boot (as sops does on the real machine).
+    for unit in ("prometheus", "prometheus-blackbox-exporter"):
+        path = nuc.succeed(f"readlink -f /etc/systemd/system/{unit}.service").strip()
+        closure = nuc.succeed(f"nix-store -qR {path}").split()
+        status, out = nuc.execute(f"grep -rlFI {NAS_IP} {' '.join(closure)}")
+        print(f"{unit}: grep exited {status}: {out!r}")
+        assert status == 1, (unit, status, out)
+    # Control: the same search finds it in the test's own copy, which the
+    # boot-time file rules refer to.
+    rules = nuc.succeed("readlink -f /etc/tmpfiles.d/00-nixos.conf").strip()
+    found = nuc.succeed(f"grep -rlFI {NAS_IP} $(nix-store -qR {rules})")
+    assert "dns-test-nas-targets" in found, found
+
+with subtest("a name that returns a real address fails the blocking probe"):
+    # Control for the NAS's pass above: the router stand-in answers the
+    # probe name with a real address, which the pass pattern must reject.
+    assert dig("doubleclick.net", server=ROUTER_IP) == "192.0.2.31"
+    assert dig("doubleclick.net", server=NAS_IP) == "0.0.0.0"
+
+with subtest("an empty blocklist fails the blocking probe, not the resolving one"):
+    nuc.succeed("/run/booted-system/specialisation/no-lists/bin/switch-to-configuration test")
+    nuc.wait_for_open_port(53, NUC_IP)
+    wait_for_probe("dns_blocked", "nuc", 0)
+    wait_for_probe("dns_resolve", "nuc", 1)
+    # The NAS is untouched.
+    wait_for_probe("dns_blocked", "nas", 1)
+    nuc.succeed("/run/booted-system/bin/switch-to-configuration test")
+    nuc.wait_for_open_port(53, NUC_IP)
+    # The lists load again after Blocky starts.
+    wait_for_probe("dns_blocked", "nuc", 1, timeout=300)

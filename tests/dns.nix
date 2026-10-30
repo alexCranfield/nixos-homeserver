@@ -7,12 +7,14 @@
 # only port 53 is reachable from the LAN; the nuc's own resolver is not Blocky;
 # and Blocky is back after a reboot.
 #
-# Three VMs (virtual machines). `nuc` runs the real host configuration, its
+# Four VMs (virtual machines). `nuc` runs the real host configuration, its
 # address from the router's DHCP (Dynamic Host Configuration Protocol)
 # reservation as in tests/network.nix. `router` stands in for the UniFi router
 # and for the internet: dnsmasq hands out the reservation, answers home.arpa
 # names and their reverse names, and gives fixed answers for the test's
 # "internet" names. `client` is a LAN device the router has no name for.
+# `nas` stands in for the NAS's Pi-hole, the second DNS server, which the nuc
+# only probes.
 #
 # What it does not cover: Unbound's recursion and DNSSEC (DNS Security
 # Extensions) validation, which need the internet and are checked on the nuc
@@ -36,8 +38,16 @@ let
   # The test's blocklists, one per group, with a name on each. `allowed.test`
   # is also on the allowlist, which must win. `adsyntax.test` is in adblock
   # syntax, to record whether Blocky reads it; nothing is asserted about it.
+  # `doubleclick.net` is the name the blocking probe asks for
+  # (homeserver.alerting.blockedProbeName, left at its default), so it is
+  # listed here as on the real lists.
+  # `doubleclick.net` is the name the blocking probe asks for
+  # (homeserver.alerting.blockedProbeName, left at its default), so it is
+  # listed here as on the real lists.
   adsList = pkgs.writeText "dns-test-ads.txt" ''
     ad.test
+    doubleclick.net
+    doubleclick.net
     allowed.test
     ||adsyntax.test^
   '';
@@ -64,6 +74,18 @@ pkgs.testers.runNixOSTest {
     let
       n = config.virtualisation.test.nodeNumber;
       routerIp = nodes.router.networking.primaryIPAddress;
+      # The NAS's address as Prometheus' file-based service discovery reads
+      # it, as the sops template will write it on the real machine (the
+      # address is private). In the store only because a test has no sops;
+      # the name is unique so dns.py can tell this file apart.
+      nasTargets = pkgs.writeText "dns-test-nas-targets" (
+        builtins.toJSON [
+          {
+            targets = [ nodes.nas.networking.primaryIPAddress ];
+            labels.server = "nas";
+          }
+        ]
+      );
     in
     {
       imports = [
@@ -128,9 +150,22 @@ pkgs.testers.runNixOSTest {
         services.unbound.settings.server.private-address = lib.mkForce [ ];
         homeserver.dns.insecureDomains = lib.mkForce [ ];
       };
+      # The negative control for the blocking probe: no blocklist entries, so
+      # the probe name resolves to its real address.
+      specialisation.no-lists.configuration = {
+        homeserver.dns.lists = lib.mkForce {
+          ads = [ ];
+          threats = [ ];
+        };
+      };
+      homeserver.alerting.dnsServers.secondaryTargetsFile = "/run/dns-test-sd/nas.json";
       systemd.tmpfiles.rules = [
         "d /run/dns-test 0700 root root -"
         "C /run/dns-test/private-hosts 0400 root root - ${privateHosts}"
+        # Its own directory, readable by Prometheus' user (/run/dns-test is
+        # root-only, for the private hosts).
+        "d /run/dns-test-sd 0755 root root -"
+        "C /run/dns-test-sd/nas.json 0444 root root - ${nasTargets}"
       ];
 
       services.unbound = {
@@ -191,6 +226,10 @@ pkgs.testers.runNixOSTest {
             # A public-looking name, and its subdomains, answering with a LAN
             # address: a DNS rebinding attempt.
             "/rebind.test/192.168.1.66"
+            # The probe names: real answers here, so the nuc's 0.0.0.0 for
+            # the blocked one is its own blocking.
+            "/example.com/192.0.2.30"
+            "/doubleclick.net/192.0.2.31"
           ];
         };
       };
@@ -200,6 +239,28 @@ pkgs.testers.runNixOSTest {
       ];
       networking.firewall.allowedTCPPorts = [ 53 ];
     };
+
+  # Stands in for the NAS's Pi-hole: answers the resolving probe's name, and
+  # 0.0.0.0 for the blocked one, as Pi-hole does.
+  nodes.nas = {
+    virtualisation.vlans = [ 1 ];
+    services.dnsmasq = {
+      enable = true;
+      resolveLocalQueries = false;
+      settings = {
+        interface = "eth1";
+        bind-interfaces = true;
+        no-hosts = true;
+        no-resolv = true;
+        address = [
+          "/example.com/192.0.2.20"
+          "/doubleclick.net/0.0.0.0"
+        ];
+      };
+    };
+    networking.firewall.allowedUDPPorts = [ 53 ];
+    networking.firewall.allowedTCPPorts = [ 53 ];
+  };
 
   nodes.client = {
     virtualisation.vlans = [ 1 ];
@@ -215,6 +276,7 @@ pkgs.testers.runNixOSTest {
       NUC_IP = ${builtins.toJSON reservedIp}
       ROUTER_IP = ${builtins.toJSON nodes.router.networking.primaryIPAddress}
       CLIENT_IP = ${builtins.toJSON nodes.client.networking.primaryIPAddress}
+      NAS_IP = ${builtins.toJSON nodes.nas.networking.primaryIPAddress}
       GRAFANA_PASSWORD = ${builtins.toJSON (import ./grafana-password.nix { inherit pkgs; }).password}
     ''
     + builtins.readFile ./dns.py;

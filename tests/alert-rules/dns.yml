@@ -1,0 +1,79 @@
+# DnsServerDown (for 2m) and DnsServerNotBlocking (for 15m): the LAN's two DNS
+# servers, probed from the nuc. The label `server` names the one, so the
+# summary never needs an address. 15 s is one scrape interval.
+rule_files:
+  - rules.yml
+
+evaluation_interval: 15s
+
+tests:
+  # DnsServerDown fires at its `for`, not 15 s before, naming the server.
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="dns_resolve",server="nas",instance="target"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 105s
+        alertname: DnsServerDown
+        exp_alerts: []
+      - eval_time: 120s
+        alertname: DnsServerDown
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: dns_resolve
+              server: nas
+              instance: target
+            exp_annotations:
+              summary: "DNS server nas does not resolve (for 2m)"
+              description: "The blackbox exporter's DNS lookup of example.com against nas fails. A dead secondary is noticed only on the day the nuc reboots."
+
+  # Healthy, and a blocking failure alone, do not raise DnsServerDown.
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="dns_resolve",server="nuc",instance="target"}'
+        values: "1x80"
+      - series: 'probe_success{job="dns_blocked",server="nuc",instance="target"}'
+        values: "0x80"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: DnsServerDown
+        exp_alerts: []
+
+  # DnsServerNotBlocking fires at its `for`, not 15 s before.
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="dns_blocked",server="nas",instance="target"}'
+        values: "0x80"
+    alert_rule_test:
+      - eval_time: 885s
+        alertname: DnsServerNotBlocking
+        exp_alerts: []
+      - eval_time: 900s
+        alertname: DnsServerNotBlocking
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: dns_blocked
+              server: nas
+              instance: target
+            exp_annotations:
+              summary: "DNS server nas does not block (for 15m)"
+              description: "A name on the blocklists, probed against nas, comes back with a real address instead of 0.0.0.0. Its lists may have failed to download."
+
+  # A boot's list load: ten minutes of failing, then blocking. Quiet
+  # throughout, including after recovery.
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="dns_blocked",server="nuc",instance="target"}'
+        values: "0x40 1x80"
+    alert_rule_test:
+      - eval_time: 600s
+        alertname: DnsServerNotBlocking
+        exp_alerts: []
+      - eval_time: 900s
+        alertname: DnsServerNotBlocking
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: DnsServerNotBlocking
+        exp_alerts: []

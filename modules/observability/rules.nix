@@ -30,6 +30,10 @@ let
     TailnetDisconnected.for = "2m";
     GatewayUnreachable.for = "2m";
     DnsFailing.for = "2m";
+    DnsServerDown.for = "2m";
+    # Longer than a list load: at boot Blocky resolves before its lists have
+    # loaded (it fails open), and that must not alert.
+    DnsServerNotBlocking.for = "15m";
     OomKill.for = "0s";
 
     # Threshold alerts: long durations, to ignore normal busy spells.
@@ -138,8 +142,8 @@ let
             (event "TargetDown" {
               rideOutGaps = false;
               expr = ''
-                (up{job!~"cadvisor|comin|blackbox_.+"} == 0)
-                or (up{job=~"blackbox_.+"} == 0 unless on() (${failed "prometheus-blackbox-exporter"}))
+                (up{job!~"cadvisor|comin|blackbox_.+|dns_.+"} == 0)
+                or (up{job=~"blackbox_.+|dns_.+"} == 0 unless on() (${failed "prometheus-blackbox-exporter"}))
                 or (up{job="cadvisor"} == 0 unless on() (${failed "cadvisor"}))
                 or (up{job="comin"} == 0 unless on() (${failed "comin"}))
               '';
@@ -183,6 +187,16 @@ let
               expr = ''probe_success{job="blackbox_dns"} == 0'';
               summary = "DNS lookups through the nuc's resolver fail (for ${t.DnsFailing.for})";
               description = "The blackbox exporter's DNS probe fails.";
+            })
+            (event "DnsServerDown" {
+              expr = ''probe_success{job="dns_resolve"} == 0'';
+              summary = "DNS server {{ $labels.server }} does not resolve (for ${t.DnsServerDown.for})";
+              description = "The blackbox exporter's DNS lookup of example.com against {{ $labels.server }} fails. A dead secondary is noticed only on the day the nuc reboots.";
+            })
+            (event "DnsServerNotBlocking" {
+              expr = ''probe_success{job="dns_blocked"} == 0'';
+              summary = "DNS server {{ $labels.server }} does not block (for ${t.DnsServerNotBlocking.for})";
+              description = "A name on the blocklists, probed against {{ $labels.server }}, comes back with a real address instead of 0.0.0.0. Its lists may have failed to download.";
             })
             (event "OomKill" {
               # Named containers only: cgroup v2 counts a kill in memory.events
