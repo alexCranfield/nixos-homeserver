@@ -1,6 +1,6 @@
 # LAN DNS design (ticket 7.x, #164)
 
-Date: 2026-10-29. Status: draft for Alex's review.
+Date: 2026-10-29. Status: approved by Alex 2026-10-30.
 
 ## Intent
 
