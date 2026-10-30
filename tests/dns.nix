@@ -83,6 +83,12 @@ pkgs.testers.runNixOSTest {
       # switches configuration, which would report it.
       system.activationScripts.setupSecrets = lib.mkForce "";
 
+      # The host runs Grafana, whose first start (database migrations) takes
+      # minutes on one emulated CPU (central processing unit), longer than
+      # grafana-admin-password.service waits for it, and the unit's failure
+      # fails the configuration switches below.
+      virtualisation.cores = 4;
+
       # The LAN port, configured by the host itself, as in tests/network.nix.
       virtualisation.interfaces = {
         eth1.vlan = 1;
@@ -208,6 +214,8 @@ pkgs.testers.runNixOSTest {
     ''
       NUC_IP = ${builtins.toJSON reservedIp}
       ROUTER_IP = ${builtins.toJSON nodes.router.networking.primaryIPAddress}
+      CLIENT_IP = ${builtins.toJSON nodes.client.networking.primaryIPAddress}
+      GRAFANA_PASSWORD = ${builtins.toJSON (import ./grafana-password.nix { inherit pkgs; }).password}
     ''
     + builtins.readFile ./dns.py;
 }

@@ -1,9 +1,13 @@
 # Test script for tests/dns.nix. `nuc`, `router` and `client` are the test
 # driver's machines; NUC_IP and ROUTER_IP are defined by the Nix file in front
-# of this script.
+# of this script. CLIENT_IP is the client's address; GRAFANA_PASSWORD is the
+# admin password the test gives Grafana.
 #
 # LAN: local area network. DNS: Domain Name System. NXDOMAIN: the answer "no
 # such name". TCP: Transmission Control Protocol.
+
+import json
+import re
 
 start_all()
 router.wait_for_unit("dnsmasq.service")
@@ -131,6 +135,64 @@ with subtest("the nuc's own resolver is not Blocky"):
     print(out)
     assert NUC_IP not in out, out
     assert ROUTER_IP in out, out
+
+with subtest("queries land in the log, named or by address"):
+    dig("example.test")
+    # Blocky writes in batches, every 30 seconds by default.
+    out = nuc.wait_until_succeeds(
+        "sudo -u postgres psql -At blocky -c "
+        "\"select client_ip, question_name from log_entries where question_name like 'example.test%'\"",
+        timeout=90,
+    )
+    print(out)
+    assert CLIENT_IP in out, out
+
+with subtest("Grafana's role reads and cannot write"):
+    nuc.succeed("sudo -u grafana psql -At blocky -c 'select count(*) from log_entries'")
+    status, out = nuc.execute("sudo -u grafana psql blocky -c 'delete from log_entries' 2>&1")
+    print(out)
+    assert status != 0 and "permission denied" in out, (status, out)
+    # Control: the same delete as the superuser succeeds, so the refusal above
+    # is the role's, not a typo. Nothing matches, so no rows go.
+    nuc.succeed(
+        "sudo -u postgres psql blocky -c \"delete from log_entries where question_name = 'no-such-name.invalid'\""
+    )
+
+with subtest("Grafana's data source reads the log through its socket"):
+    nuc.wait_for_unit("grafana.service")
+    nuc.wait_for_open_port(3000, "127.0.0.1")
+    body = json.dumps({"queries": [{
+        "refId": "A", "datasource": {"uid": "dns-querylog"}, "format": "table",
+        "rawSql": "select count(*) as n from log_entries",
+    }]})
+    out = nuc.succeed(
+        f"curl -fsS -u admin:{GRAFANA_PASSWORD} -H 'Content-Type: application/json'"
+        f" -d '{body}' http://127.0.0.1:3000/api/ds/query"
+    )
+    print(out)
+    assert '"error"' not in out and '"n"' in out, out
+
+with subtest("blocky owns the log's table and dns-watch can only read it"):
+    nuc.succeed("sudo -u postgres psql -At blocky -c \"select tableowner from pg_tables where tablename = 'log_entries'\" | grep -qx blocky")
+    # dns-watch (the alert queries, Task 5) has no OS user yet, so check the
+    # privileges rather than connecting as it.
+    nuc.succeed("sudo -u postgres psql -At blocky -c \"select has_table_privilege('dns-watch', 'log_entries', 'select')\" | grep -qx t")
+    nuc.succeed("sudo -u postgres psql -At blocky -c \"select has_table_privilege('dns-watch', 'log_entries', 'delete')\" | grep -qx f")
+
+with subtest("retention is 14 days"):
+    # The configuration file is named in the unit's command line.
+    unit = nuc.succeed("systemctl cat blocky.service")
+    config = re.search(r"--config\s+(/nix/store/\S+\.yaml)", unit)
+    assert config, unit
+    text = nuc.succeed(f"cat {config.group(1)}")
+    assert "logRetentionDays: 14" in text, text
+    # And Blocky itself read it that way.
+    nuc.succeed("journalctl -u blocky.service --no-pager | grep -F 'logRetentionDays: 14'")
+
+with subtest("DNS keeps answering with PostgreSQL stopped"):
+    nuc.succeed("systemctl stop postgresql")
+    assert dig("example.test") == "192.0.2.10", dig("example.test")
+    nuc.succeed("systemctl start postgresql")
 
 with subtest("Blocky comes up when the LAN address arrives late"):
     # As after a power cut, when the router boots slower than the nuc: lan0

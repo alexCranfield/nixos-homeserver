@@ -346,7 +346,22 @@ in
                 handleGrafanaManagedAlerts = false;
               };
             }
-          ];
+          ]
+          # Blocky's query log (#164), over PostgreSQL's socket as the
+          # `grafana` operating-system user: peer authentication, no
+          # password. The role can only SELECT (modules/dns/querylog.nix).
+          ++ lib.optional (config.homeserver.dns.listenAddresses != [ ]) {
+            name = "DNS query log";
+            type = "postgres";
+            uid = "dns-querylog";
+            url = "/run/postgresql";
+            user = "grafana";
+            editable = false;
+            jsonData = {
+              database = "blocky";
+              sslmode = "disable";
+            };
+          };
         };
         dashboards.settings = {
           apiVersion = 1;

@@ -30,7 +30,10 @@ let
   privateHostsCredential = "/run/credentials/blocky.service/private-hosts";
 in
 {
-  imports = [ ./unbound.nix ];
+  imports = [
+    ./querylog.nix
+    ./unbound.nix
+  ];
 
   options.homeserver.dns = {
     listenAddresses = lib.mkOption {
