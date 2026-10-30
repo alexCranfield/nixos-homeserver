@@ -1,5 +1,5 @@
 # Test script for tests/network.nix. `nuc` and `router` are the test driver's
-# machines; RESERVED_IP is defined by the Nix file in front of this script.
+# machines; RESERVED_IP, OFFERED_DNS and ROUTER_IP are defined by the Nix file in front of this script.
 #
 # LAN: local area network. DHCP: Dynamic Host Configuration Protocol.
 import re
@@ -43,6 +43,13 @@ with subtest("the router resolves nuc.home.arpa to the reserved address"):
     print(f"nuc.home.arpa -> {answer}")
     assert answer == RESERVED_IP, answer
     router.succeed("ping -c 1 -W 2 nuc.home.arpa")
+
+with subtest("the nuc resolves through the router, not the DNS server DHCP offers"):
+    out = nuc.succeed("resolvectl dns lan0")
+    print(out)
+    assert ROUTER_IP in out, out
+    assert OFFERED_DNS not in out, out
+    nuc.succeed("resolvectl query nuc.home.arpa")  # answered by the router
 
 with subtest("the firewall hides a listening port"):
     # The listener is really there, seen from the nuc itself.

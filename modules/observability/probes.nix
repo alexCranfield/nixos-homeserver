@@ -71,7 +71,7 @@ in
 {
   options.homeserver.alerting.gateway = lib.mkOption {
     type = lib.types.str;
-    default = "192.168.1.1";
+    default = config.homeserver.network.router;
     description = ''
       The LAN's default gateway, the router, which the blackbox exporter pings.
       `GatewayUnreachable` fires when it stops answering.
@@ -109,7 +109,7 @@ in
     services.prometheus.scrapeConfigs = [
       (probe "blackbox_gateway" "icmp" cfg.gateway)
       # systemd-resolved's stub, which is where the system's DNS goes
-      # (Pi-hole behind it today).
+      # (the router behind it, which forwards).
       (probe "blackbox_dns" "dns_local" "127.0.0.53")
     ];
 
