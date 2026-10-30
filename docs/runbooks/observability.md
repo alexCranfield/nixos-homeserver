@@ -42,10 +42,13 @@ folder:
 - **Node Exporter Full**: the host (grafana.com dashboard 1860).
 - **cadvisor dashboard**: containers, filtered by Compose project and
   container name (grafana.com dashboard 19792).
-- **Game servers**: players online over time, whether the Minecraft server
-  answers and how long its status ping takes (from `minecraft-status`, below),
-  then CPU, memory and network of the containers whose names start
-  `minecraft`. Memory is drawn from zero against the stack's own limit
+- **Game servers**: whether the Minecraft server answers and how long its
+  status ping takes (from `minecraft-status`, below), then players online
+  over time, then CPU, memory and network of the containers whose names start
+  `minecraft`. The last four are full width on one time axis, so a spike in
+  one lines up with the others. The players graph draws the count as a line
+  and each named player as a stacked band; hover (tooltip in "all" mode) to
+  see who was on. Memory is drawn from zero against the stack's own limit
   (`memoryMax`, dashed), so the headroom StackMemoryNearLimit watches is
   visible. Tick rate and heap are still to come (#168).
 
@@ -56,8 +59,16 @@ status with `mc-monitor status` (itzg's tool, from the author of the server's
 image) on `127.0.0.1:25565`, the port the container publishes, and writes
 `homeserver_minecraft_up`, `homeserver_minecraft_players_online` and
 `homeserver_minecraft_response_seconds` to node-exporter's textfile
-directory, as `tailscale-state` does. Only the count is exported, never who is
-on. When the server does not answer, or is still loading, `up` is 0 and the
+directory, as `tailscale-state` does. It also asks a second time with
+`mc-monitor status --json` and exports `homeserver_minecraft_player_online{player="<name>"} 1`
+for each name in the ping's player sample (`players.sample`). The sample is
+the server's to give: vanilla lists at most 12 names, and a pack can hide it,
+so there can be fewer names than the count, or none, and the count is always
+the number to trust. Only valid Minecraft names (1 to 16 of letters, digits
+and `_`) are kept; anything else is dropped, and `\` and `"` are escaped as
+well. The names exist only at runtime, in Prometheus and Grafana, never in
+this repo. They are kept for Prometheus's retention window, and anyone who
+can open Grafana over the tailnet can see who played and when. When the server does not answer, or is still loading, `up` is 0 and the
 other two are absent; the unit does not fail, as that is a result. The
 response time includes starting `mc-monitor`, so a few milliseconds are its
 own.

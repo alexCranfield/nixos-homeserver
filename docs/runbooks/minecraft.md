@@ -55,9 +55,10 @@ writes the setting into `server.properties` at each start; to check it:
 ### Player count
 
 The Game servers dashboard in Grafana ([observability.md](observability.md#minecraft-player-count))
-graphs how many players are on, whether the server answers, and how long its
-status ping takes. A host timer, `minecraft-status`, pings the published port
-and exports the count only, never names. It lives outside this stack on
+graphs how many players are on (hover for who, up to the 12 names the server
+puts in its status ping, if the pack does not hide them), whether the server
+answers, and how long its status ping takes. A host timer, `minecraft-status`,
+pings the published port and exports the count and those names. It lives outside this stack on
 purpose: changing `stacks/minecraft/` makes a deploy recreate the container
 and drop everyone, and this needed no change there. By hand, `sudo docker
 exec minecraft-server-1 rcon-cli list` also names who is on; keep that to the
