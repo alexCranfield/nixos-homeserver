@@ -27,8 +27,10 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    # Two builds at a time (below) makes the run longer than it was with four.
-    timeout-minutes: 45
+    # Two builds at a time (below) makes the run longer than it was with four,
+    # and the alerting test (#27) waits out real alert durations: a change to
+    # the host reruns every host VM test and took over 45 minutes.
+    timeout-minutes: 90
     # Whether this run may use the Nix store cache (#137): pushes to main, and
     # pull requests from branches of this repository. Not pull requests from
     # forks: an early commit's run could save outputs that were never built,

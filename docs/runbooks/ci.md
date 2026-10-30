@@ -249,7 +249,13 @@ killed by signal 9). The same commit's tests had passed on `main` only because
 they happened to start minutes apart. `max-jobs = 2` (the `extra_nix_config`
 of `install-nix-action`) keeps it to two tests, at most about 7 GB with the
 largest two (`docker`, 4 GB; `compose-stack`, 3 GB); the job timeout went from
-30 to 45 minutes to allow for the slower run. A runner killed this way shows no
+30 to 45 minutes to allow for the slower run, and to 90 on 2026-10-29
+(#27): the alerting test waits out real alert durations, retries and
+"nothing posted again" windows, and with it a change to the host, which
+reruns every host VM test, was cancelled at 45 minutes. A run that
+touches no host test still takes minutes, since the cache skips the
+unchanged checks. A cancelled run saves no cache, so a plain re-run of a
+timed-out job times out again. A runner killed this way shows no
 test failure in the log, only the shutdown message: look at which VM tests
 started just before it.
 
