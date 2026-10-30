@@ -69,6 +69,17 @@ pkgs.testers.runNixOSTest {
         address = [ "${lanIp}/24" ];
       };
 
+      # A stand-in for the Minecraft server, on the port the real stack
+      # publishes on the host, with three players on.
+      systemd.services.fake-minecraft = {
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          RuntimeDirectory = "fake-mc";
+          ExecStartPre = "${pkgs.runtimeShell} -c 'echo 3 > /run/fake-mc/players'";
+          ExecStart = "${pkgs.python3}/bin/python3 ${./fake-minecraft.py} /run/fake-mc/players";
+        };
+      };
+
       systemd.services.probe = {
         wantedBy = [ "multi-user.target" ];
         after = [ "docker.service" ];
@@ -91,6 +102,7 @@ pkgs.testers.runNixOSTest {
 
   testScript = ''
     LAN_IP = ${builtins.toJSON lanIp}
+    DASHBOARD = ${builtins.toJSON "${../modules/observability/dashboards/game-servers.json}"}
     PYTHON = ${builtins.toJSON "${pkgs.python3}/bin/python3"}
     GRAFANA_PASSWORD = ${builtins.toJSON (import ./grafana-password.nix { inherit pkgs; }).password}
   ''
