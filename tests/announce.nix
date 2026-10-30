@@ -98,6 +98,9 @@ pkgs.testers.runNixOSTest {
     ];
     # The host's stacks pull images, and the build sandbox has no internet.
     homeserver.stacks = lib.mkForce { };
+    # The LAN's DNS server would bind the real nuc's address, which this VM
+    # doesn't have; tests/dns.nix covers it.
+    homeserver.dns.listenAddresses = lib.mkForce [ ];
     # As in tests/notify.nix: no sops secret can be decrypted here, so the
     # files are copied out of the store at boot, where sops-nix would put
     # them.

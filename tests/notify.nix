@@ -72,6 +72,9 @@ pkgs.testers.runNixOSTest {
     # The host's stacks pull images, and the build sandbox has no internet;
     # tests/compose-stack.nix covers them.
     homeserver.stacks = lib.mkForce { };
+    # The LAN's DNS server would bind the real nuc's address, which this VM
+    # doesn't have; tests/dns.nix covers it.
+    homeserver.dns.listenAddresses = lib.mkForce [ ];
     # As in base-ssh.nix: the sops secrets cannot be decrypted here. Copied
     # out of the store at boot instead, as sops-nix would put them, since a
     # store path fails the assertion in modules/base/notify.nix.

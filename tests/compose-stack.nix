@@ -165,6 +165,9 @@ pkgs.testers.runNixOSTest {
     sops.secrets.fixture-env.sopsFile = ../secrets/test.yaml;
     # Only the test's stacks: the host's pull images, and there is no internet.
     homeserver.stacks = lib.mkForce stacks;
+    # The LAN's DNS server would bind the real nuc's address, which this VM
+    # doesn't have; tests/dns.nix covers it.
+    homeserver.dns.listenAddresses = lib.mkForce [ ];
 
     # What the registry and sops-nix do on the real host.
     systemd.services.test-setup = {

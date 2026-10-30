@@ -128,6 +128,9 @@ pkgs.testers.runNixOSTest {
       # Only the test's stack: the host's pull images, and there is no
       # internet.
       homeserver.stacks = lib.mkForce { game = game "tailscale0"; };
+      # The LAN's DNS server would bind the real nuc's address, which this VM
+      # doesn't have; tests/dns.nix covers it.
+      homeserver.dns.listenAddresses = lib.mkForce [ ];
       systemd.services.test-setup = {
         wantedBy = [ "multi-user.target" ];
         after = [ "docker.service" ];

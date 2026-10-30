@@ -152,6 +152,36 @@ with subtest("a full TCP scan over the tailnet finds SSH, the peer API and Serve
         print(f"scan {attempt} found {sorted(found)}, not all known ports")
     assert found == expected, sorted(found)
 
+with subtest("DNS answers the LAN, not the tailnet"):
+    # Port 53 joins SSH and the rest among the ports the tailnet must not
+    # reach. Checked here, before any access policy, which would otherwise
+    # close it too. `healthcheck.blocky` is answered by Blocky itself, so the
+    # answer doesn't depend on Unbound, which has no internet here.
+    def query(ip, tcp):
+        return f"dig {'+tcp ' if tcp else ''}+time=2 +tries=1 @{ip} healthcheck.blocky"
+
+    nuc.wait_for_open_port(53, LAN_IP)
+    for tcp in (False, True):
+        # Control: the LAN gets an answer.
+        out = headscale.succeed(query(LAN_IP, tcp))
+        assert "status: NOERROR" in out, out
+        # The tailnet gets none: dig exits 9 when no server answers.
+        status, out = client.execute(query(NUC_TS_IP, tcp))
+        print(out)
+        assert status == 9, (status, out)
+    # Blocky listens on the LAN address alone; this is the firewall's half.
+    rules = nuc.succeed("nft list chain inet nixos-fw input-allow")
+    dns_rules = sorted(
+        line.strip()
+        for line in rules.split("\n")
+        if re.search(r"dport (53\b|\{[^}]*\b53\b)", line)
+    )
+    print(dns_rules)
+    assert dns_rules == [
+        'iifname "lan0" tcp dport 53 accept',
+        'iifname "lan0" udp dport 53 accept',
+    ], dns_rules
+
 with subtest("Grafana answers over the tailnet through Serve"):
     out = client.succeed("curl -fsS http://nuc.tailnet:3000/api/health")
     print(out)

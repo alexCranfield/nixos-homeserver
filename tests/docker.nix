@@ -66,6 +66,9 @@ pkgs.testers.runNixOSTest {
     # The host's stacks pull images, and the build sandbox has no internet;
     # tests/compose-stack.nix covers them.
     homeserver.stacks = lib.mkForce { };
+    # The LAN's DNS server would bind the real nuc's address, which this VM
+    # doesn't have; tests/dns.nix covers it.
+    homeserver.dns.listenAddresses = lib.mkForce [ ];
     virtualisation.vlans = [
       1
       2

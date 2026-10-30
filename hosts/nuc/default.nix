@@ -18,11 +18,18 @@
     ../../modules/containers/docker.nix
     ../../modules/containers/compose-stack.nix
     ../../modules/observability
+    ../../modules/dns
     ../../stacks/hello
     ../../stacks/minecraft
   ];
 
   networking.hostName = "nuc";
+
+  # The LAN's DNS server (modules/dns), on the router's reservation for the
+  # nuc (hosts/nuc/network.nix): the address the router's DHCP hands out as
+  # the DNS server once Alex switches it over.
+  homeserver.dns.listenAddresses = [ "192.168.1.131" ];
+
   nixpkgs.hostPlatform = "x86_64-linux";
 
   # Panther Lake's Xe3 iGPU and NICs need a current kernel (ADR 0001), and
