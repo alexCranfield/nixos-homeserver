@@ -1,0 +1,166 @@
+# Threshold alerts on containers and stacks (group homeserver-stacks). Series
+# step and evaluation are both 15 s. A rate() over 5m extrapolates the
+# samples it has to the whole window, so on a counter that starts at 0 it
+# reads low until the window fills: at t seconds it shows the true rate times
+# (t + 7.5) / 300. Each rate-based case below is therefore sized so that the
+# expression first holds at a known time, and fires one `for` after that.
+rule_files:
+  - rules.yml
+evaluation_interval: 15s
+
+tests:
+  # ContainerCpuHigh: above 75% of the whole host (2 cores here), for 15m.
+  # 1.8 cores of 2 is 90%; the expression first holds at 255s (78.75%, where
+  # 240s reads 74.25%), so the alert fires at 1155s.
+  - interval: 15s
+    input_series:
+      - series: 'node_cpu_seconds_total{mode="idle",cpu="0"}'
+        values: "0+1x100"
+      - series: 'node_cpu_seconds_total{mode="idle",cpu="1"}'
+        values: "0+1x100"
+      - series: 'container_cpu_usage_seconds_total{name="mc"}'
+        values: "0+27x100"
+      - series: 'container_cpu_usage_seconds_total{id="/system.slice"}'
+        values: "0+27x100"
+    alert_rule_test:
+      - eval_time: 1140s
+        alertname: ContainerCpuHigh
+        exp_alerts: []
+      - eval_time: 1155s
+        alertname: ContainerCpuHigh
+        exp_alerts:
+          - exp_labels:
+              severity: threshold
+              name: mc
+            exp_annotations:
+              summary: "Container mc uses 90% of the host's CPU (threshold 75% for 15m)"
+              description: "One container has taken a large share of all cores for a long spell."
+
+  # 1.2 cores of 2 is 60%.
+  - interval: 15s
+    input_series:
+      - series: 'node_cpu_seconds_total{mode="idle",cpu="0"}'
+        values: "0+1x100"
+      - series: 'node_cpu_seconds_total{mode="idle",cpu="1"}'
+        values: "0+1x100"
+      - series: 'container_cpu_usage_seconds_total{name="mc"}'
+        values: "0+18x100"
+    alert_rule_test:
+      - eval_time: 1155s
+        alertname: ContainerCpuHigh
+        exp_alerts: []
+
+  # StackMemoryNearLimit: above 90% of the slice's limit, for 15m.
+  - interval: 15s
+    input_series:
+      - series: 'container_memory_working_set_bytes{id="/stack.slice/stack-hello.slice",instance="c"}'
+        values: "95x70"
+      - series: 'container_spec_memory_limit_bytes{id="/stack.slice/stack-hello.slice",instance="c"}'
+        values: "100x70"
+    alert_rule_test:
+      - eval_time: 885s
+        alertname: StackMemoryNearLimit
+        exp_alerts: []
+      - eval_time: 900s
+        alertname: StackMemoryNearLimit
+        exp_alerts:
+          - exp_labels:
+              severity: threshold
+              id: /stack.slice/stack-hello.slice
+              instance: c
+            exp_annotations:
+              summary: "Stack slice /stack.slice/stack-hello.slice uses 95% of its memory limit (threshold 90% for 15m)"
+              description: "The slice is near its memoryMax, so the kernel may start killing its processes."
+
+  # 89% is below the threshold.
+  - interval: 15s
+    input_series:
+      - series: 'container_memory_working_set_bytes{id="/stack.slice/stack-hello.slice",instance="c"}'
+        values: "89x70"
+      - series: 'container_spec_memory_limit_bytes{id="/stack.slice/stack-hello.slice",instance="c"}'
+        values: "100x70"
+    alert_rule_test:
+      - eval_time: 900s
+        alertname: StackMemoryNearLimit
+        exp_alerts: []
+
+  # No alert for a slice with no limit series, a limit of 0, or for the
+  # parent /stack.slice, whatever it reports.
+  - interval: 15s
+    input_series:
+      - series: 'container_memory_working_set_bytes{id="/stack.slice/stack-nolimit.slice",instance="c"}'
+        values: "95x70"
+      - series: 'container_memory_working_set_bytes{id="/stack.slice/stack-zero.slice",instance="c"}'
+        values: "95x70"
+      - series: 'container_spec_memory_limit_bytes{id="/stack.slice/stack-zero.slice",instance="c"}'
+        values: "0x70"
+      - series: 'container_memory_working_set_bytes{id="/stack.slice",instance="c"}'
+        values: "95x70"
+      - series: 'container_spec_memory_limit_bytes{id="/stack.slice",instance="c"}'
+        values: "100x70"
+    alert_rule_test:
+      - eval_time: 900s
+        alertname: StackMemoryNearLimit
+        exp_alerts: []
+
+  # StackMemoryStalled: "some" pressure above 10% of the time, for 10m.
+  # 4.5 s per 15 s step is 30%; the expression first holds at 105s (11.25%,
+  # where 90s reads 9.75%), so the alert fires at 705s.
+  - interval: 15s
+    input_series:
+      - series: 'container_pressure_memory_waiting_seconds_total{id="/stack.slice/stack-minecraft.slice"}'
+        values: "0+4.5x100"
+    alert_rule_test:
+      - eval_time: 690s
+        alertname: StackMemoryStalled
+        exp_alerts: []
+      - eval_time: 705s
+        alertname: StackMemoryStalled
+        exp_alerts:
+          - exp_labels:
+              severity: threshold
+              id: /stack.slice/stack-minecraft.slice
+            exp_annotations:
+              summary: "Stack slice /stack.slice/stack-minecraft.slice is stalled on memory 30% of the time (threshold 10% for 10m)"
+              description: "Processes in the slice wait for memory (pressure stall information, \"some\")."
+
+  # 5% is below the threshold.
+  - interval: 15s
+    input_series:
+      - series: 'container_pressure_memory_waiting_seconds_total{id="/stack.slice/stack-minecraft.slice"}'
+        values: "0+0.75x100"
+    alert_rule_test:
+      - eval_time: 705s
+        alertname: StackMemoryStalled
+        exp_alerts: []
+
+  # StackCpuStarved: "some" pressure above 25% of the time, for 15m.
+  # 9 s per 15 s step is 60%; the expression first holds at 135s, so
+  # the alert fires at 1035s.
+  - interval: 15s
+    input_series:
+      - series: 'container_pressure_cpu_waiting_seconds_total{id="/stack.slice/stack-minecraft.slice"}'
+        values: "0+9x100"
+    alert_rule_test:
+      - eval_time: 1020s
+        alertname: StackCpuStarved
+        exp_alerts: []
+      - eval_time: 1035s
+        alertname: StackCpuStarved
+        exp_alerts:
+          - exp_labels:
+              severity: threshold
+              id: /stack.slice/stack-minecraft.slice
+            exp_annotations:
+              summary: "Stack slice /stack.slice/stack-minecraft.slice waits for CPU 60% of the time (threshold 25% for 15m)"
+              description: "Processes in the slice are ready to run but wait for a core (pressure stall information, \"some\")."
+
+  # 20% is below the threshold.
+  - interval: 15s
+    input_series:
+      - series: 'container_pressure_cpu_waiting_seconds_total{id="/stack.slice/stack-minecraft.slice"}'
+        values: "0+3x100"
+    alert_rule_test:
+      - eval_time: 1035s
+        alertname: StackCpuStarved
+        exp_alerts: []

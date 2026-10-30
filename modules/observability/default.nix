@@ -9,7 +9,10 @@
 #  - cAdvisor: each container's CPU, memory and network;
 #  - comin's own exporter (modules/base/comin.nix): fetch, evaluation, build
 #    and deployment results, which #27's rules read;
-#  - itself.
+#  - itself;
+#  - the blackbox exporter, which probes the LAN gateway and the system's DNS,
+#    and node-exporter's textfile collector, which carries Tailscale's state
+#    (probes.nix).
 #
 # All of them are native services, not containers: ADR (Architecture Decision
 # Record) 0006 gives no container the Docker socket, and the metrics keep
@@ -85,6 +88,11 @@ let
       config.services.grafana.settings;
 in
 {
+  imports = [
+    ./alerting.nix
+    ./probes.nix
+  ];
+
   options.homeserver.observability.grafanaAdminPasswordFile = lib.mkOption {
     type = lib.types.path;
     description = ''
@@ -111,6 +119,8 @@ in
       listenAddress = "127.0.0.1";
       port = ports.prometheus;
       globalConfig.scrape_interval = "15s";
+      # The default is 1m, which would add up to a minute to every alert (#27).
+      globalConfig.evaluation_interval = "15s";
       # Whichever limit comes first. At this scale a month is expected to take
       # 1 to 2 GB; the size cap is there in case a new exporter is far chattier.
       retentionTime = "30d";
@@ -322,6 +332,19 @@ in
               url = "http://127.0.0.1:${toString ports.prometheus}";
               isDefault = true;
               editable = false;
+            }
+            # Shows what is firing and silenced (the alert rules, #27); the
+            # alerts themselves are posted by Alertmanager, not Grafana.
+            {
+              name = "Alertmanager";
+              type = "alertmanager";
+              uid = "alertmanager";
+              url = "http://127.0.0.1:9093";
+              editable = false;
+              jsonData = {
+                implementation = "prometheus";
+                handleGrafanaManagedAlerts = false;
+              };
             }
           ];
         };

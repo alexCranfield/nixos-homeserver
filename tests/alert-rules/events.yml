@@ -1,0 +1,444 @@
+# Event alerts (group homeserver-events). Series step and evaluation are both
+# 15 s. An alert is pending from the first evaluation at which its expression
+# holds and fires once that has lasted its `for`, so with a `for` of 1m and a
+# condition true from the start, 60s fires and 45s does not.
+rule_files:
+  - rules.yml
+evaluation_interval: 15s
+
+tests:
+  # TargetDown, for 1m.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="node",instance="localhost:9100"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 45s
+        alertname: TargetDown
+        exp_alerts: []
+      - eval_time: 60s
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: node
+              instance: "localhost:9100"
+            exp_annotations:
+              summary: "Scrape target node is down (for 1m)"
+              description: "Prometheus cannot scrape localhost:9100 (job node)."
+
+  - interval: 15s
+    input_series:
+      - series: 'up{job="node",instance="localhost:9100"}'
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 120s
+        alertname: TargetDown
+        exp_alerts: []
+
+  # cadvisor and comin down while their own unit has failed: the notifier
+  # posts that, so TargetDown stays quiet. node and prometheus are never held
+  # back.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="cadvisor",instance="localhost:9338"}'
+        values: "0x20"
+      - series: 'up{job="comin",instance="localhost:4243"}'
+        values: "0x20"
+      - series: 'up{job="node",instance="localhost:9100"}'
+        values: "0x20"
+      - series: 'up{job="prometheus",instance="localhost:9090"}'
+        values: "0x20"
+      - series: 'node_systemd_unit_state{name="cadvisor.service",state="failed"}'
+        values: "1x20"
+      - series: 'node_systemd_unit_state{name="comin.service",state="failed"}'
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 120s
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: node
+              instance: "localhost:9100"
+            exp_annotations:
+              summary: "Scrape target node is down (for 1m)"
+              description: "Prometheus cannot scrape localhost:9100 (job node)."
+          - exp_labels:
+              severity: event
+              job: prometheus
+              instance: "localhost:9090"
+            exp_annotations:
+              summary: "Scrape target prometheus is down (for 1m)"
+              description: "Prometheus cannot scrape localhost:9090 (job prometheus)."
+
+  # A clean stop (the unit is not failed) is reported.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="cadvisor",instance="localhost:9338"}'
+        values: "0x20"
+      - series: 'up{job="comin",instance="localhost:4243"}'
+        values: "0x20"
+      - series: 'node_systemd_unit_state{name="cadvisor.service",state="failed"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 60s
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: cadvisor
+              instance: "localhost:9338"
+            exp_annotations:
+              summary: "Scrape target cadvisor is down (for 1m)"
+              description: "Prometheus cannot scrape localhost:9338 (job cadvisor)."
+          - exp_labels:
+              severity: event
+              job: comin
+              instance: "localhost:4243"
+            exp_annotations:
+              summary: "Scrape target comin is down (for 1m)"
+              description: "Prometheus cannot scrape localhost:4243 (job comin)."
+
+  # Blackbox probe targets down: with the exporter's own unit failed the
+  # notifier posts that, so TargetDown stays quiet for both jobs; with the
+  # unit healthy (or no unit series) each job fires.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="blackbox_gateway",instance="localhost:9115"}'
+        values: "0x20"
+      - series: 'up{job="blackbox_dns",instance="localhost:9115"}'
+        values: "0x20"
+      - series: 'node_systemd_unit_state{name="prometheus-blackbox-exporter.service",state="failed"}'
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 120s
+        alertname: TargetDown
+        exp_alerts: []
+
+  - interval: 15s
+    input_series:
+      - series: 'up{job="blackbox_gateway",instance="localhost:9115"}'
+        values: "0x20"
+      - series: 'up{job="blackbox_dns",instance="localhost:9115"}'
+        values: "0x20"
+      - series: 'node_systemd_unit_state{name="prometheus-blackbox-exporter.service",state="failed"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 120s
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: blackbox_gateway
+              instance: "localhost:9115"
+            exp_annotations:
+              summary: "Scrape target blackbox_gateway is down (for 1m)"
+              description: "Prometheus cannot scrape localhost:9115 (job blackbox_gateway)."
+          - exp_labels:
+              severity: event
+              job: blackbox_dns
+              instance: "localhost:9115"
+            exp_annotations:
+              summary: "Scrape target blackbox_dns is down (for 1m)"
+              description: "Prometheus cannot scrape localhost:9115 (job blackbox_dns)."
+
+  # A failed notify-failure@ unit means the notifier could not post, so
+  # UnitFailed does not repeat it.
+  - interval: 15s
+    input_series:
+      - series: 'node_systemd_unit_state{name="notify-failure@sshd.service.service",state="failed"}'
+        values: "1x10"
+    alert_rule_test:
+      - eval_time: 60s
+        alertname: UnitFailed
+        exp_alerts: []
+
+  # UnitFailed, for 0s: a unit nobody watches fires at once; a watched one
+  # (sshd) does not, nor does a healthy one.
+  - interval: 15s
+    input_series:
+      - series: 'node_systemd_unit_state{name="foo.service",state="failed"}'
+        values: "1x10"
+      - series: 'node_systemd_unit_state{name="sshd.service",state="failed"}'
+        values: "1x10"
+      - series: 'node_systemd_unit_state{name="bar.service",state="failed"}'
+        values: "0x10"
+      - series: 'node_systemd_unit_state{name="sshdXservice",state="failed"}'
+        values: "1x10"
+    alert_rule_test:
+      - eval_time: 0s
+        alertname: UnitFailed
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              name: foo.service
+              state: failed
+            exp_annotations:
+              summary: "Unit foo.service failed"
+              description: "systemd reports foo.service in the failed state. The notifier does not watch this unit."
+          # An unescaped "." in the watched-unit regex would hide this one.
+          - exp_labels:
+              severity: event
+              name: sshdXservice
+              state: failed
+            exp_annotations:
+              summary: "Unit sshdXservice failed"
+              description: "systemd reports sshdXservice in the failed state. The notifier does not watch this unit."
+
+  # A missed scrape (stale samples at 45 s and 60 s, as Prometheus writes
+  # when a scrape fails) does not resolve UnitFailed: it stays firing
+  # throughout (keep_firing_for 2m). Once the series is gone for good, the
+  # alert resolves 2m after the last sample that held it (105 s), so not at
+  # 210 s and no longer at 240 s.
+  - interval: 15s
+    input_series:
+      - series: 'node_systemd_unit_state{name="foo.service",state="failed"}'
+        values: "1 1 1 stale stale 1 1 1 stale stale stale stale stale stale stale stale stale stale stale stale"
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: UnitFailed
+        exp_alerts: &foo_failed
+          - exp_labels:
+              severity: event
+              name: foo.service
+              state: failed
+            exp_annotations:
+              summary: "Unit foo.service failed"
+              description: "systemd reports foo.service in the failed state. The notifier does not watch this unit."
+      - eval_time: 45s
+        alertname: UnitFailed
+        exp_alerts: *foo_failed
+      - eval_time: 60s
+        alertname: UnitFailed
+        exp_alerts: *foo_failed
+      - eval_time: 75s
+        alertname: UnitFailed
+        exp_alerts: *foo_failed
+      - eval_time: 210s
+        alertname: UnitFailed
+        exp_alerts: *foo_failed
+      - eval_time: 240s
+        alertname: UnitFailed
+        exp_alerts: []
+
+  # CominFetchFailed, for 30m.
+  - interval: 15s
+    input_series:
+      - series: 'comin_last_fetch_failed{job="comin"}'
+        values: "1x130"
+    alert_rule_test:
+      - eval_time: 1785s
+        alertname: CominFetchFailed
+        exp_alerts: []
+      - eval_time: 1800s
+        alertname: CominFetchFailed
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: comin
+            exp_annotations:
+              summary: "comin cannot fetch the repository (for 30m)"
+              description: "comin's last fetch failed, so the host is not following main."
+
+  - interval: 15s
+    input_series:
+      - series: 'comin_last_fetch_failed{job="comin"}'
+        values: "0x130"
+    alert_rule_test:
+      - eval_time: 1800s
+        alertname: CominFetchFailed
+        exp_alerts: []
+
+  # CominEvalFailed, for 0s.
+  - interval: 15s
+    input_series:
+      - series: 'comin_last_eval_failed{job="comin"}'
+        values: "1x10"
+      - series: 'comin_last_eval_failed{job="other"}'
+        values: "0x10"
+    alert_rule_test:
+      - eval_time: 0s
+        alertname: CominEvalFailed
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: comin
+            exp_annotations:
+              summary: "comin cannot evaluate the configuration"
+              description: "comin's last evaluation failed, so a deploy of the new commit did not start."
+
+  # CominBuildFailed, for 5m.
+  - interval: 15s
+    input_series:
+      - series: 'comin_last_build_failed{job="comin"}'
+        values: "1x30"
+    alert_rule_test:
+      - eval_time: 285s
+        alertname: CominBuildFailed
+        exp_alerts: []
+      - eval_time: 300s
+        alertname: CominBuildFailed
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: comin
+            exp_annotations:
+              summary: "comin cannot build the configuration (for 5m)"
+              description: "comin's last build failed. comin also reports a build cancelled by a newer commit this way, hence the wait."
+
+  # A build that failed and was then replaced by a good one clears before 5m.
+  - interval: 15s
+    input_series:
+      - series: 'comin_last_build_failed{job="comin"}'
+        values: "1x10 0x20"
+    alert_rule_test:
+      - eval_time: 300s
+        alertname: CominBuildFailed
+        exp_alerts: []
+
+  # TailnetDisconnected, for 2m.
+  - interval: 15s
+    input_series:
+      - series: 'homeserver_tailscale_running{job="node"}'
+        values: "0x20"
+      - series: 'homeserver_tailscale_health_messages{job="node"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 105s
+        alertname: TailnetDisconnected
+        exp_alerts: []
+      - eval_time: 120s
+        alertname: TailnetDisconnected
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: node
+            exp_annotations:
+              summary: "The nuc is not connected to the tailnet (for 2m)"
+              description: "Tailscale is not running and logged in."
+
+  # Health warnings alone do not: the metric is for dashboards.
+  - interval: 15s
+    input_series:
+      - series: 'homeserver_tailscale_running{job="node"}'
+        values: "1x20"
+      - series: 'homeserver_tailscale_health_messages{job="node"}'
+        values: "2x20"
+    alert_rule_test:
+      - eval_time: 120s
+        alertname: TailnetDisconnected
+        exp_alerts: []
+
+  # Connected and healthy.
+  - interval: 15s
+    input_series:
+      - series: 'homeserver_tailscale_running{job="node"}'
+        values: "1x20"
+      - series: 'homeserver_tailscale_health_messages{job="node"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 120s
+        alertname: TailnetDisconnected
+        exp_alerts: []
+
+  # tailscaled itself failed: the notifier posts that.
+  - interval: 15s
+    input_series:
+      - series: 'homeserver_tailscale_running{job="node"}'
+        values: "0x20"
+      - series: 'node_systemd_unit_state{name="tailscaled.service",state="failed"}'
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 120s
+        alertname: TailnetDisconnected
+        exp_alerts: []
+
+  # GatewayUnreachable, for 2m.
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="blackbox_gateway",instance="gateway"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 105s
+        alertname: GatewayUnreachable
+        exp_alerts: []
+      - eval_time: 120s
+        alertname: GatewayUnreachable
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: blackbox_gateway
+              instance: gateway
+            exp_annotations:
+              summary: "The LAN gateway does not answer ping (for 2m)"
+              description: "The blackbox exporter's ICMP probe of the gateway fails. The LAN is probably down."
+
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="blackbox_gateway",instance="gateway"}'
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 120s
+        alertname: GatewayUnreachable
+        exp_alerts: []
+
+  # DnsFailing, for 2m.
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="blackbox_dns",instance="resolver"}'
+        values: "0x20"
+    alert_rule_test:
+      - eval_time: 105s
+        alertname: DnsFailing
+        exp_alerts: []
+      - eval_time: 120s
+        alertname: DnsFailing
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: blackbox_dns
+              instance: resolver
+            exp_annotations:
+              summary: "DNS lookups through the nuc's resolver fail (for 2m)"
+              description: "The blackbox exporter's DNS probe fails."
+
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="blackbox_dns",instance="resolver"}'
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 120s
+        alertname: DnsFailing
+        exp_alerts: []
+
+  # OomKill, for 0s: a counter rise of 1 fires at the sample that shows it,
+  # naming the container. cgroup v2 counts one kill on the container's scope
+  # and on each ancestor slice (here with no name label), yet only the named
+  # container alerts, once.
+  - interval: 15s
+    input_series:
+      - series: 'container_oom_events_total{name="game",id="/docker/abc"}'
+        values: "0 0 0 1 1 1 1 1"
+      - series: 'container_oom_events_total{id="/stack.slice/stack-x.slice"}'
+        values: "0 0 0 1 1 1 1 1"
+      - series: 'container_oom_events_total{id="/stack.slice"}'
+        values: "0 0 0 1 1 1 1 1"
+      - series: 'container_oom_events_total{id="/"}'
+        values: "0 0 0 1 1 1 1 1"
+      - series: 'container_oom_events_total{name="quiet",id="/docker/def"}'
+        values: "0x7"
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: OomKill
+        exp_alerts: []
+      - eval_time: 45s
+        alertname: OomKill
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              name: game
+              id: /docker/abc
+            exp_annotations:
+              summary: "Out-of-memory kill in container game"
+              description: "The kernel killed a process for running out of memory in container game (cAdvisor's container_oom_events_total rose in the last 5 minutes)."

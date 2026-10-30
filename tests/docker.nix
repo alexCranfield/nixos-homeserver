@@ -59,6 +59,8 @@ pkgs.testers.runNixOSTest {
   nodes.nuc = {
     imports = [
       ../hosts/nuc
+      # No sops secret here; the notifier posts to a sink.
+      ./notify-sink.nix
       (import ./grafana-password.nix { inherit pkgs; }).module
     ];
     # The host's stacks pull images, and the build sandbox has no internet;
