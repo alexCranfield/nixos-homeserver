@@ -295,6 +295,23 @@ recursion and DNSSEC are checked on the nuc after deploy.
   "stops blocking" alert's duration is longer than a list load, so a boot
   doesn't post.
 
+### Turning on IPv6 later (Alex, 2026-10-29)
+
+Alex may turn IPv6 on at the router later. When it is on, UniFi by default
+advertises the router itself as an IPv6 DNS server, and devices would then
+send some lookups there: unblocked and missing from the query log, with
+nothing visibly broken. So this ticket stays IPv4-only but prepares for it:
+
+- Blocky's listen addresses are one option (a list), so adding IPv6 is one
+  line.
+- The firewall rule for port 53 is on `lan0`, so it already covers IPv6.
+
+The rest is #175, done in one change with the router
+setting: a fixed ULA address for the nuc (not one from the ISP's prefix,
+which can change), Blocky listening on it, the router advertising it as
+the IPv6 DNS server instead of itself, and a check that nothing new is
+reachable from outside.
+
 ## Left to the builder
 
 - Blocky's and Unbound's exact settings: cache sizes, timeouts, Blocky's
