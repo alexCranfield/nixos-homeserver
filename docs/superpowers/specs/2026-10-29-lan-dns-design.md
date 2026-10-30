@@ -163,6 +163,13 @@ LAN device ──► Blocky (lan0:53) ──► Unbound (127.0.0.1) ──► ro
 - Blocked names get Blocky's default answer (`0.0.0.0` and `::`), as
   Pi-hole gave.
 - Lists refresh daily.
+- The lists are in two groups, so the log and the alerts can tell them
+  apart (Alex, 2026-10-29):
+  - **ads**: StevenBlack, EasyList, EasyPrivacy, WindowsSpyBlocker. Hits
+    are normal and only counted.
+  - **threats**: HaGeZi's Threat Intelligence Feeds and DandelionSprout's
+    anti-malware list. A hit means a device tried to reach a known
+    malware, phishing or command-and-control domain.
 
 ### Local names
 
@@ -221,6 +228,29 @@ thresholds tunable in `modules/observability/rules.nix` like the others:
 
 What the nuc can't see: a fault in the router's DHCP, such as it no longer
 handing out the nuc's address. The runbook covers checking it by hand.
+
+### Suspicious-activity alerts (Alex, 2026-10-29)
+
+The blocklists already stop known-bad domains, but nobody is told when
+one is hit. From the query log, these alert on Discord, naming the device:
+
+- **A threat-list hit**: any lookup blocked by the threats group, with the
+  domain in the post. Event alert, posts at once.
+- **An NXDOMAIN burst**: a device whose rate of "no such name" answers jumps
+  well above its usual. Malware generating random domain names to find its
+  controller does this; so do broken devices. Threshold alert.
+- **A new device**: a client address the log has never seen before.
+
+Prometheus can't query PostgreSQL, so a timer on the nuc runs the queries
+every minute and writes the counts to node-exporter's textfile directory,
+as `tailscale-state` does (`modules/observability/probes.nix`); the rules
+alert on those metrics. The exact thresholds are the builder's, tuned in
+the noise review like #27's.
+
+Only lookups that reach the nuc are seen. Lookups a device sends to the
+NAS (the secondary) aren't in this log until the NAS runs the same module.
+Connection-level detection, which DNS can't see, is #176: the router's own
+threat detection, forwarded to the nuc.
 
 ### Changes on the router and the NAS (Alex)
 
