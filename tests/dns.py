@@ -231,6 +231,36 @@ with subtest("a threat-list lookup becomes a metric naming the client and domain
     # The client has no name at the router, so its label is its address.
     wait_for_metric('homeserver_dns_threat_blocks{client="%s",domain="threat.test"}' % CLIENT_IP, ">0")
 
+with subtest("random subdomains of one threat domain are one series"):
+    # Blocked, as a generated name under a threat domain would be.
+    assert dig("rnd-first.sub.threat.test") == "0.0.0.0"
+    for i in range(30):
+        client.execute(f"dig +short +time=2 +tries=1 @{NUC_IP} rnd{i}.sub.threat.test")
+    wait_for_metric('homeserver_dns_threat_blocks{client="%s",domain="threat.test"}' % CLIENT_IP, ">20")
+    lines = [
+        l for l in nuc.succeed(f"cat {PROM_FILE}").splitlines()
+        if l.startswith("homeserver_dns_threat_blocks{") and f'client="{CLIENT_IP}"' in l
+    ]
+    print(lines)
+    assert len(lines) == 1 and 'domain="threat.test"' in lines[0], lines
+
+with subtest("only the top 5 domains per client are kept, the rest rolled up"):
+    for n in range(8):
+        psql(
+            "insert into log_entries (request_ts, client_ip, client_name, duration_ms, reason, response_type, "
+            "question_type, question_name, effective_tldp, answer, response_code, hostname) "
+            f"select now(), '198.51.100.20', '198.51.100.20', 1, 'BLOCKED (threats)', 'BLOCKED', 'A', "
+            f"'x.top{n}.test', 'top{n}.test', '0.0.0.0', 'NOERROR', 'nuc' from generate_series(1, {10 - n})"
+        )
+    nuc.succeed("systemctl start dns-watch.service")
+    prom = nuc.succeed(f"cat {PROM_FILE}")
+    mine = [l for l in prom.splitlines() if 'client="198.51.100.20"' in l and "threat_blocks" in l]
+    print(mine)
+    assert len(mine) == 6, mine
+    # top5..top7 have 5+4+3 = 12 rows between them, summed.
+    assert 'domain="(other)"} 12' in "\n".join(mine), mine
+    assert 'domain="top0.test"} 10' in "\n".join(mine), mine
+
 with subtest("an ad block is not a threat"):
     dig("ad.test")
     nuc.wait_until_succeeds(
@@ -254,14 +284,23 @@ with subtest("an NXDOMAIN burst raises the recent rate"):
     # The baseline is present beside it (the rule joins on the two).
     assert metric('homeserver_dns_nxdomain_baseline{client="%s"}' % CLIENT_IP) is not None
 
+INSERT_ROW = (
+    "insert into log_entries (request_ts, client_ip, client_name, duration_ms, reason, response_type, "
+    "question_type, question_name, effective_tldp, answer, response_code, hostname) "
+    "values ({when}, '{ip}', '{ip}', 1, 'RESOLVED', 'RESOLVED', 'A', "
+    "'{ip}.test', 'test', 'A (192.0.2.1)', 'NOERROR', 'nuc')"
+)
+
 with subtest("a client's first entry in the last 10 minutes makes it new"):
     # A client the log has never seen: one row, as Blocky would write it.
-    psql(
-        "insert into log_entries (request_ts, client_ip, client_name, duration_ms, reason, response_type, "
-        "question_type, question_name, effective_tldp, answer, response_code, hostname) "
-        "values (now(), '198.51.100.7', '198.51.100.7', 1, 'RESOLVED', 'RESOLVED', 'A', "
-        "'fresh.test', 'test', 'A (192.0.2.1)', 'NOERROR', 'nuc')"
-    )
+    psql(INSERT_ROW.format(when="now()", ip="198.51.100.7"))
+    # Negative control: the log is only minutes old (this test just started
+    # it), so nobody is new, as after an install or a trim.
+    assert int(psql("select count(*) from log_entries where request_ts < now() - interval '1 hour'")) == 0
+    nuc.succeed("systemctl start dns-watch.service")
+    assert "homeserver_dns_new_client{" not in nuc.succeed(f"cat {PROM_FILE}")
+    # A log that has history: one row two days old, for another client.
+    psql(INSERT_ROW.format(when="now() - interval '2 days'", ip="198.51.100.6"))
     wait_for_metric('homeserver_dns_new_client{client="198.51.100.7"}', "==1")
     # The real client's first entry was at the start of the test: it is new
     # only if that is under 10 minutes ago. Either way the metric must agree
@@ -279,12 +318,7 @@ with subtest("a client's first entry in the last 10 minutes makes it new"):
     # Control: a client whose first entry is an hour old is not new, though
     # it asks now too.
     for when in ("now() - interval '1 hour'", "now()"):
-        psql(
-            "insert into log_entries (request_ts, client_ip, client_name, duration_ms, reason, response_type, "
-            "question_type, question_name, effective_tldp, answer, response_code, hostname) "
-            f"values ({when}, '198.51.100.8', '', 1, 'RESOLVED', 'RESOLVED', 'A', "
-            "'old.test', 'test', 'A (192.0.2.1)', 'NOERROR', 'nuc')"
-        )
+        psql(INSERT_ROW.format(when=when, ip="198.51.100.8"))
     nuc.succeed("systemctl start dns-watch.service")
     assert metric('homeserver_dns_new_client{client="198.51.100.8"}') is None
     assert metric('homeserver_dns_new_client{client="198.51.100.7"}') == 1
@@ -305,7 +339,7 @@ with subtest("label values are escaped"):
         "insert into log_entries (request_ts, client_ip, client_name, duration_ms, reason, response_type, "
         "question_type, question_name, effective_tldp, answer, response_code, hostname) "
         "values (now(), '198.51.100.9', 'a\\b\"c', 1, 'BLOCKED (threats)', 'BLOCKED', 'A', "
-        "'esc.test', 'test', '0.0.0.0', 'NOERROR', 'nuc')"
+        "'esc.test', 'esc.test', '0.0.0.0', 'NOERROR', 'nuc')"
     )
     nuc.succeed("systemctl start dns-watch.service")
     prom = nuc.succeed(f"cat {PROM_FILE}")
@@ -338,6 +372,8 @@ with subtest("the cap deletes the oldest rows, and nothing while under it"):
         "'RESOLVED', 'RESOLVED', 'A', 'filler-' || i || '.' || repeat('x', 200) || '.test', 'test', "
         "'A (192.0.2.1)', 'NOERROR', 'nuc' from generate_series(1, 10000) i"
     )
+    # As autovacuum would: the job reads the planner's row estimate.
+    psql("analyze log_entries")
     rows = int(psql("select count(*) from log_entries"))
     size = int(psql("select pg_total_relation_size('log_entries')"))
     print(f"{rows} rows, {size} bytes")
@@ -359,7 +395,7 @@ with subtest("the cap deletes the oldest rows, and nothing while under it"):
     # The oldest are gone, the newest remain, deleted in time order.
     assert psql("select count(*) from log_entries where question_name like 'filler-1.%'") == "0"
     assert psql("select count(*) from log_entries where question_name like 'filler-10000.%'") == "1"
-    assert psql("select count(*) from log_entries where question_name like 'fresh.test%'") == "1"
+    assert psql("select count(*) from log_entries where question_name like '198.51.100.7.test%'") == "1"
     # Vacuumed (DELETE alone frees no file space).
     nuc.wait_until_succeeds(
         "sudo -u postgres psql -At blocky -c "
@@ -376,6 +412,18 @@ with subtest("the cap deletes the oldest rows, and nothing while under it"):
     # nothing more.
     nuc.succeed("systemctl start dns-querylog-cap.service")
     assert int(psql("select count(*) from log_entries")) == left
+    # A cap far below the table never empties it: at least 1000 rows stay.
+    m = re.search(r"-f (\S+)", cap_script())
+    assert m, cap_script()
+    sql_file = m.group(1)
+    nuc.succeed(f"sudo -u postgres psql -q -d blocky -v cap=1000 -f {sql_file}")
+    kept = int(psql("select count(*) from log_entries"))
+    print(f"{kept} rows after a 1000-byte cap")
+    assert kept >= 1000, kept
+    # An empty table over the cap: the job ends cleanly.
+    psql("delete from log_entries")
+    nuc.succeed(f"sudo -u postgres psql -q -d blocky -v cap=1000 -v ON_ERROR_STOP=1 -f {sql_file}")
+    assert psql("select count(*) from log_entries") == "0"
     nuc.succeed("/run/booted-system/bin/switch-to-configuration test")
 
 with subtest("Grafana's role reads and cannot write"):

@@ -13,18 +13,30 @@
 -- `response_code` is the DNS response code's name, "NXDOMAIN" for no such
 -- name.
 
+-- The domain is the registrable one (Blocky's effective_tldp, the name itself
+-- where it is empty), so random subdomains of one threat domain are one
+-- series, not one alert each. At most 5 per client, the most asked first;
+-- the rest are summed into "(other)".
 SELECT line FROM (
   SELECT 1 AS ord, '# HELP homeserver_dns_threat_blocks Lookups blocked by a threat list in the last 5 minutes.' AS line
   UNION ALL SELECT 2, '# TYPE homeserver_dns_threat_blocks gauge'
   UNION ALL
   SELECT 3, format('homeserver_dns_threat_blocks{client="%s",domain="%s"} %s', e.client, e.domain, t.n)
   FROM (
-    SELECT coalesce(nullif(client_name, ''), client_ip::text) AS client,
-           rtrim(question_name, '.') AS domain,
-           count(*) AS n
-    FROM log_entries
-    WHERE request_ts > now() - interval '5 minutes'
-      AND reason ILIKE '%threats%'
+    SELECT client, CASE WHEN rk <= 5 THEN domain ELSE '(other)' END AS domain, sum(n) AS n
+    FROM (
+      SELECT client, domain, n,
+             row_number() OVER (PARTITION BY client ORDER BY n DESC, domain) AS rk
+      FROM (
+        SELECT coalesce(nullif(client_name, ''), client_ip::text) AS client,
+               coalesce(nullif(rtrim(effective_tldp, '.'), ''), rtrim(question_name, '.')) AS domain,
+               count(*) AS n
+        FROM log_entries
+        WHERE request_ts > now() - interval '5 minutes'
+          AND reason ILIKE '%threats%'
+        GROUP BY 1, 2
+      ) g
+    ) r
     GROUP BY 1, 2
   ) t
   CROSS JOIN LATERAL (
@@ -80,7 +92,9 @@ SELECT line FROM (
 ) q ORDER BY ord, line;
 
 -- A client whose first entry in the whole log (14 days) is under 10 minutes
--- old. Identity is the address, which a device keeps while its name may
+-- old, but only while the log itself is over an hour old: after an install, a
+-- restore, a reset or a trim down to a short window every device would
+-- otherwise be new at once. Identity is the address, which a device keeps while its name may
 -- change. Reads the table once a minute; at a household's volume that is
 -- a fraction of a second.
 SELECT line FROM (
@@ -93,6 +107,7 @@ SELECT line FROM (
     FROM log_entries
     GROUP BY client_ip
     HAVING min(request_ts) > now() - interval '10 minutes'
+       AND (SELECT min(request_ts) FROM log_entries) < now() - interval '1 hour'
   ) t
   CROSS JOIN LATERAL (
     SELECT replace(replace(replace(t.client, E'\\', E'\\\\'), '"', E'\\"'), E'\n', ' ') AS client

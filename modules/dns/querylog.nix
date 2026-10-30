@@ -140,6 +140,10 @@ in
         Type = "oneshot";
         User = "postgres";
         Group = "postgres";
+        # Not forever (a hung job would stop the timer), but long enough for
+        # a delete and vacuum of a multi-gigabyte table; under the 10-minute
+        # period so a run never overlaps the next.
+        TimeoutStartSec = "9min";
       };
       script = ''
         psql --no-psqlrc -q -d ${psqlDatabase} -v cap=${toString cfg.queryLogMaxBytes} -f ${./querylog-cap.sql}

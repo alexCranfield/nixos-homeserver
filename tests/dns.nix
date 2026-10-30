@@ -49,6 +49,7 @@ let
   '';
   threatsList = pkgs.writeText "dns-test-threats.txt" ''
     threat.test
+    *.threat.test
   '';
   # The private record, as sops would write it on the real machine. In the
   # store only because a test has no sops; the name is unique so the test can

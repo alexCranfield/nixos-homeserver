@@ -226,8 +226,14 @@ let
               description = "The client's first entry in the query log is less than 10 minutes old. A guest, or something that should not be on the network.";
             })
             (event "DnsWatchFailing" {
-              # absent(): the file is missing (the timer never ran).
-              expr = "homeserver_dns_watch_success == 0 or absent(homeserver_dns_watch_success)";
+              # absent(): the file is missing (the timer never ran). The last
+              # arm: the file is over 5 minutes old, the timer stuck, with
+              # the old values still in it.
+              expr = ''
+                homeserver_dns_watch_success == 0
+                  or absent(homeserver_dns_watch_success)
+                  or time() - node_textfile_mtime_seconds{file=~".*dns-watch.prom"} > 300
+              '';
               summary = "The DNS query-log watch is not running (for ${t.DnsWatchFailing.for})";
               description = "The dns-watch timer's queries fail or its file is missing, so the threat, NXDOMAIN and new-client alerts are blind.";
             })

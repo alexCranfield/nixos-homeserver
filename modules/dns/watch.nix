@@ -44,6 +44,10 @@ in
       path = [ config.services.postgresql.finalPackage ];
       serviceConfig = {
         Type = "oneshot";
+        # A hung psql would block the oneshot, and the timer would never
+        # fire again, leaving the old file: kill it well inside the minute
+        # (DnsWatchFailing also fires on a file gone stale).
+        TimeoutStartSec = "50s";
         DynamicUser = true;
         User = "dns-watch";
         # /run/dns-watch, owned by the dynamic user.
@@ -58,6 +62,8 @@ in
       # if the file cannot be written.
       script = ''
         out=/run/dns-watch/dns-watch.prom
+        # Each statement ends by itself too, before the unit's timeout.
+        export PGOPTIONS='-c statement_timeout=40s'
         if rows=$(psql --no-psqlrc -q -At -v ON_ERROR_STOP=1 -h /run/postgresql -d ${psqlDatabase} -f ${./watch.sql}); then
           success=1
         else
