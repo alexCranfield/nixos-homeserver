@@ -1,4 +1,5 @@
-# The metrics #27's rules need that no exporter gives for free:
+# The metrics #27's rules need that no exporter gives for free, and the
+# Minecraft player count (#168):
 #
 #  - Tailscale's state, which tailscaled does not export in a form the rules
 #    can use. A timer runs `tailscale status --json` every 30 seconds and
@@ -13,6 +14,16 @@
 #    drop them all, including CAP_NET_RAW), so ICMP goes through unprivileged
 #    ICMP datagram sockets, which the kernel allows for the groups in
 #    `net.ipv4.ping_group_range`; an assertion below keeps that setting.
+#  - The Minecraft server's player count, whether it answers and how fast. A
+#    timer runs `mc-monitor status` (from itzg, who makes the server's image)
+#    against the port the container publishes on the host, and writes
+#    textfile metrics as for Tailscale. It is not mc-monitor's own
+#    `export-for-prometheus`, nor a container beside the server: the exporter
+#    cannot bind to loopback only (it listens on every address), and a
+#    container in `stacks/minecraft` changes that stack's files, which makes
+#    comin's deploy recreate the stack's containers and kick the players.
+#    This is a host unit, so a deploy leaves the server alone. Only the count
+#    is exported, never who is on.
 {
   config,
   lib,
@@ -23,6 +34,9 @@ let
   cfg = config.homeserver.alerting;
   blackboxPort = 9115;
   textDir = "/var/lib/prometheus-node-exporter-text";
+  # The port the Minecraft stack publishes on the host (stacks/minecraft).
+  minecraftPort = 25565;
+  mcMonitor = pkgs.callPackage ./mc-monitor.nix { };
 
   blackboxConfig = (pkgs.formats.yaml { }).generate "blackbox.yml" {
     modules = {
@@ -88,6 +102,7 @@ in
 
     homeserver.notify.units = [
       "tailscale-state"
+      "minecraft-status"
       "prometheus-blackbox-exporter"
     ];
 
@@ -148,6 +163,58 @@ in
         chmod 0644 "$tmp"
         mv "$tmp" ${textDir}/tailscale.prom
       '';
+    };
+
+    # A server that does not answer is a result (up 0, no count or timing),
+    # not an error of this unit; it fails only if the file cannot be written.
+    # A server that answers but is still loading reports no players and fails
+    # mc-monitor's readiness check, so it counts as not answering.
+    systemd.services.minecraft-status = {
+      description = "Write the Minecraft server's player count for node-exporter";
+      serviceConfig.Type = "oneshot";
+      path = [
+        mcMonitor
+        pkgs.coreutils
+      ];
+      script = ''
+        up=0
+        players=
+        seconds=
+        start=$(date +%s%N)
+        if players=$(timeout 12 mc-monitor status --host 127.0.0.1 --port ${toString minecraftPort} \
+          --timeout 10s --show-player-count 2>/dev/null) \
+          && [[ $players =~ ^[0-9]+$ ]]; then
+          up=1
+          ns=$(( $(date +%s%N) - start ))
+          seconds=$(printf '%d.%09d' $((ns / 1000000000)) $((ns % 1000000000)))
+        fi
+
+        # As tailscale-state: renamed into place, so never half a file.
+        tmp=$(mktemp ${textDir}/.minecraft.XXXXXX)
+        {
+          echo "# HELP homeserver_minecraft_up 1 if the Minecraft server answered a status ping and is ready."
+          echo "# TYPE homeserver_minecraft_up gauge"
+          echo "homeserver_minecraft_up $up"
+          if [[ $up == 1 ]]; then
+            echo "# HELP homeserver_minecraft_players_online Players on the server; a count only, never names."
+            echo "# TYPE homeserver_minecraft_players_online gauge"
+            echo "homeserver_minecraft_players_online $players"
+            echo "# HELP homeserver_minecraft_response_seconds Time for the status ping, including starting mc-monitor."
+            echo "# TYPE homeserver_minecraft_response_seconds gauge"
+            echo "homeserver_minecraft_response_seconds $seconds"
+          fi
+        } > "$tmp"
+        chmod 0644 "$tmp"
+        mv "$tmp" ${textDir}/minecraft.prom
+      '';
+    };
+
+    systemd.timers.minecraft-status = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "30s";
+        OnUnitActiveSec = "15s";
+      };
     };
 
     systemd.timers.tailscale-state = {
