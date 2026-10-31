@@ -13,10 +13,17 @@
 # and posts once more, without a ping, when its condition clears; a dead
 # gateway holds back the alerts it causes; a unit the notifier watches posts
 # once, not twice; a resolved alert does not re-post one still firing; a
-# silence stops a post; a post that fails while Discord is down arrives once
-# Discord is back; nothing new listens beyond loopback; the webhook URL never
-# reaches the journal. The rules themselves, every threshold and duration,
-# are tested without a VM in tests/alert-rules.nix.
+# short scrape gap does not resolve a firing alert; a silence stops a post;
+# a post that fails while Discord is down arrives once Discord is back;
+# nothing new listens beyond loopback; the webhook URL never reaches the
+# journal. The rules themselves, every threshold and duration, are tested
+# without a VM in tests/alert-rules.nix.
+#
+# The subtests are split over two checks, `alerting-a` and `alerting-b`, so
+# that CI (continuous integration) runs them on different runners side by
+# side (#182). Both boot this same machine; `half` picks the script, and the
+# few thresholds that differ (below, under `halves`). The shared helpers are
+# in alerting.py, each half's subtests in alerting-a.py and alerting-b.py.
 #
 # What the test changes from the host, and why (deployed values untouched):
 #
@@ -24,14 +31,18 @@
 #    `homeserver.alerting.thresholds`. The alerts the test does not force
 #    get a day, so that no busy spell of an emulated VM posts in the middle
 #    of a subtest that counts posts.
-#  - Prometheus evaluates the rules every 5 seconds, not every minute.
-#  - Alertmanager's group_interval is 1 minute, not 5: it is how long a
-#    resolved post waits after the firing one. Every other part of
-#    Alertmanager's configuration is the host's own.
+#  - Prometheus evaluates the rules every 5 seconds, not every 15.
+#  - The grace for scrape gaps (`homeserver.alerting.gapGrace`) is 30
+#    seconds, not 2 minutes, and Alertmanager's group_interval is 40
+#    seconds, not 5 minutes. Every resolved post waits out both, and the
+#    test checks about ten of them. `timing` below says how each is chosen.
+#    Every other part of Alertmanager's configuration is the host's own.
 {
   pkgs,
   inputs,
   lib,
+  # "a" or "b": which half of the subtests to run.
+  half,
 }:
 let
   port = 8099;
@@ -82,15 +93,120 @@ let
     ];
   };
 
-  hostAlertmanager =
-    inputs.self.nixosConfigurations.nuc.config.services.prometheus.alertmanager.configuration;
+  host = inputs.self.nixosConfigurations.nuc.config;
+  hostAlertmanager = host.services.prometheus.alertmanager.configuration;
+
+  # Seconds in a Prometheus duration of one unit, such as "15s" or "2m".
+  seconds =
+    d:
+    let
+      m = builtins.match "([0-9]+)([smh])" d;
+    in
+    if m == null then
+      throw "tests/alerting.nix: cannot read the duration ${d}"
+    else
+      lib.toInt (builtins.elemAt m 0)
+      * {
+        s = 1;
+        m = 60;
+        h = 3600;
+      }
+      .${builtins.elemAt m 1};
+
+  # The timings every wait in the script is derived from, in seconds, each
+  # named once here and handed to the script, so that changing one cannot
+  # leave a fixed sleep too short for it.
+  timing = rec {
+    # The host's: every exporter is scraped this often.
+    scrape = seconds host.services.prometheus.globalConfig.scrape_interval;
+    # The test's, set below; the host evaluates with every scrape.
+    evaluation = 5;
+    # The host's: a new alert's first post waits this long.
+    groupWait = seconds hostAlertmanager.route.group_wait;
+    # Allowance for the VM's own delays (a command, a unit starting) on top
+    # of the timings above. It also keeps group_interval clear of the
+    # relay's retries, below.
+    slack = 10;
+    # How long homeserver-notify retries a post that Discord refuses:
+    # curl's three retries five seconds apart (modules/base/notify.nix).
+    notifyRetries = 3 * 5;
+    # Two scrape intervals. Subtest 6's gap is one failed scrape of
+    # node-exporter, so a firing alert misses the series for one scrape
+    # interval, give or take an evaluation; the grace must be clearly
+    # longer than that, and is twice it. Its negative control (GapControl,
+    # below) proves the same gap does drop an alert without the grace.
+    grace = 2 * scrape;
+    # Alertmanager gives up on a notification after its group_interval
+    # (its context, notify.MinTimeout of 10 s at the least), and a post the
+    # relay completes after that is sent again at the next flush
+    # (modules/observability/alert-relay.py). In subtest 8 the relay posts
+    # while Discord is down: one try that fails after notifyRetries, then a
+    # second that gets through once the receiver is back. Both must fit, or
+    # the post arrives twice; 20 seconds was not enough by this reckoning.
+    groupInterval = 2 * notifyRetries + slack;
+    # TargetDown's `for`, set below; two sleeps watch for it.
+    targetDownFor = seconds thresholds.TargetDown.for;
+  };
 
   quiet = {
     for = "24h";
   };
+
+  thresholds = {
+    # Long enough for node-exporter to report a killed cAdvisor as failed
+    # (both are scraped every 15 seconds) before cAdvisor's TargetDown
+    # fires.
+    TargetDown.for = "30s";
+    # The gateway's alert fires before the two it inhibits, so that
+    # neither posts before the inhibition is in place. 45 seconds apart is
+    # enough only because Prometheus starts once Alertmanager is ready
+    # (modules/observability/alerting.nix): before that ordering, the
+    # gateway's first firing was refused, sent again a minute later, and
+    # DnsFailing posted in between.
+    GatewayUnreachable.for = "15s";
+    DnsFailing.for = "60s";
+    TailnetDisconnected.for = "60s";
+    DiskFilling = {
+      value = 50;
+      for = "15s";
+    };
+    StackMemoryNearLimit.for = "15s";
+
+    CominFetchFailed = quiet; # no internet here
+    CominBuildFailed = quiet;
+    HostMemoryLow = quiet;
+    HostCpuHigh = quiet;
+    TemperatureHigh = quiet;
+    ContainerCpuHigh = quiet;
+    StackMemoryStalled = quiet;
+    StackCpuStarved = quiet;
+  };
+
+  # What each half runs, and what it changes. Each half boots afresh, so
+  # each must stand alone. Subtest 4 needs the alerts that fire from boot
+  # (the gateway, DNS and the tailnet), so it runs first in half a. Half b
+  # has no subtest 4, and quiets those three like any alert it does not
+  # force: they would otherwise post in the middle of its first count. The
+  # split follows the expected time of each subtest, OomKill's 5 minute
+  # window being the longest (docs/runbooks/ci.md).
+  halves = {
+    a = {
+      script = ./alerting-a.py;
+      thresholds = { };
+    };
+    b = {
+      script = ./alerting-b.py;
+      thresholds = {
+        GatewayUnreachable = quiet;
+        DnsFailing = quiet;
+        TailnetDisconnected = quiet;
+      };
+    };
+  };
+  this = halves.${half};
 in
 pkgs.testers.runNixOSTest {
-  name = "alerting";
+  name = "alerting-${half}";
   node.specialArgs = { inherit inputs; };
   # As in base-ssh.nix: the host sets `nixpkgs.hostPlatform`, and every
   # machine shares the test's `pkgs`.
@@ -131,44 +247,17 @@ pkgs.testers.runNixOSTest {
     };
 
     homeserver.alerting.gateway = gateway;
-    homeserver.alerting.thresholds = {
-      # Long enough for node-exporter to report a killed cAdvisor as failed
-      # (both are scraped every 15 seconds) before cAdvisor's TargetDown
-      # fires.
-      TargetDown.for = "30s";
-      # The gateway's alert fires before the two it inhibits, so that
-      # neither posts before the inhibition is in place. 45 seconds apart is
-      # enough only because Prometheus starts once Alertmanager is ready
-      # (modules/observability/alerting.nix): before that ordering, the
-      # gateway's first firing was refused, sent again a minute later, and
-      # DnsFailing posted in between.
-      GatewayUnreachable.for = "15s";
-      DnsFailing.for = "60s";
-      TailnetDisconnected.for = "60s";
-      DiskFilling = {
-        value = 50;
-        for = "15s";
-      };
-      StackMemoryNearLimit.for = "15s";
-
-      CominFetchFailed = quiet; # no internet here
-      CominBuildFailed = quiet;
-      HostMemoryLow = quiet;
-      HostCpuHigh = quiet;
-      TemperatureHigh = quiet;
-      ContainerCpuHigh = quiet;
-      StackMemoryStalled = quiet;
-      StackCpuStarved = quiet;
-    };
+    homeserver.alerting.thresholds = thresholds // this.thresholds;
+    homeserver.alerting.gapGrace = "${toString timing.grace}s";
     # The host sets 15s; a plain value here would conflict with it.
-    services.prometheus.globalConfig.evaluation_interval = lib.mkForce "5s";
+    services.prometheus.globalConfig.evaluation_interval = lib.mkForce "${toString timing.evaluation}s";
     # The option is a plain attribute set, merged one level deep, so the
     # route is given whole: the host's, with one timing changed.
     services.prometheus.alertmanager.configuration = lib.mkForce (
       hostAlertmanager
       // {
         route = hostAlertmanager.route // {
-          group_interval = "1m";
+          group_interval = "${toString timing.groupInterval}s";
         };
       }
     );
@@ -205,11 +294,21 @@ pkgs.testers.runNixOSTest {
     systemd.slices.stack-oomtest.sliceConfig.MemoryMax = "64M";
   };
 
+  # The constants, then the helpers both halves share, then this half's
+  # subtests.
   testScript = ''
     SECRET = ${builtins.toJSON secret}
     ROLE = ${builtins.toJSON role}
     GATEWAY = ${builtins.toJSON gateway}
     IMAGE = ${builtins.toJSON "${image}"}
+    SCRAPE = ${toString timing.scrape}
+    EVALUATION = ${toString timing.evaluation}
+    GROUP_WAIT = ${toString timing.groupWait}
+    GROUP_INTERVAL = ${toString timing.groupInterval}
+    GRACE = ${toString timing.grace}
+    SLACK = ${toString timing.slack}
+    TARGET_DOWN_FOR = ${toString timing.targetDownFor}
   ''
-  + builtins.readFile ./alerting.py;
+  + builtins.readFile ./alerting.py
+  + builtins.readFile this.script;
 }
