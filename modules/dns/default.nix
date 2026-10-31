@@ -28,6 +28,11 @@ let
   # user alone. The YAML (YAML Ain't Markup Language) file can't use `%d`,
   # which only systemd expands, so the path is spelled out.
   privateHostsCredential = "/run/credentials/blocky.service/private-hosts";
+
+  # The lists, with `deny` added to `ads` (which it creates if no list does).
+  denylists =
+    cfg.lists
+    // lib.optionalAttrs (cfg.deny != [ ]) { ads = (cfg.lists.ads or [ ]) ++ [ (inline cfg.deny) ]; };
 in
 {
   imports = [
@@ -149,12 +154,11 @@ in
           sources = [ privateHostsCredential ];
         };
         blocking = {
-          denylists =
-            cfg.lists
-            // lib.optionalAttrs (cfg.deny != [ ]) { ads = (cfg.lists.ads or [ ]) ++ [ (inline cfg.deny) ]; };
+          inherit denylists;
           allowlists = lib.mkIf (cfg.allow != [ ]) (lib.mapAttrs (_: _: [ (inline cfg.allow) ]) cfg.lists);
-          # Every device, every group: `ads` and `threats`.
-          clientGroupsBlock.default = lib.attrNames cfg.lists;
+          # Every device, every group: `ads` and `threats`, and `ads` even
+          # when only `deny` supplies it.
+          clientGroupsBlock.default = lib.attrNames denylists;
           loading = {
             # Answer at once and block once the lists have loaded: at boot,
             # or with a list's server down, the house keeps resolving.
