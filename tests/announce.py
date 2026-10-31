@@ -93,6 +93,7 @@ APPLYING = "Applying update. Services on the nuc may restart briefly."
 
 shutil.rmtree(nuc.shared_dir / "webhook", ignore_errors=True)
 
+nuc.succeed("false")  # TEMPORARY negative control for #180, reverted next commit
 nuc.wait_for_unit("multi-user.target")
 # On a slow runner Docker's containerd can time out on its first start while
 # the rest of the host boots (Grafana's first start among it, #25); Docker

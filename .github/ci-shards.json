@@ -17,8 +17,7 @@
       "alerting",
       "base-ssh",
       "reboot-window",
-      "game-access",
-      "network"
+      "game-access"
     ]
   },
   "services": {
