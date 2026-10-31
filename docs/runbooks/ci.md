@@ -313,7 +313,8 @@ largest two (`docker`, 4 GB; `compose-stack`, 3 GB); the job timeout went from
 reruns every host VM test, was cancelled at 45 minutes. By 2026-10-30 such
 a run took 76 minutes, and #164's `dns` test would have pushed it past 90;
 #180 split the checks into shards (below), each with two build slots on
-its own runner. A run that
+its own runner, and #182 split the alerting test in two and shortened its
+waits. A run that
 touches no host test still takes minutes, since the cache skips the
 unchanged checks. A cancelled run saves no cache, so a plain re-run of a
 timed-out job times out again. A runner killed this way shows no
@@ -369,17 +370,31 @@ prints when a build starts but not when it ends. The shards in
 | Shard | Checks | Expected, all rebuilt |
 |---|---|---|
 | `lint` | `nix flake check --no-build`, the shard check, the host's closure, the checks with no VM, format and lint | about 10 minutes |
-| `alerting` | `alerting`, with `base-ssh`, `reboot-window`, `game-access` and `network` in its second slot | about 55 minutes: `alerting` sets the floor |
+| `alerting` | `alerting-a`, with `base-ssh`, `reboot-window`, `game-access` and `network` in its second slot | about 20 minutes: `alerting-a` sets the floor |
 | `services` | `observability`, `docker`, `compose-stack`, `stack-data`, `announce` | about 20 minutes |
-| `system` | `tailscale`, `comin`, `notify`, `disk-tpm` | about 12 minutes |
+| `system` | `alerting-b`, with `tailscale`, `comin`, `notify` and `disk-tpm` in its second slot | about 20 minutes |
 
 The expected times add a few minutes per shard for its runner, Nix, the
 cache and evaluation to the test times above; the pull request that made
 the shards records the measured ones. A shard
 is a whole runner, so each keeps `max-jobs = 2` and the memory limits above
-hold per shard. `alerting` is kept apart from the other long or heavy tests
-(`observability`, `tailscale`, `comin`); nothing else would finish later
-than it anyway. When a shard grows past the others, move checks between
+hold per shard.
+
+**The alerting test in two halves (#182).** Until #182 `alerting` was one
+test of about 50 minutes, nearly all of it waiting: every resolved post
+waited out the rules' 2 minute grace for scrape gaps (`keep_firing_for`)
+and then up to a minute of Alertmanager's `group_interval`, and the fixed
+sleeps were sized around both. The test now sets the grace to 30 seconds
+and `group_interval` to 40 (the host keeps 2 and 5 minutes;
+`tests/alerting.nix` says why each test value is what it is), derives
+every sleep from those, and runs as two checks on the same machine:
+`alerting-a` (subtests 4, 1, 6, 7, 8) and `alerting-b` (2, 3, 5); both run
+subtests 9 and 10, which take seconds. The split is by expected time
+rather than by number: subtest 5 alone waits out `OomKill`'s 5 minute
+window, about 10 minutes, and the expected totals are about 16 minutes
+each. The halves are in different shards, `alerting` and `system`, so they
+run side by side; each shares its runner with tests that together take no
+longer than it does. The pull request records the measured times. When a shard grows past the others, move checks between
 shards, or add one: a new key in `.github/ci-shards.json` is a new matrix
 job, with no change to the workflow. Every shard costs a runner start and
 an evaluation of the host, a few minutes, so fewer, fuller shards are
