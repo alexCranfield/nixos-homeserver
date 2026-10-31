@@ -54,6 +54,11 @@ pkgs.testers.runNixOSTest {
       # The host's stacks pull images, and the build sandbox has no internet;
       # tests/compose-stack.nix covers them.
       homeserver.stacks = lib.mkForce { };
+      # Grafana, Prometheus, PostgreSQL and Blocky's list loads boot together
+      # on this host. On one emulated CPU (central processing unit) they slow
+      # the boot enough that tailscaled-autoconnect times out before the nuc
+      # has joined the tailnet. As in tests/dns.nix.
+      virtualisation.cores = 4;
 
       # One port on the LAN, renamed lan0 as on the real machine, with a fixed
       # address in place of the router's reservation (tests/network.nix covers
