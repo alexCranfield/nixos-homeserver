@@ -44,6 +44,11 @@ in
     # the NAS's own resolvers".
     dhcpV4Config.UseDNS = false;
     networkConfig.DNS = [ config.homeserver.network.router ];
+    # The same for IPv6: a router advertisement can carry DNS servers (RDNSS,
+    # Recursive DNS Server option), and networkd would add them to lan0. One
+    # naming Blocky or the Pi-hole would put the alert path behind the server
+    # it watches. Fuller IPv6 handling is #175.
+    ipv6AcceptRAConfig.UseDNS = false;
     # Boot waits for this port alone, not for the unused one.
     linkConfig.RequiredForOnline = "routable";
   };
