@@ -445,6 +445,31 @@ with subtest("Grafana's role reads and cannot write"):
         "sudo -u postgres psql blocky -c \"delete from log_entries where question_name = 'no-such-name.invalid'\""
     )
 
+with subtest("PUBLIC and an unrelated user cannot read the log"):
+    # Grants to PUBLIC (grantee 0 in the catalog) would let any role read it.
+    table_public = (
+        "select count(*) from pg_class c, aclexplode(c.relacl) a"
+        " where c.relname = 'log_entries' and a.grantee = 0"
+    )
+    db_public = (
+        "select count(*) from pg_database d, aclexplode(d.datacl) a"
+        " where d.datname = 'blocky' and a.grantee = 0"
+        " and a.privilege_type = 'CONNECT'"
+    )
+    assert psql(table_public) == "0", psql(table_public)
+    assert psql(db_public) == "0", psql(db_public)
+    # Control: the same queries find the grants the reader roles do have, so
+    # a zero above isn't a typo in them.
+    table_grafana = table_public.replace("a.grantee = 0", "a.grantee = 'grafana'::regrole")
+    db_grafana = db_public.replace("a.grantee = 0", "a.grantee = 'grafana'::regrole")
+    assert int(psql(table_grafana)) > 0, psql(table_grafana)
+    assert int(psql(db_grafana)) > 0, psql(db_grafana)
+    # And a user the log was never meant for, by peer authentication over the
+    # socket: `nobody` has no role, and could not connect if it had.
+    status, out = nuc.execute("sudo -u nobody psql blocky -c 'select count(*) from log_entries' 2>&1")
+    print(out)
+    assert status != 0 and "does not exist" in out, (status, out)
+
 with subtest("Grafana's data source reads the log through its socket"):
     nuc.wait_for_unit("grafana.service")
     nuc.wait_for_open_port(3000, "127.0.0.1")
