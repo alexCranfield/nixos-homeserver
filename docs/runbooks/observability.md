@@ -237,6 +237,7 @@ normal busy spells. The values below are the deployed defaults, from the
 | `DnsServerDown` | event | A DNS lookup against the nuc's Blocky or the Pi-hole on the NAS (network-attached storage) fails (`server` label) | none | 2 m |
 | `DnsNasProbeMissing` | event | The NAS's DNS server has no probe result at all (rendered only when it is probed) | none | 15 m |
 | `DnsServerNotBlocking` | event | A name on the blocklists comes back with a real address from `server` | none | 15 m |
+| `DnsBlocklistEmpty` | event | A DNS blocklist group (`ads` or `threats`) has no names loaded, or is missing from Blocky's metrics ([dns.md](dns.md#the-alerts)) | none | 15 m |
 | `DnsThreatBlocked` | event | A device looked up a name on a threat list (blocked) in the last 5 minutes | none | 0 s |
 | `DnsNewClient` | event | A device appears in the DNS query log for the first time | none | 0 s |
 | `DnsWatchFailing` | event | The timer that writes the query-log metrics fails, never ran, or its file is over 5 minutes old | none | 10 m |

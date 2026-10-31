@@ -4,6 +4,8 @@
 #
 # DnsNasProbeMissing (for 15m) fires when the NAS has no probe series at all.
 #
+# DnsBlocklistEmpty (for 15m): a blocklist group with no names loaded.
+#
 # Below them, the suspicious-activity rules, which read the series the nuc's
 # dns-watch timer writes (modules/dns/watch.nix): DnsThreatBlocked,
 # DnsNxdomainBurst, DnsNewClient, DnsWatchFailing and DnsQueryLogLarge.
@@ -115,6 +117,82 @@ tests:
         exp_alerts: []
       - eval_time: 25m
         alertname: DnsServerNotBlocking
+        exp_alerts: []
+
+  # DnsBlocklistEmpty (for 15m): one group loaded no names while the other
+  # did, as when a list's server serves an empty file. Fires for that group at
+  # its `for`, not 15 s before. The ads group, which the blocking probe
+  # watches, is healthy here: only this rule can see the threats group.
+  - interval: 15s
+    input_series:
+      - series: 'blocky_denylist_cache_entries{group="ads",instance="target",job="blocky"}'
+        values: "5000x80"
+      - series: 'blocky_denylist_cache_entries{group="threats",instance="target",job="blocky"}'
+        values: "0x80"
+      - series: 'up{job="blocky",instance="target"}'
+        values: "1x80"
+    alert_rule_test:
+      - eval_time: 885s
+        alertname: DnsBlocklistEmpty
+        exp_alerts: []
+      - eval_time: 900s
+        alertname: DnsBlocklistEmpty
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              group: threats
+              instance: target
+              job: blocky
+            exp_annotations:
+              summary: "Blocky's threats blocklist group is empty (for 15m)"
+              description: "The group loaded no names, so nothing in it is blocked and its alerts cannot fire. Its lists may have failed to download or parsed to nothing."
+
+  # Quiet control: both groups loaded, or loading for ten minutes after a
+  # boot and then loaded.
+  - interval: 15s
+    input_series:
+      - series: 'blocky_denylist_cache_entries{group="ads",instance="target",job="blocky"}'
+        values: "0x40 5000x80"
+      - series: 'blocky_denylist_cache_entries{group="threats",instance="target",job="blocky"}'
+        values: "0x40 300x80"
+      - series: 'up{job="blocky",instance="target"}'
+        values: "1x120"
+    alert_rule_test:
+      - eval_time: 600s
+        alertname: DnsBlocklistEmpty
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: DnsBlocklistEmpty
+        exp_alerts: []
+
+  # A group with no series at all while Blocky is scraped (its list section
+  # missing from the metrics) fires too, named by the group.
+  - interval: 15s
+    input_series:
+      - series: 'blocky_denylist_cache_entries{group="ads",instance="target",job="blocky"}'
+        values: "5000x80"
+      - series: 'up{job="blocky",instance="target"}'
+        values: "1x80"
+    alert_rule_test:
+      - eval_time: 900s
+        alertname: DnsBlocklistEmpty
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              group: threats
+            exp_annotations:
+              summary: "Blocky's threats blocklist group is empty (for 15m)"
+              description: "The group loaded no names, so nothing in it is blocked and its alerts cannot fire. Its lists may have failed to download or parsed to nothing."
+
+  # Blocky down altogether: no series and `up` 0. TargetDown and
+  # DnsServerDown speak for that, not this rule.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="blocky",instance="target"}'
+        values: "0x80"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: DnsBlocklistEmpty
         exp_alerts: []
 
   # DnsThreatBlocked (for 0s): fires on the first sample above zero, naming

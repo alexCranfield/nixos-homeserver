@@ -41,6 +41,8 @@ let
     # Longer than a list load: at boot Blocky resolves before its lists have
     # loaded (it fails open), and that must not alert.
     DnsServerNotBlocking.for = "15m";
+    # The same wait, for the same reason: a boot's list load.
+    DnsBlocklistEmpty.for = "15m";
     # The watch's series (modules/dns/watch.nix). A threat lookup or a new
     # device is worth knowing at once.
     DnsThreatBlocked.for = "0s";
@@ -233,6 +235,21 @@ let
               expr = ''probe_success{job="dns_blocked"} == 0'';
               summary = "DNS server {{ $labels.server }} does not block (for ${t.DnsServerNotBlocking.for})";
               description = "A name on the blocklists, probed against {{ $labels.server }}, comes back with a real address instead of 0.0.0.0. Its lists may have failed to download.";
+            })
+            (event "DnsBlocklistEmpty" {
+              # The blocking probe asks for a name on the ads lists only, so a
+              # threats group that loaded nothing would never alert. One arm
+              # per group the module declares (modules/dns/lists.nix), for a
+              # group missing from the metrics altogether, but only while
+              # Blocky is scraped: a dead Blocky is DnsServerDown's and
+              # TargetDown's.
+              expr = ''
+                blocky_denylist_cache_entries == 0
+                  or (absent(blocky_denylist_cache_entries{group="ads"}) and on() (up{job="blocky"} == 1))
+                  or (absent(blocky_denylist_cache_entries{group="threats"}) and on() (up{job="blocky"} == 1))
+              '';
+              summary = "Blocky's {{ $labels.group }} blocklist group is empty (for ${t.DnsBlocklistEmpty.for})";
+              description = "The group loaded no names, so nothing in it is blocked and its alerts cannot fire. Its lists may have failed to download or parsed to nothing.";
             })
             (event "DnsThreatBlocked" {
               expr = "homeserver_dns_threat_blocks > 0";
