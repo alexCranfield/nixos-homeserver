@@ -67,20 +67,34 @@ def title(msg):
 def posts_since(since):
     """What a failed count of posts reports, in a few lines: CI shows only
     the last lines of a failed test's log, not the journal above them
-    (#185). Each post from the since-th on, with when the receiver wrote it,
-    then what Alertmanager and the relay last logged about posting."""
-    out = nuc.shared_dir / "webhook"
+    (#185). Each post from the since-th on, then what Alertmanager and the
+    relay last logged about posting, then the alerts that fired. Every time
+    is the VM's: a post's is the stamp in its title."""
     lines = []
-    for f in sorted(out.glob("*.json"))[since:]:
-        when = datetime.datetime.fromtimestamp(f.stat().st_mtime, datetime.timezone.utc)
-        lines.append(f"{when:%H:%M:%S} {title(unstamped(json.loads(f.read_text())))}")
+    for f in sorted((nuc.shared_dir / "webhook").glob("*.json"))[since:]:
+        msg = json.loads(f.read_text())
+        m = STAMP.match(msg["content"])
+        lines.append(f"{m.group(2) if m else '?'} {title(unstamped(msg))}")
     # Alertmanager logs a failed notification at WARN; the relay logs each
     # post and how long it took, and the sender under it (curl) its errors.
+    # Not the curl of Alertmanager's start, which waits for it to listen.
     log = nuc.execute(
         "journalctl -u alertmanager -u alert-relay -o short-iso --no-pager"
-        " | grep -E 'level=(WARN|ERROR)|post of|curl:' | tail -n 8"
+        " | grep -E 'level=(WARN|ERROR)|post of|curl:' | grep -v post-start | tail -n 6"
     )[1]
-    return "\n".join(["posts:", *lines, "log:", log.strip() or "none"])
+    # Prometheus's side: each alert that fired in the last 15 minutes, and
+    # how often its activeAt changed. A change means it went inactive and
+    # fired again; two lines for one unit mean two alerts, whose labels
+    # differ.
+    alerts = []
+    fired = prom(
+        "changes(ALERTS_FOR_STATE[15m])"
+        ' and ignoring(alertstate) max_over_time(ALERTS{alertstate="firing"}[15m])'
+    )
+    for r in fired:
+        labels = {k: v for k, v in sorted(r["metric"].items()) if k not in ("instance", "severity")}
+        alerts.append(f"{labels} activeAt changed {r['value'][1]} times")
+    return "\n".join(["posts:", *lines, "log:", log.strip() or "none", "alerts:", *alerts])
 
 
 def firing(summary):
