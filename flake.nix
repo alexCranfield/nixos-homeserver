@@ -89,6 +89,7 @@
           nixfmt-tree # the formatter, also reachable as `nix fmt`
           editorconfig-checker # enforces .editorconfig in `just check`
           actionlint # lints .github/workflows in `just check`
+          jq # reads .github/ci-shards.json in `just check` and `just check-shard`
           shellcheck # actionlint runs it on each workflow's `run:` scripts
           nixos-anywhere # bare-metal install, ticket 1.6 (#13)
           nixos-rebuild # manual deploy escape hatch, `just deploy`
