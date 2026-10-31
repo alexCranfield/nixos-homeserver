@@ -5,33 +5,75 @@ is built the way it is, and what to do when it goes red. Ticket 0.4 (#4).
 
 ## What runs
 
-`.github/workflows/ci.yml` has one job, `check`, on GitHub-hosted Ubuntu runners.
-It triggers on every pull request, every push to `main`, and by hand from the
-Actions tab (`workflow_dispatch`). It checks out the repo, installs Nix, and runs:
+`.github/workflows/ci.yml` runs on GitHub-hosted Ubuntu runners. It triggers on
+every pull request, every push to `main`, and by hand from the Actions tab
+(`workflow_dispatch`). Since #180 the checks are split into shards, each a job
+on its own runner, so the VM (virtual machine) tests run side by side:
 
-```sh
-nix develop --command just check
+```mermaid
+flowchart LR
+    list["list-shards:<br/>read .github/ci-shards.json"]
+    lint["shard (lint)"]
+    alerting["shard (alerting)"]
+    services["shard (services)"]
+    system["shard (system)"]
+    check["check: red unless<br/>every shard is green"]
+    list --> lint & alerting & services & system --> check
 ```
 
-`just check` is the same target you run locally: `nix flake check --no-build`
-to evaluate every output, a build of every check in a second process (see
-"Evaluation and builds apart" below), a build of the nuc system closure,
-`nix fmt -- --ci`, and `editorconfig-checker`, which
+- **`list-shards`** reads the shard names from `.github/ci-shards.json`, the
+  one list of which flake check runs where, with a line on why each shard
+  holds what it does.
+- **`shard (<name>)`**, one job per shard, checks out the repo, installs Nix
+  and runs:
+
+  ```sh
+  nix develop --command just check-shard <name>
+  ```
+
+- **`check`** needs every shard and passes only if every one succeeded. See
+  "One required check over the shards" below.
+
+`just check-shard <name>` evaluates that shard's checks, then builds them in a
+second process (see "Evaluation and builds apart" below). The `lint` shard
+also runs, first, `nix flake check --no-build` to evaluate every output and
+`just check-shards-complete`, and last `nix fmt -- --ci`, `actionlint` and
+`editorconfig-checker`, which
 holds every file git does not ignore to `.editorconfig` (line endings, final
 newline, trailing whitespace, tabs). That includes untracked files, so a stray
 scratch file in the tree fails `just check` locally until it is removed or
-ignored. The workflow does not restate
-those commands, so changing what "checked" means is a change to the `justfile`,
-and the workstation and CI change together.
+ignored. `just check`, the target you run locally, does all of it in one go:
+the lint shard's evaluation and lint, and every shard's checks in a single
+build. The workflow does not restate
+those commands, so changing what "checked" means is a change to the `justfile`
+or to `.github/ci-shards.json`, and the workstation and CI change together.
 
 `check` is a required status check on `main` (ruleset `main`), so a PR cannot
 merge while it is red or still running.
 
-## Reproducing a failure locally
+### Adding a check
 
-Run the same command from the repo root:
+A new entry in the flake's `checks` must go into exactly one shard of
+`.github/ci-shards.json`. Until it does, `just check-shards-complete` fails
+the `lint` shard, and so `check`, with `not in any shard: <name>`. A check
+listed in two shards, a name that is not a check, a shard with no checks, a
+shard name that is not lower-case letters and digits, and a file with no
+`lint` shard fail it too. It reads only the checks' names, so it takes about
+two seconds:
 
 ```sh
+just check-shards-complete
+```
+
+To run what one CI job runs, `just check-shard <name>`, for example
+`just check-shard services`.
+
+## Reproducing a failure locally
+
+Run the failing shard's command from the repo root, or everything:
+
+```sh
+just check-shard <name>    # the shard from the failed job's name, shard (<name>)
 just check
 ```
 
@@ -45,7 +87,7 @@ If it passes locally but fails in CI, the difference is almost always one of:
   server's version. `nix develop -c just check` matches CI exactly.
 - **Formatting.** `just fmt`, commit, push.
 
-### A VM (virtual machine) test that fails before Linux starts, on the workstation
+### A VM test that fails before Linux starts, on the workstation
 
 On the workstation, `disk-tpm` often fails before the kernel prints anything
 (#80). The VM's console shows one of three forms after `starting vm`:
@@ -141,7 +183,8 @@ Decision Record) 0007.
 
 That step is also the first to evaluate `flake.nix`, so a syntax error in
 `flake.nix` itself fails there. Errors in `hosts/` or `modules/` fail inside
-`just check`, with the `nix flake check` log.
+`just check-shard`: in the `lint` shard with the `nix flake check` log, and
+in any shard whose checks they reach.
 
 **Upstream Nix via `cachix/install-nix-action`, not Determinate's installer.**
 The installed Nix only starts the dev shell and builds. The ticket named
@@ -163,24 +206,29 @@ derivation takes as a path, such as `src = ./.`, would be different: its text
 is an input. No check takes one today.)
 
 The workflow now carries the store between runs in GitHub's Actions cache,
-with `nix-community/cache-nix-action`:
+with `nix-community/cache-nix-action`. Each shard has caches of its own,
+keyed `nix-Linux-<shard>-…`, and holds only its own checks (#180):
 
-- **Restore**, before `just check`: the newest cache this branch can see,
-  which for a re-run is the earlier attempt's if that attempt saved one. GitHub looks on the pull
-  request's own branch first, then on `main`.
+- **Restore**, before `just check-shard`: the newest cache of the same shard
+  this branch can see, which for a re-run is the earlier attempt's if that
+  attempt saved one. GitHub looks on the pull request's own branch first,
+  then on `main`. The prefix is `nix-Linux-<shard>-`, and shard names have no
+  hyphen (`just check-shards-complete` fails on one), so `nix-Linux-vm1-`
+  could never match a shard `vm1-x`'s keys.
 - **Trim**, after it, even when a check failed: every check whose output
   exists is made a garbage-collection root, and everything else is deleted
   from the store. A failed check has no output, so it runs again next time.
   Build inputs and the dev shell are fetched from cache.nixos.org again, which
-  keeps the cache small. The checks' derivations are read from `nix flake
-  check`'s log rather than by evaluating the flake a second time, which took
-  three minutes. If none are found there (a Nix update that changes the log),
-  the step warns and nothing is saved, and CI still reports the checks'
-  result. Later runs keep restoring the last cache saved and rerun whatever
-  changed since, more each time, until the parsing is fixed. A wrong parse
+  keeps the cache small. The checks' derivations come from a file,
+  `$CHECK_DRVS`, that `just check-shard` writes as it evaluates them (one
+  `name drv` line per check), rather than from evaluating the flake again,
+  which took three minutes. Before #180 they were parsed out of `nix flake
+  check`'s log, which only the lint shard still runs. If the file is
+  missing, as when the recipe fails before writing it, the step warns and
+  nothing is saved, and CI still reports the checks' result. A wrong list
   can only leave a check out of the cache, never make one pass: an output
   exists only once its check has built.
-- **Save** the trimmed store under `nix-Linux-<commit>-<attempt>`, unless it
+- **Save** the trimmed store under `nix-Linux-<shard>-<commit>-<attempt>`, unless it
   holds nothing the restored cache lacked, as after a docs-only change. The
   attempt number is there because a saved cache cannot be replaced. On
   2026-10-24 the first run on `main` after #138 failed on the Tailscale flake
@@ -209,16 +257,26 @@ change, so a flaky test that passed by luck stays passed, which is what
 `gh cache delete --all`) and re-run the job.
 
 The repo gets 10 GB of cache. GitHub deletes the least recently used caches
-past that, and any cache not used for seven days. Each cache is about 1.6 GB,
-so about six fit. A pull request's first run restores `main`'s newest cache;
-its later pushes restore their own. Without cleanup, every push that builds
-something adds another 1.6 GB under the pull request (three pushes to #138
-made 4.7 GB), and `main`'s cache, the least recently used, would be the one
-deleted. `.github/workflows/ci-cache-cleanup.yml` deletes all but the newest of
-a pull request's caches on each push, and all of them when it closes, so each
-open pull request holds two: the one its latest run restored and the one it
-saved, or three after a re-run that saved, until the next push or
-`gh cache delete`. A fork's run saves nothing unless the fork edits `ci.yml`; such
+past that, and any cache not used for seven days. Before #180 the single cache
+was about 2 GB (2.02 GB on `main` on 2026-10-30), so about five fit. Nearly
+all of that is the host's closure, now in the `lint` shard's cache. A VM
+test's output is its log and references nothing (a `vm-test-run-…` output
+on the workstation: 96 bytes, no references), so a VM shard's trimmed store
+is small, and the four shards together cost about what one cache did. A
+pull request's first run restores `main`'s newest cache of each shard; its
+later pushes restore their own. Without cleanup, every push that builds
+something adds another 2 GB under the pull request (three pushes to #138
+made 4.7 GB), and `main`'s caches, the least recently used, would be the
+ones deleted. `.github/workflows/ci-cache-cleanup.yml` deletes all but the
+newest cache of each shard of a pull request on each push, and all of them
+when it closes. It groups by the key without its last two parts, the commit
+and attempt; keeping only the newest overall, as it did with one cache,
+would delete every other shard's on each push. Each open pull request then
+holds, per shard, the cache its latest run restored and the one it saved,
+or three after a re-run that saved, until the next push or
+`gh cache delete`. The caches from before #180, `nix-Linux-<commit>-<attempt>`,
+match no shard's prefix and are never restored again; GitHub expires them
+after seven days, or `gh cache delete` removes them sooner. A fork's run saves nothing unless the fork edits `ci.yml`; such
 caches are not cleaned up, and GitHub expires them after seven days. If `main`'s is evicted anyway, the next
 run is a full one, as before #137, and saves a new cache. To see what is
 stored: Actions, Caches, or `gh cache list`.
@@ -228,7 +286,7 @@ workflow, so the required check `check` never reports, and GitHub holds the
 pull request at "Expected — waiting for status". A filter would also need a
 hand-kept list of paths that cannot affect a check; Nix already knows.
 
-**VM (virtual machine) tests run in CI.** Since #10, `just check` also runs
+**VM tests run in CI.** Since #10, `just check` also runs
 `base-ssh`, a NixOS test that boots two VMs and logs in over SSH. NixOS tests
 require the `kvm` system feature. `install-nix-action` provides it on GitHub's
 Linux runners (`enable_kvm`, on by default; the job log shows "Enabled KVM"),
@@ -252,7 +310,10 @@ largest two (`docker`, 4 GB; `compose-stack`, 3 GB); the job timeout went from
 30 to 45 minutes to allow for the slower run, and to 90 on 2026-10-29
 (#27): the alerting test waits out real alert durations, retries and
 "nothing posted again" windows, and with it a change to the host, which
-reruns every host VM test, was cancelled at 45 minutes. A run that
+reruns every host VM test, was cancelled at 45 minutes. By 2026-10-30 such
+a run took 76 minutes, and #164's `dns` test would have pushed it past 90;
+#180 split the checks into shards (below), each with two build slots on
+its own runner. A run that
 touches no host test still takes minutes, since the cache skips the
 unchanged checks. A cancelled run saves no cache, so a plain re-run of a
 timed-out job times out again. A runner killed this way shows no
@@ -278,7 +339,9 @@ with caching off (`nix flake check --no-build --no-eval-cache`):
 - `just check` evaluates with `nix flake check --no-build`, whose process
   exits, then reads the checks' derivations with a separate `nix eval`
   (9.6 GB, about 45 s, also gone before anything builds) and builds them with
-  `nix build`, which evaluates nothing. The VM tests now have the runner's
+  `nix build`, which evaluates nothing. Since #180 only the `lint` shard runs
+  `nix flake check --no-build`; each shard's `nix eval` reads only its own
+  checks, so a VM shard evaluates less than this. The VM tests now have the runner's
   memory to themselves, at the cost of evaluating the checks twice. One
   difference: `nix flake check` skipped a check whose output could be
   downloaded, and `nix build` downloads it. Only
@@ -290,6 +353,49 @@ with caching off (`nix flake check --no-build --no-eval-cache`):
 
 If the runner is stopped again, a sampler like the one on #141 tells memory
 from disk in one run.
+
+**Shards, balanced by measured time (#180).** One job with two build slots
+ran every VM test one or two at a time, and a change to the host reruns
+nearly all of them. The run on `main` after #179 (2026-10-30) shows the
+shape: `alerting` held one slot for about 50 minutes, while the other ran
+the remaining tests one after another in about 50 minutes too
+(`observability` about 12, `compose-stack` and `notify` about 6.5 each,
+`announce` 5.5, `docker` and `disk-tpm` 4 to 5, `tailscale` 3.5, `network`
+3, the rest 2 or less). Those durations are the gaps between the
+`building '…vm-test-run-<name>.drv'` lines in the job log, since Nix
+prints when a build starts but not when it ends. The shards in
+`.github/ci-shards.json`:
+
+| Shard | Checks | Expected, all rebuilt |
+|---|---|---|
+| `lint` | `nix flake check --no-build`, the shard check, the host's closure, the checks with no VM, format and lint | about 10 minutes |
+| `alerting` | `alerting`, with `base-ssh`, `reboot-window`, `game-access` and `network` in its second slot | about 55 minutes: `alerting` sets the floor |
+| `services` | `observability`, `docker`, `compose-stack`, `stack-data`, `announce` | about 20 minutes |
+| `system` | `tailscale`, `comin`, `notify`, `disk-tpm` | about 12 minutes |
+
+The expected times add a few minutes per shard for its runner, Nix, the
+cache and evaluation to the test times above; the pull request that made
+the shards records the measured ones. A shard
+is a whole runner, so each keeps `max-jobs = 2` and the memory limits above
+hold per shard. `alerting` is kept apart from the other long or heavy tests
+(`observability`, `tailscale`, `comin`); nothing else would finish later
+than it anyway. When a shard grows past the others, move checks between
+shards, or add one: a new key in `.github/ci-shards.json` is a new matrix
+job, with no change to the workflow. Every shard costs a runner start and
+an evaluation of the host, a few minutes, so fewer, fuller shards are
+cheaper than many small ones.
+
+**One required check over the shards.** Ruleset `main` requires a status
+named `check`, and the matrix jobs report as `shard (lint)` and so on, so a
+last job named `check` needs every shard (and `list-shards`) and fails
+unless each of them succeeded. It runs `if: always()`: without it, a failed
+shard would make `check` skipped, and GitHub counts a skipped required check
+as passing. The matrix uses `fail-fast: false`, so one failing shard does not
+cancel the others; their results still show, and what they passed is cached.
+A failed shard can be re-run alone ("Re-run failed jobs"), which reruns
+`check` after it. A cancelled run, such as one superseded by a newer push to
+the same pull request, leaves a red `check` on the older commit; the newer
+commit's run is the one that counts.
 
 **Actions pinned by commit hash.** `uses: owner/action@<40-character hash> #
 vX.Y.Z`. A tag can be moved to point at different code after it was reviewed; a

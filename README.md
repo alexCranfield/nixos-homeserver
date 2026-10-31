@@ -20,7 +20,7 @@ flowchart TD
         direction LR
         bot["A change, or the weekly<br/>dependency update"]
         pr["Pull request"]
-        ci["CI: lint, 11 VM tests,<br/>build the whole OS"]
+        ci["CI: lint, 14 VM tests,<br/>build the whole OS,<br/>in four parallel jobs"]
         main["main<br/>(protected)"]
         bot --> pr --> ci -->|"green:<br/>merge"| main
     end
@@ -41,10 +41,11 @@ flowchart TD
   described by the files in this repo, and changes reach it as pull requests
   to `main`.
 - **CI proves the change first.** It builds the complete system and boots it
-  in eleven VM tests: SSH, disk encryption, network, Tailscale, the deploy
-  agent, the reboot window, alerting, Docker, Compose stacks and their data,
-  and friends' access to the games. `main` only
-  accepts a merge once that passes.
+  in fourteen VM tests: SSH, disk encryption, network, Tailscale, the deploy
+  agent, deploy notifications, the reboot window, announcements, metrics,
+  alerting, Docker, Compose stacks and their data, and friends' access to the
+  games. The tests are split across four jobs that run side by side, and
+  `main` only accepts a merge once every one passes.
 - **The server pulls its changes.** [comin](https://github.com/nlewo/comin)
   on the server notices the merge within a minute and switches to it, so no
   CI system holds SSH or other credentials for the server
@@ -215,8 +216,9 @@ scripts/tickets.py                 ticket definitions; file_issues.py files them
 scripts/check_compose.py           the compose checker the flake check runs
 scripts/flake_update.py            the weekly flake.lock update: cooldown, report, checks on the new lock
 scripts/firmware-boot-loop.sh      measures whether local KVM (Kernel-based Virtual Machine) boots the disk-tpm firmware reliably (#80)
-.github/workflows/ci.yml           CI (continuous integration): runs just check on every pull request and push to main, caching the Nix store
-.github/workflows/ci-cache-cleanup.yml   deletes a pull request's older Nix store caches (docs/runbooks/ci.md)
+.github/workflows/ci.yml           CI (continuous integration): runs every shard of the checks on every pull request and push to main, caching the Nix store
+.github/ci-shards.json             which checks each CI shard runs, and why; read by ci.yml and the justfile
+.github/workflows/ci-cache-cleanup.yml   deletes a pull request's older Nix store caches, per shard (docs/runbooks/ci.md)
 .github/workflows/update-flake-lock.yml   weekly pull request updating flake.lock (docs/runbooks/updates.md)
 .github/                           issue and pull request templates, CODEOWNERS
 .editorconfig                      whitespace and indentation for editors
@@ -241,6 +243,8 @@ by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
 | `just` | list the targets |
 | `just fmt` | format every file in place |
 | `just check` | everything CI runs: evaluate the flake, build the checks, build the closure, check formatting and `.editorconfig`, lint the workflows |
+| `just check-shard <shard>` | what one CI job runs, one shard of `.github/ci-shards.json`, e.g. `services` |
+| `just check-shards-complete` | fail unless every flake check is in exactly one shard ([ci.md](docs/runbooks/ci.md)) |
 | `just build` | build the nuc closure, print its store path |
 | `just iso` | build the live USB image, print its store path ([hardware.md](docs/runbooks/hardware.md)) |
 | `just vm` | boot the nuc config in a local VM; log in as below; quit with ctrl-a then x |
@@ -254,7 +258,8 @@ by `flake.lock`. Without direnv, prefix anything below with `nix develop -c`.
 | `just secrets-rekey <file>` | re-encrypt after changing recipients in `.sops.yaml` |
 
 `just check` is the single source of truth for what CI runs:
-`.github/workflows/ci.yml` calls it rather than restating the commands (see
+`.github/workflows/ci.yml` runs its parts, `just check-shard <shard>`, rather
+than restating the commands (see
 [docs/runbooks/ci.md](docs/runbooks/ci.md)). `just vm-secrets` exits
 non-zero when decryption fails, because the VM powers off with status 0 either
 way and only the console distinguishes them.

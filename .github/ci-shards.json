@@ -1,0 +1,43 @@
+{
+  "lint": {
+    "why": "No VM tests. Evaluates the whole flake, checks every flake check is in exactly one shard, builds the host's closure and the quick checks, then formats and lints. Its cache holds the host's closure, about 2 GB.",
+    "checks": [
+      "toplevel",
+      "disko-script",
+      "devshell-nix-matches-server",
+      "compose-check",
+      "stack-watch",
+      "alert-rules",
+      "alert-relay"
+    ]
+  },
+  "alerting": {
+    "why": "alerting waits out real alert durations, about 50 minutes on 2026-10-30, so it sets the length of the whole run. Only short VM tests share its second build slot, so this shard ends when alerting does.",
+    "checks": [
+      "alerting",
+      "base-ssh",
+      "reboot-window",
+      "game-access",
+      "network"
+    ]
+  },
+  "services": {
+    "why": "The services the host runs: observability (about 12 minutes), Docker and the Compose stacks (the two largest VMs, 4 GB and 3 GB) and the announcements to players.",
+    "checks": [
+      "observability",
+      "docker",
+      "compose-stack",
+      "stack-data",
+      "announce"
+    ]
+  },
+  "system": {
+    "why": "How the host is reached, deployed and booted: tailscale, comin, notify and disk-tpm, about 15 minutes one after another.",
+    "checks": [
+      "tailscale",
+      "comin",
+      "notify",
+      "disk-tpm"
+    ]
+  }
+}
