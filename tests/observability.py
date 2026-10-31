@@ -1,6 +1,6 @@
 # Test script for tests/observability.nix. `nuc` and `lan` are the test
 # driver's machines; LAN_IP, PYTHON and GRAFANA_PASSWORD are defined by the Nix
-# file in front of this script.
+# file in front of this script (DASHBOARD is the Game servers dashboard's JSON file).
 #
 # LAN: local area network. API: application programming interface. JSON:
 # JavaScript Object Notation.
@@ -148,6 +148,137 @@ with subtest("probes and Tailscale state are scraped"):
             time.sleep(5)
         print(job, probe)
     nuc.wait_for_open_port(9115)
+
+def minecraft_series():
+    # What the Game servers dashboard draws, from its own JSON: the
+    # expressions of the panels about the server, run through Prometheus.
+    dash = json.load(open(DASHBOARD))
+    out = {}
+    for panel in dash["panels"]:
+        if panel["title"] in ("Players online", "Server answering", "Response time"):
+            # Players online has the count (refId A) and, as B, one series per
+            # name; those are read by minecraft_names.
+            out[panel["title"]] = [
+                r["value"][1]
+                for t in panel["targets"]
+                if t["refId"] == "A"
+                for r in query(t["expr"])
+            ]
+    return out
+
+
+def minecraft_names():
+    # The names the players panel draws, from its own B query: the label sets
+    # Prometheus returns, so a name that is wrong shows up here.
+    dash = json.load(open(DASHBOARD))
+    (panel,) = [p for p in dash["panels"] if p["title"] == "Players online"]
+    (target,) = [t for t in panel["targets"] if t["refId"] == "B"]
+    assert target["legendFormat"] == "{{player}}", target
+    return sorted(r["metric"]["player"] for r in query(target["expr"]))
+
+
+def wait_for_names(want, timeout=180):
+    deadline = time.monotonic() + timeout
+    while (got := minecraft_names()) != want:
+        assert time.monotonic() < deadline, f"wanted {want}, got {got}"
+        time.sleep(5)
+    return got
+
+
+def wait_for_minecraft(want_players, timeout=180):
+    deadline = time.monotonic() + timeout
+    while True:
+        got = minecraft_series()
+        if got.get("Players online") == [want_players]:
+            return got
+        assert time.monotonic() < deadline, f"wanted {want_players} players, got {got}"
+        time.sleep(5)
+
+
+with subtest("the Minecraft player count reaches the dashboard's panels"):
+    # Players online follows the server's own count, up to date within a
+    # scrape; the other two panels have data. The names are checked below.
+    got = wait_for_minecraft("3")
+    print(got)
+    assert got["Server answering"] == ["1"], got
+    assert len(got["Response time"]) == 1 and 0 < float(got["Response time"][0]) < 10, got
+    nuc.succeed("echo 5 > /run/fake-mc/players")
+    print(wait_for_minecraft("5"))
+    nuc.succeed("echo 0 > /run/fake-mc/players")
+    print(wait_for_minecraft("0"))
+    text = nuc.succeed("cat /var/lib/prometheus-node-exporter-text/minecraft.prom")
+    print(text)
+    # The one label is the player's name; the next subtest checks which.
+    assert re.fullmatch(
+        r'(#[^\n]*\n|homeserver_minecraft_\w+(\{player="\w+"\})? [0-9.]+\n)+', text
+    ), text
+
+with subtest("the player sample's names reach the players panel, and only valid ones"):
+    # The stand-in lists five names: two valid, then one with a quote, one of
+    # 20 characters and one with a newline, none a Minecraft name. Only the
+    # first two may become series, and the count stays the server's own.
+    print(wait_for_names(["TestPlayerOne", "TestPlayerTwo"]))
+    text = nuc.succeed("cat /var/lib/prometheus-node-exporter-text/minecraft.prom")
+    assert 'bad' not in text and 'WayToo' not in text and 'newline' not in text, text
+    assert "homeserver_minecraft_players_online 0" in text, text
+    # A sample that names nobody (a pack that hides it) leaves only the count.
+    nuc.succeed("echo '[]' > /run/fake-mc/sample")
+    print(wait_for_names([]))
+    assert wait_for_minecraft("0")["Server answering"] == ["1"]
+    nuc.succeed("echo '[\"TestPlayerOne\"]' > /run/fake-mc/sample")
+    print(wait_for_names(["TestPlayerOne"]))
+    # More than 12 valid names are cut to 12 (the first 12 in sorted order).
+    many = [f"TestPlayer{i:02d}" for i in range(1, 16)]
+    nuc.succeed(f"echo '{json.dumps(many)}' > /run/fake-mc/sample")
+    print(wait_for_names(many[:12]))
+    nuc.succeed("echo '[\"TestPlayerOne\", \"TestPlayerTwo\", \"bad\\\"name\"]' > /run/fake-mc/sample")
+    print(wait_for_names(["TestPlayerOne", "TestPlayerTwo"]))
+
+with subtest("the players graph sits with CPU, memory and network, on the same axis"):
+    dash = json.load(open(DASHBOARD))
+    grid = {p["title"]: p["gridPos"] for p in dash["panels"]}
+    ids = [p["id"] for p in dash["panels"]]
+    assert len(ids) == len(set(ids)), ids
+    players, cpu = grid["Players online"], grid["CPU"]
+    assert players["x"] == cpu["x"] and players["w"] == cpu["w"], (players, cpu)
+    assert players["y"] + players["h"] == cpu["y"], (players, cpu)
+    for title in ("Memory (working set, against the stack's limit)", "Network"):
+        assert grid[title]["x"] == players["x"] and grid[title]["w"] == players["w"], title
+    # The small panels sit above it, not beside it.
+    for title in ("Server answering", "Response time"):
+        assert grid[title]["y"] + grid[title]["h"] <= players["y"], title
+    tip = [p for p in dash["panels"] if p["title"] == "Players online"][0]["options"]["tooltip"]
+    assert tip["mode"] == "all", tip
+
+with subtest("negative control: a server that stops answering shows down, with no count"):
+    nuc.succeed("systemctl stop fake-minecraft.service")
+    deadline = time.monotonic() + 120
+    while (got := minecraft_series())["Server answering"] != ["0"]:
+        assert time.monotonic() < deadline, got
+        time.sleep(5)
+    print(got)
+    assert got["Players online"] == [] and got["Response time"] == [], got
+    nuc.succeed("systemctl start fake-minecraft.service")
+    wait_for_minecraft("3")
+
+with subtest("negative control: with the exporter broken the panels have no data"):
+    # The same check, against a timer that no longer writes: the file goes,
+    # and the panels' queries come back empty, so the test above would fail.
+    nuc.succeed("systemctl stop minecraft-status.timer")
+    nuc.succeed("rm /var/lib/prometheus-node-exporter-text/minecraft.prom")
+    deadline = time.monotonic() + 120
+    while any((got := minecraft_series()).values()):
+        assert time.monotonic() < deadline, got
+        time.sleep(5)
+    print(got)
+    try:
+        wait_for_minecraft("3", timeout=20)
+    except AssertionError as e:
+        print("failed as it should:", e)
+    else:
+        raise AssertionError("the check passed with the exporter stopped")
+    nuc.succeed("systemctl start minecraft-status.timer")
+    wait_for_minecraft("3")
 
 with subtest("Grafana is healthy and requires a login"):
     nuc.wait_for_unit("grafana.service")

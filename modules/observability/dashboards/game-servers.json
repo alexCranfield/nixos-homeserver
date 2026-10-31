@@ -13,10 +13,212 @@
     "from": "now-6h",
     "to": "now"
   },
-  "description": "Placeholder per-game view from cAdvisor (ticket 3.4, #25). Player counts are a follow-up.",
+  "description": "Players online, whether the server answers and how fast (#168), then the containers' CPU, memory and network from cAdvisor (ticket 3.4, #25). Tick rate and heap are still to come.",
   "panels": [
     {
+      "id": 2,
+      "type": "stat",
+      "title": "Server answering",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Down",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Up",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "homeserver_minecraft_up",
+          "legendFormat": "server"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Response time",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "homeserver_minecraft_response_seconds",
+          "legendFormat": "status ping"
+        }
+      ]
+    },
+    {
       "id": 1,
+      "type": "timeseries",
+      "title": "Players online",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "lineInterpolation": "stepAfter",
+            "fillOpacity": 15,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "mode": "normal",
+                  "group": "players"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 40
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "all",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "homeserver_minecraft_players_online",
+          "legendFormat": "players online"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "homeserver_minecraft_player_online",
+          "legendFormat": "{{player}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
       "type": "timeseries",
       "title": "CPU",
       "datasource": {
@@ -27,7 +229,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -59,7 +261,7 @@
       ]
     },
     {
-      "id": 2,
+      "id": 5,
       "type": "timeseries",
       "title": "Memory (working set, against the stack's limit)",
       "datasource": {
@@ -70,7 +272,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -131,7 +333,7 @@
       ]
     },
     {
-      "id": 3,
+      "id": 6,
       "type": "timeseries",
       "title": "Network",
       "datasource": {
@@ -142,7 +344,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 16
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {

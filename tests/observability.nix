@@ -25,6 +25,18 @@ let
     "52:54:00:12:${lib.fixedWidthString 2 "0" (toString net)}:${
       lib.fixedWidthString 2 "0" (toString machine)
     }";
+  # The stand-in's player sample: two valid names, then a quote in a name, one
+  # of 20 characters (over the limit of 16) and a newline in a name. The last
+  # three are not Minecraft names and must not reach a metric label.
+  sample = pkgs.writeText "fake-mc-sample.json" (
+    builtins.toJSON [
+      "TestPlayerOne"
+      "TestPlayerTwo"
+      "bad\"name"
+      "WayTooLongForAName_1"
+      "new\nline"
+    ]
+  );
   image = pkgs.dockerTools.buildImage {
     name = "probe";
     tag = "test";
@@ -72,6 +84,21 @@ pkgs.testers.runNixOSTest {
         address = [ "${lanIp}/24" ];
       };
 
+      # A stand-in for the Minecraft server, on the port the real stack
+      # publishes on the host, with three players on and a sample of names
+      # (made up) that includes invalid ones, which must be dropped.
+      systemd.services.fake-minecraft = {
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          RuntimeDirectory = "fake-mc";
+          ExecStartPre = [
+            "${pkgs.runtimeShell} -c 'echo 3 > /run/fake-mc/players'"
+            "${pkgs.coreutils}/bin/install -m 0644 ${sample} /run/fake-mc/sample"
+          ];
+          ExecStart = "${pkgs.python3}/bin/python3 ${./fake-minecraft.py} /run/fake-mc/players /run/fake-mc/sample";
+        };
+      };
+
       systemd.services.probe = {
         wantedBy = [ "multi-user.target" ];
         after = [ "docker.service" ];
@@ -94,6 +121,7 @@ pkgs.testers.runNixOSTest {
 
   testScript = ''
     LAN_IP = ${builtins.toJSON lanIp}
+    DASHBOARD = ${builtins.toJSON "${../modules/observability/dashboards/game-servers.json}"}
     PYTHON = ${builtins.toJSON "${pkgs.python3}/bin/python3"}
     GRAFANA_PASSWORD = ${builtins.toJSON (import ./grafana-password.nix { inherit pkgs; }).password}
   ''

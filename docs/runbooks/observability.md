@@ -29,7 +29,7 @@ the tailnet's access policy allows.
 
 Failures of any of these units post to the alerts channel, like other watched
 units (the newer ones too: alertmanager, alert-relay,
-prometheus-blackbox-exporter and tailscale-state) ([notifications runbook](notifications.md)).
+prometheus-blackbox-exporter, tailscale-state and minecraft-status) ([notifications runbook](notifications.md)).
 
 ## Opening Grafana
 
@@ -43,10 +43,54 @@ folder:
 - **cadvisor dashboard**: containers, filtered by Compose project and
   container name (grafana.com dashboard 19792).
 - **DNS**: the LAN DNS server's queries, blocks, cache and query log ([dns.md](dns.md#the-dashboard)).
-- **Game servers**: CPU, memory and network of the containers whose names
-  start `minecraft`. Memory is drawn from zero against the stack's own limit
+- **Game servers**: whether the Minecraft server answers and how long its
+  status ping takes (from `minecraft-status`, below), then players online
+  over time, then CPU, memory and network of the containers whose names start
+  `minecraft`. The last four are full width on one time axis, so a spike in
+  one lines up with the others. The players graph draws the count as a line
+  and each named player as a stacked band; hover (tooltip in "all" mode) to
+  see who was on. Memory is drawn from zero against the stack's own limit
   (`memoryMax`, dashed), so the headroom StackMemoryNearLimit watches is
-  visible. Player counts are a follow-up ticket (#168).
+  visible. Tick rate and heap are still to come (#168).
+
+### Minecraft player count
+
+`minecraft-status.service`, run by a timer every 15 s, asks the server for its
+status with `mc-monitor status` (itzg's tool, from the author of the server's
+image) on `127.0.0.1:25565`, the port the container publishes, and writes
+`homeserver_minecraft_up`, `homeserver_minecraft_players_online` and
+`homeserver_minecraft_response_seconds` to node-exporter's textfile
+directory, as `tailscale-state` does. It also asks a second time with
+`mc-monitor status --json` and exports `homeserver_minecraft_player_online{player="<name>"} 1`
+for each name in the ping's player sample (`players.sample`). The sample is
+the server's to give: vanilla lists at most 12 names, and a pack can hide it,
+so there can be fewer names than the count, or none, and the count is always
+the number to trust. Only valid Minecraft names (1 to 16 of letters, digits
+and `_`) are kept; anything else is dropped, and `\` and `"` are escaped as
+well. The names exist only at runtime, in Prometheus and Grafana, never in
+this repo. They are kept for Prometheus's retention window, and anyone who
+can open Grafana over the tailnet can see who played and when. When the server does not answer, or is still loading, `up` is 0 and the
+other two are absent; the unit does not fail, as that is a result. The
+response time includes starting `mc-monitor`, so a few milliseconds are its
+own.
+
+It is a host unit, not a container in `stacks/minecraft`, on purpose: a
+change to that stack's files makes comin's deploy recreate the server's
+container, which kicks everyone off. `mc-monitor export-for-prometheus`
+would also listen on every address, where this keeps to loopback. To look at
+it by hand:
+
+```bash
+cat /var/lib/prometheus-node-exporter-text/minecraft.prom
+systemctl status minecraft-status.timer
+journalctl -u minecraft-status -b
+```
+
+The player count is blank on the dashboard while the server loads (about two
+minutes after a start). `tests/observability.nix` runs the timer against a
+stand-in server and checks that the dashboard's own queries follow its count.
+`mc-monitor` is built from `modules/observability/mc-monitor.nix`, a copy of
+nixpkgs' package, because nixos-26.05 does not have it yet.
 
 ### Why plain HTTP
 
@@ -298,7 +342,7 @@ under the 90 % line but not by much, so watch it during the noise week.
   unreachable. The relay logs the failure to its journal, and Alertmanager
   retries. A second channel, a phone push, is #170.
 - **Disk health (SMART, Self-Monitoring, Analysis and Reporting Technology):**
-  #46. **Minecraft's tick rate and Java heap:** #168, with the player counts.
+  #46. **Minecraft's tick rate and Java heap:** #168 (the player counts are in).
 
 ### Silencing
 
