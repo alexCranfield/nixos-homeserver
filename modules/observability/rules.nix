@@ -2,24 +2,31 @@
 # thresholds and durations so that tuning them never means editing a query.
 #
 # This file is a plain Nix function, not a NixOS module. It exports an
-# attribute set with two members:
+# attribute set with three members:
 #
 #   defaults  The starting thresholds, keyed by alert name. Each value is
 #             `{ for = "10m"; }` plus, for the alerts that have a number to
 #             tune, `value`. TemperatureHigh also has `fallback`, the limit in
 #             degrees Celsius for a sensor that reports no `crit` mark.
 #             `homeserver.alerting.thresholds` defaults to this.
-#   mkRules   `{ lib, thresholds, watchedUnits }: { groups = [ ... ]; }`.
+#   gapGrace  The default grace for scrape gaps, "2m": how long a firing
+#             alert stays firing after its series stops matching (see
+#             `rule` below). `homeserver.alerting.gapGrace` defaults to this.
+#   mkRules   `{ lib, thresholds, gapGrace, watchedUnits }: { groups = [ ... ]; }`.
 #             `thresholds` is merged over `defaults`, so a caller may give only
-#             the alerts it changes. `watchedUnits` lists unit names without
-#             `.service` (`homeserver.notify.units`): their failures are
-#             posted by the notifier already, so UnitFailed skips them.
+#             the alerts it changes. `gapGrace` is a Prometheus duration and
+#             defaults to the one above. `watchedUnits` lists unit names
+#             without `.service` (`homeserver.notify.units`): their failures
+#             are posted by the notifier already, so UnitFailed skips them.
 #             The result is rendered to YAML by the caller.
 #
 # Every alert carries the label `severity` (`event` or `threshold`) and the
 # annotations `summary`, which holds the value and the threshold, and
 # `description`.
 let
+  # Named apart from mkRules's argument, which would shadow it.
+  defaultGapGrace = "2m";
+
   defaults = {
     # Event alerts: a `for` and nothing to tune.
     TargetDown.for = "1m";
@@ -72,6 +79,7 @@ let
     {
       lib,
       thresholds ? { },
+      gapGrace ? defaultGapGrace,
       watchedUnits,
     }:
     let
@@ -123,8 +131,6 @@ let
       # posted by the notifier or by UnitFailed, so the alerts that would
       # repeat it as a symptom are held back with `unless on()`.
       failed = unit: ''node_systemd_unit_state{name="${unit}.service",state="failed"} == 1'';
-
-      gapGrace = "2m";
 
       stack = ''id=~"/stack.slice/stack-.+\\.slice"'';
       pct = ''{{ $value | printf "%.0f" }}'';
@@ -276,4 +282,5 @@ let
 in
 {
   inherit defaults mkRules;
+  gapGrace = defaultGapGrace;
 }

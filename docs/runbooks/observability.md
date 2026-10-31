@@ -270,7 +270,8 @@ Notes on a few of them:
 The VM test (`tests/alerting.nix`) measured, from the cause to the post:
 `TargetDown` about 50 s after stopping an exporter, and `UnitFailed` about 15
 to 20 s. Those figures are not the nuc's: the test evaluates every 5 s, uses a
-`for` of 30 s for `TargetDown` and a 1 m `group_interval`. On the nuc the
+`for` of 30 s for `TargetDown`, a 1 m `group_interval`, and (since #182) a
+45 s grace for scrape gaps. On the nuc the
 timings below are derived from the deployed configuration (15 s scrape and
 evaluation, `group_wait` 10 s, `group_interval` 5 m), not measured there:
 
@@ -279,7 +280,9 @@ evaluation, `group_wait` 10 s, `group_interval` 5 m), not measured there:
 - `UnitFailed`: roughly 10 to 40 s.
 - A ✅ can arrive up to about 5 minutes after the condition clears (the
   `group_interval`), plus 2 minutes of `keep_firing_for` on every alert
-  but `TargetDown`, event and threshold alike. One missed scrape, such as a
+  but `TargetDown`, event and threshold alike. That grace is
+  `homeserver.alerting.gapGrace` (default `2m`, from `rules.nix`); only the
+  VM test changes it. One missed scrape, such as a
   deploy restarting node-exporter, marks the series stale, and without
   `keep_firing_for` every standing alert would resolve and fire again (a ✅
   and, after the full `for`, a second 🔴 for a threshold alert). It also

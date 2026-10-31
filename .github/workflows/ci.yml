@@ -48,10 +48,11 @@ jobs:
   shard:
     needs: list-shards
     runs-on: ubuntu-latest
-    # The alerting test (#27) waits out real alert durations, about 50
-    # minutes on 2026-10-30, so the shard that holds it takes about an hour.
     # Before #180 every VM test shared one job and two build slots, and a
-    # change to the host took 76 minutes of this limit.
+    # change to the host took 76 minutes of this limit; the alerting test
+    # alone took about 50 (#27). Since #182 it is two halves in different
+    # shards, each expected to take about 16 minutes, and the limit stays
+    # until the shards' measured times show what a cold run takes.
     timeout-minutes: 90
     strategy:
       # A failing shard does not cancel the others: their results still

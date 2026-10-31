@@ -12,9 +12,9 @@
     ]
   },
   "alerting": {
-    "why": "alerting waits out real alert durations, about 50 minutes on 2026-10-30, so it sets the length of the whole run. Only short VM tests share its second build slot, so this shard ends when alerting does.",
+    "why": "alerting-a, the first half of the alerting test (#182), waits out alert durations and is expected to take about 18 minutes. Only short VM tests are expected to share its second build slot (Nix decides the start order, not this file); the other half, alerting-b, is in system, so the two run side by side.",
     "checks": [
-      "alerting",
+      "alerting-a",
       "base-ssh",
       "reboot-window",
       "game-access",
@@ -32,8 +32,9 @@
     ]
   },
   "system": {
-    "why": "How the host is reached, deployed and booted: tailscale, comin, notify and disk-tpm, about 15 minutes one after another.",
+    "why": "How the host is reached, deployed and booted: tailscale, comin, notify and disk-tpm, about 15 minutes one after another, expected in one build slot while alerting-b, the second half of the alerting test (#182, expected about 18 minutes), holds the other. Nix decides the start order, not this file.",
     "checks": [
+      "alerting-b",
       "tailscale",
       "comin",
       "notify",
