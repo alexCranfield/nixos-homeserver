@@ -93,7 +93,8 @@ _eval:
     # Evaluates every output, the checks included, without building, so an
     # error anywhere in the flake fails here (and only in the lint shard).
     nix flake check --no-build
-    just check-shards-complete
+    # A new `just` process starts from the defaults, so pass the file on.
+    just shards_file='{{ shards_file }}' check-shards-complete
 
 # Build the named checks, writing `name drv` lines to $CHECK_DRVS when it is set.
 [positional-arguments]
