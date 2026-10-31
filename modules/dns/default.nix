@@ -159,7 +159,18 @@ in
             # Answer at once and block once the lists have loaded: at boot,
             # or with a list's server down, the house keeps resolving.
             strategy = "fast";
-            refreshPeriod = "24h";
+            # After a power cut the router's LAN is up minutes before its
+            # WAN, so the first download of every list fails. Blocky's
+            # defaults (3 attempts, 500 ms apart) give up within two seconds,
+            # and with "fast" nothing then retries until the next refresh:
+            # 24 hours with blocking off. Ten attempts 30 s apart keep
+            # trying for about 4.5 minutes, and a refresh every 4 hours (the
+            # Blocky default) bounds what any longer outage costs.
+            refreshPeriod = "4h";
+            downloads = {
+              attempts = 10;
+              cooldown = "30s";
+            };
             # A list stops loading at its sixth line Blocky can't parse, and
             # DandelionSprout's has four (./lists.nix). Enough headroom that
             # a few more don't silently cut a list short.

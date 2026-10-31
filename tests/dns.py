@@ -16,12 +16,13 @@ nuc.wait_for_open_port(53, NUC_IP)
 # The lists load after Blocky starts answering (fail open). Wait until both
 # groups' blocklists have entries, by Blocky's own metrics: its log says
 # "group import finished" for the allowlists too. The ads group waits out its
-# unreachable list's download attempts first.
+# unreachable list's download attempts first: ten of them, about 5 s each
+# (the download timeout) and 1 s apart (tests/dns.nix).
 for group in ("ads", "threats"):
     nuc.wait_until_succeeds(
         "curl -fsS http://127.0.0.1:4000/metrics"
         f" | grep -E '^blocky_denylist_cache_entries\\{{group=\"{group}\"\\}} [1-9]'",
-        timeout=120,
+        timeout=240,
     )
 print(nuc.succeed("curl -fsS http://127.0.0.1:4000/metrics | grep _cache_entries"))
 
@@ -461,6 +462,30 @@ with subtest("blocky owns the log's table and dns-watch can only read it"):
     # its unit runs, so check the privileges rather than connecting as it.
     nuc.succeed("sudo -u postgres psql -At blocky -c \"select has_table_privilege('dns-watch', 'log_entries', 'select')\" | grep -qx t")
     nuc.succeed("sudo -u postgres psql -At blocky -c \"select has_table_privilege('dns-watch', 'log_entries', 'delete')\" | grep -qx f")
+
+with subtest("list downloads retry for minutes and lists refresh every 4 hours"):
+    # After a power cut the router's LAN is up minutes before its WAN (wide
+    # area network), so every first download fails. Blocky's defaults (3
+    # attempts, 500 ms apart) give up within two seconds and, with a refresh
+    # every 24 hours, leave blocking off for a day.
+    def seconds(text):
+        n, unit = re.fullmatch(r"(\d+)(s|m|h)", text).groups()
+        return int(n) * {"s": 1, "m": 60, "h": 3600}[unit]
+
+    prod = PRODUCTION_LOADING
+    print(f"production loading: {prod}")
+    span = (prod["downloads"]["attempts"] - 1) * seconds(prod["downloads"]["cooldown"])
+    assert span >= 240, (span, prod)
+    assert seconds(prod["refreshPeriod"]) <= 4 * 3600, prod
+    # This VM's own configuration is the production one except the cooldown,
+    # which the test shortens (tests/dns.nix).
+    unit = nuc.succeed("systemctl cat blocky.service")
+    config = re.search(r"--config\s+(/nix/store/\S+\.yaml)", unit)
+    assert config, unit
+    text = nuc.succeed(f"cat {config.group(1)}")
+    assert f"attempts: {prod['downloads']['attempts']}" in text, text
+    assert "cooldown: 1s" in text, text
+    assert "refreshPeriod: 4h" in text, text
 
 with subtest("retention is 14 days"):
     # The configuration file is named in the unit's command line.

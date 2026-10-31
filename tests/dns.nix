@@ -190,6 +190,11 @@ pkgs.testers.runNixOSTest {
       # its special-use names. home.arpa and the LAN's reverse names reach the
       # router before this check, so the test still covers them.
       services.blocky.settings.specialUseDomains.enable = false;
+      # The unreachable list above would otherwise cost the ads group the
+      # production retry span (several minutes, modules/dns/default.nix)
+      # before it loads the reachable one. Only the pause between attempts
+      # shrinks; the attempts stay as in production.
+      services.blocky.settings.blocking.loading.downloads.cooldown = lib.mkForce "1s";
     };
 
   nodes.router =
@@ -280,6 +285,9 @@ pkgs.testers.runNixOSTest {
       CLIENT_IP = ${builtins.toJSON nodes.client.networking.primaryIPAddress}
       NAS_IP = ${builtins.toJSON nodes.nas.networking.primaryIPAddress}
       GRAFANA_PASSWORD = ${builtins.toJSON (import ./grafana-password.nix { inherit pkgs; }).password}
+      # The real host's list-loading settings, evaluated from the flake's own
+      # nuc configuration, which this test's overrides don't touch.
+      PRODUCTION_LOADING = ${builtins.toJSON inputs.self.nixosConfigurations.nuc.config.services.blocky.settings.blocking.loading}
     ''
     + builtins.readFile ./dns.py;
 }

@@ -188,8 +188,10 @@ minutes, mostly on Tuesday mornings. That is expected, not a fault. Nothing
 posts for it: the durations of the alerts below ride out a restart.
 
 At boot Blocky answers before its blocklists have loaded (it fails open), so
-blocking starts a few seconds later. `DnsServerNotBlocking` waits 15 minutes
-for that reason.
+blocking starts a few seconds later, or, after a power cut with the router's
+internet link still down, within about 5 minutes of it coming back (the list
+downloads retry for that long). `DnsServerNotBlocking` and `DnsBlocklistEmpty`
+wait 15 minutes for that reason.
 
 ## What the design accepts
 
@@ -211,8 +213,11 @@ EasyList, EasyPrivacy, WindowsSpyBlocker: hits are normal and only counted)
 and `threats` (HaGeZi's Threat Intelligence Feeds and DandelionSprout's
 anti-malware list: a hit means a device tried to reach a known malware,
 phishing or command-and-control domain). Edit the file, open a pull request,
-merge; comin deploys it. Blocky reloads lists daily (24 hours) and at each
-start.
+merge; comin deploys it. Blocky loads lists at each start and reloads them
+every 4 hours. A download that fails is retried 10 times, 30 seconds apart
+(about 4.5 minutes), so a power cut that brings the nuc up before the router's
+internet link does not leave blocking off until the next reload; a list that
+still fails waits for that reload, or `systemctl restart blocky`.
 
 A list must be in a format Blocky 0.29 reads in full: a hosts file, one
 domain per line, or `*.name` wildcards. It half-reads the adblock syntax
