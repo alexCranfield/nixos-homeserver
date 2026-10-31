@@ -3,8 +3,9 @@
 Ticket 7.x (#164). The nuc is the LAN's (local area network's) DNS (Domain
 Name System) server: Blocky answers on port 53, blocks ads and threats, and
 sends everything else to Unbound, which resolves from the root servers. The
-reasons are in [ADR (Architecture Decision Record) 0012](../adr/0012-lan-dns-blocky-unbound.md), the design
-in `docs/superpowers/specs/2026-10-29-lan-dns-design.md`. The configuration is
+reasons are in
+[ADR (Architecture Decision Record) 0012](../adr/0012-lan-dns-blocky-unbound.md),
+the design in `docs/superpowers/specs/2026-10-29-lan-dns-design.md`. The configuration is
 `modules/dns/` (Blocky, Unbound, the query log, the watch) and
 `hosts/nuc/dns.nix` (the secrets). The alert rules are in
 `modules/observability/rules.nix`, the dashboard in
@@ -21,8 +22,9 @@ LAN device --> Blocky (lan0:53) --> Unbound (127.0.0.1:5335) --> root, TLD, auth
                      for 192.168.1.0/24 ---------> the router (192.168.1.1)
 ```
 
-TLD is the top-level domain. Blocky asks the router for each client's name,
-so the query log shows device names; a device the router has no reverse name
+TLD (top-level domain) servers are the ones for `.com`, `.org` and so on.
+Blocky asks the router for each client's name, so the query log shows
+device names; a device the router has no reverse name
 for shows its address, which is expected.
 
 The nuc's own lookups do not use any of this. Its resolver is the router
@@ -77,8 +79,22 @@ Only when all pass does Alex change the router's DHCP.
 
    `journalctl -u unbound -b` says why the second failed
    (`log-servfail` is on). If the first has no `ad` flag, check that the
-   name is signed before suspecting Unbound.
-3. **Device names appear in the query log.** On the nuc:
+   name is signed before suspecting Unbound. `dnssec-failed.org` is a
+   zone published to fail validation; if it stops being maintained and
+   answers normally, pick a current deliberately broken DNSSEC test zone
+   (for example `sigfail.verteiltesysteme.net`, if it still exists) and
+   confirm it fails with a
+   validating resolver elsewhere before trusting the result.
+3. **`home.arpa` reaches the router, not the special-use answer.**
+
+   ```bash
+   dig +short @192.168.1.131 nuc.home.arpa     # the nuc's address (192.168.1.131)
+   ```
+
+   An empty answer or a "no such name" answer here means Blocky's special-use handling
+   caught the name first; the VM test cannot show it (it turns that
+   handling off), so this is its only check.
+4. **Device names appear in the query log.** On the nuc:
 
    ```bash
    sudo -u postgres psql blocky -c \
@@ -87,14 +103,14 @@ Only when all pass does Alex change the router's DHCP.
 
    After step 1, the workstation's lookups should be there under its router
    name. Blank names are devices the router has no reverse name for.
-4. **The nuc's own resolver is the router, not Blocky:**
+5. **The nuc's own resolver is the router, not Blocky:**
 
    ```bash
    resolvectl status lan0      # "DNS Servers: 192.168.1.1" and nothing else
    resolvectl query example.com
    ```
 
-5. **The dashboard fills in** ([below](#the-dashboard)) and the DNS alerts are
+6. **The dashboard fills in** ([below](#the-dashboard)) and the DNS alerts are
    quiet.
 
 ## The router and the NAS (Alex)
@@ -270,7 +286,7 @@ them on the workstation:
 just secrets-edit dns.yaml
 ```
 
-Add a line to `private-hosts` such as `192.168.1.50 some-private-name`, save,
+Add a line to `private-hosts` such as `192.168.1.x some-private-name`, save,
 and merge as usual. A changed `private-hosts` restarts Blocky; a changed
 `nas-address` is picked up by Prometheus, which watches the file. Never write
 either value in the repo, an issue or a pull request ([secrets
@@ -306,9 +322,10 @@ Comments, 6761 and its kin) before the question reaches Unbound: `.test` and
 `.local` among them, and the reverse zones of private addresses other than
 192.168.1.0/24 (those go to the router first). A made-up `.test` name for a
 service on the LAN will not resolve through the nuc, whatever a record
-says. Use a name under `home.arpa`, which Blocky sends to the
-router before the special-use check, and `dig` any new record after the
-deploy to see that it answers. `.local`
+says. Use a name under `home.arpa`, which Blocky is expected to send to the
+router before the special-use check (the VM test turns the special-use
+names off, so this is checked after deploy, below), and `dig` any new
+record after the deploy to see that it answers. `.local`
 belongs to mDNS (multicast DNS) in any case, which needs no DNS server.
 
 ## The query log

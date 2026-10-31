@@ -20,7 +20,7 @@ flowchart TD
         direction LR
         bot["A change, or the weekly<br/>dependency update"]
         pr["Pull request"]
-        ci["CI: lint, 11 VM tests,<br/>build the whole OS"]
+        ci["CI: lint, 15 VM tests,<br/>build the whole OS"]
         main["main<br/>(protected)"]
         bot --> pr --> ci -->|"green:<br/>merge"| main
     end
@@ -41,9 +41,10 @@ flowchart TD
   described by the files in this repo, and changes reach it as pull requests
   to `main`.
 - **CI proves the change first.** It builds the complete system and boots it
-  in eleven VM tests: SSH, disk encryption, network, Tailscale, the deploy
-  agent, the reboot window, alerting, Docker, Compose stacks and their data,
-  and friends' access to the games. `main` only
+  in fifteen VM tests: SSH, disk encryption, network, DNS, Tailscale, the
+  deploy agent, the reboot window, notifications and announcements, Docker,
+  Compose stacks and their data, observability, alerting, and friends' access
+  to the games. `main` only
   accepts a merge once that passes.
 - **The server pulls its changes.** [comin](https://github.com/nlewo/comin)
   on the server notices the merge within a minute and switches to it, so no

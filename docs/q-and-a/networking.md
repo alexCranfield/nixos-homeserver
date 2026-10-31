@@ -236,8 +236,7 @@ Recorded in [ADR 0012](../adr/0012-lan-dns-blocky-unbound.md).
 <summary>Answer</summary>
 
 No. They are public URLs anyone can look up, so encrypting them hides
-nothing, makes every change an unreadable encrypted diff, and stops CI
-(continuous integration) validating them. They go in the repo as plain Nix.
+nothing, and makes every change an unreadable encrypted diff. They go in the repo as plain Nix.
 
 What does need protecting:
 
@@ -245,7 +244,8 @@ What does need protecting:
   never holds. They go in a sops secret that Blocky reads at start, never
   through the Nix store.
 - **The query log**, which holds every device's browsing. It stays on the nuc,
-  readable only by Blocky and Grafana, and is never in the repo.
+  readable only by Blocky (which writes it), Grafana and the alert
+  queries' read-only role, and is never in the repo.
 
 The first plan also had a database password in sops. The built design needs
 none: PostgreSQL uses its local socket and maps the operating-system user to
