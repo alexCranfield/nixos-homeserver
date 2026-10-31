@@ -152,8 +152,9 @@ with subtest("8. a post that fails while Discord is down arrives once it is back
     nuc.succeed("systemctl stop webhook-receiver.service")
     nuc.succeed("systemd-run --unit fail-outage false")
     # The relay tried, and failed (the alert takes up to a scrape, an
-    # evaluation and group_wait to get there).
-    time.sleep(to_post(0))
+    # evaluation and group_wait to get there). No fixed sleep first: the
+    # receiver should be back as early as it can, inside the notification
+    # that failed.
     nuc.wait_until_succeeds(
         "journalctl -u alert-relay -o cat --no-pager | grep -F 'post of UnitFailed failed'",
         timeout=180,

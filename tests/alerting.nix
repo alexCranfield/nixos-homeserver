@@ -32,9 +32,9 @@
 #    get a day, so that no busy spell of an emulated VM posts in the middle
 #    of a subtest that counts posts.
 #  - Prometheus evaluates the rules every 5 seconds, not every 15.
-#  - The grace for scrape gaps (`homeserver.alerting.gapGrace`) is 30
-#    seconds, not 2 minutes, and Alertmanager's group_interval is 40
-#    seconds, not 5 minutes. Every resolved post waits out both, and the
+#  - The grace for scrape gaps (`homeserver.alerting.gapGrace`) is 45
+#    seconds, not 2 minutes, and Alertmanager's group_interval is 1
+#    minute, not 5. Every resolved post waits out both, and the
 #    test checks about ten of them. `timing` below says how each is chosen.
 #    Every other part of Alertmanager's configuration is the host's own.
 {
@@ -124,28 +124,31 @@ let
     # The host's: a new alert's first post waits this long.
     groupWait = seconds hostAlertmanager.route.group_wait;
     # Allowance for the VM's own delays (a command, a unit starting) on top
-    # of the timings above. It also keeps group_interval clear of the
-    # relay's retries, below.
+    # of the timings above.
     slack = 10;
-    # How long homeserver-notify retries a post that Discord refuses:
-    # curl's three retries five seconds apart (modules/base/notify.nix).
-    notifyRetries = 3 * 5;
-    # Two scrape intervals. Subtest 6's gap is one failed scrape of
+    # Three scrape intervals. Subtest 6's gap is one failed scrape of
     # node-exporter, so a firing alert misses the series for one scrape
-    # interval, give or take an evaluation; the grace must be clearly
-    # longer than that, and is twice it. Its negative control (GapControl,
-    # below) proves the same gap does drop an alert without the grace.
-    grace = 2 * scrape;
-    # Alertmanager gives up on a notification after its group_interval
-    # (its context, notify.MinTimeout of 10 s at the least), and a post the
-    # relay completes after that is sent again at the next flush
-    # (modules/observability/alert-relay.py). In subtest 8 the relay posts
-    # while Discord is down: one try that fails after notifyRetries, then a
-    # second that gets through once the receiver is back. Both must fit, or
-    # the post arrives twice; 20 seconds was not enough by this reckoning.
-    groupInterval = 2 * notifyRetries + slack;
-    # TargetDown's `for`, set below; two sleeps watch for it.
-    targetDownFor = seconds thresholds.TargetDown.for;
+    # interval, give or take an evaluation; but a VM slow to restart the
+    # exporter can miss the next scrape too, about 35 seconds in all (the
+    # gap seen under emulation was up to 22). The grace must be clearly
+    # longer than either. Its negative control (GapControl, below) proves
+    # the same gap does drop an alert without the grace.
+    grace = 3 * scrape;
+    # The relay's limit on one post (SEND_TIMEOUT in
+    # modules/observability/alert-relay.py). One post through
+    # homeserver-notify can take about 40 seconds with curl's retries.
+    relaySendTimeout = 60;
+    # The floor: Alertmanager gives up on a notification after
+    # max(group_interval, 10 s), its context, and a post the relay completes
+    # after that is sent again at the next flush, so the relay's limit must
+    # fit inside it (alert-relay.py). On the host it is 5 minutes, well
+    # above; the test runs at the limit itself, as before #182, and no
+    # shorter. The host's webhook `timeout` of 4 minutes, which its comment
+    # says is under group_interval, is over it here: in the test the
+    # context, not that timeout, bounds a notification.
+    groupInterval = relaySendTimeout;
+    # TargetDown's `for`, as the half sets it; two sleeps watch for it.
+    targetDownFor = seconds (thresholds // this.thresholds).TargetDown.for;
   };
 
   quiet = {

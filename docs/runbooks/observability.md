@@ -270,8 +270,8 @@ Notes on a few of them:
 The VM test (`tests/alerting.nix`) measured, from the cause to the post:
 `TargetDown` about 50 s after stopping an exporter, and `UnitFailed` about 15
 to 20 s. Those figures are not the nuc's: the test evaluates every 5 s, uses a
-`for` of 30 s for `TargetDown`, and (since #182) a 40 s `group_interval` and
-a 30 s grace for scrape gaps. On the nuc the
+`for` of 30 s for `TargetDown`, a 1 m `group_interval`, and (since #182) a
+45 s grace for scrape gaps. On the nuc the
 timings below are derived from the deployed configuration (15 s scrape and
 evaluation, `group_wait` 10 s, `group_interval` 5 m), not measured there:
 

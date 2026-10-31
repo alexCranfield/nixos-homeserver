@@ -15,7 +15,9 @@ settle()
 # subtest 2 expects for its kill; in half a, minutes of other subtests pass
 # first. Forget it, so that the post is this kill's (seen: held back, 303 s
 # after the boot's).
-nuc.succeed("rm -f /var/lib/notify-failure/cadvisor.service")
+cooldown = "/var/lib/notify-failure/cadvisor.service"
+print("cAdvisor's cooldown state before:", nuc.execute(f"cat {cooldown}")[1].strip() or "none")
+nuc.succeed(f"rm -f {cooldown}")
 
 with subtest("2. UnitFailed: an unwatched unit posts; a watched one posts once, the notifier's"):
     n = len(received())
@@ -128,7 +130,10 @@ with subtest("5. OomKill and StackMemoryNearLimit: a container past its slice's 
     nuc.succeed("docker inspect -f '{{.State.Running}}' oomtest | grep -qx true")
     check_fired(oom, m)
     # One post, though the counter is also raised in the slice, in
-    # stack.slice and at the root, all in the same scrape.
+    # stack.slice and at the root, all in the same scrape. That relies on
+    # OomKill's matcher in rules.nix, `name!=""`: only a named container's
+    # series qualifies, not the slices above it, which have no name. (Not
+    # the `stack` regex, which only the stack alerts use.)
     time.sleep(to_post(0) + SLACK)
     assert [title(x) for x in received()[m:]] == [firing(oom)], received()[m:]
 

@@ -173,10 +173,10 @@ def settle():
         assert time.monotonic() < deadline, (prom("up == 0"), am_alerts())
         time.sleep(1)
     # A resolve is posted at its group's next flush.
-    quiet = GROUP_INTERVAL + SLACK
+    still = GROUP_INTERVAL + SLACK
     while True:
         n = len(received())
-        time.sleep(quiet)
+        time.sleep(still)
         if len(received()) == n:
             break
         assert time.monotonic() < deadline, [title(m) for m in received()]

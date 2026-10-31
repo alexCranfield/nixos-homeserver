@@ -384,19 +384,24 @@ hold per shard.
 test of about 50 minutes, nearly all of it waiting: every resolved post
 waited out the rules' 2 minute grace for scrape gaps (`keep_firing_for`)
 and then up to a minute of Alertmanager's `group_interval`, and the fixed
-sleeps were sized around both. The test now sets the grace to 30 seconds
-and `group_interval` to 40 (the host keeps 2 and 5 minutes;
-`tests/alerting.nix` says why each test value is what it is), derives
+sleeps were sized around both. The test now sets the grace to 45 seconds
+and keeps its `group_interval` of 1 minute (the host has 2 and 5 minutes;
+`tests/alerting.nix` says why each test value is what it is, and why 1
+minute is the floor for `group_interval`), derives
 every sleep from those, and runs as two checks on the same machine:
 `alerting-a` (subtests 4, 1, 6, 7, 8) and `alerting-b` (2, 3, 5); both run
 subtests 9 and 10, which take seconds. The split is by expected time
 rather than by number: subtest 5 alone waits out `OomKill`'s 5 minute
-window, about 10 minutes, and the expected totals are about 16 minutes
+window, about 10 minutes, and the expected totals are about 18 minutes
 each. The halves are in different shards, `alerting` and `system`, so they
-run side by side; each shares its runner with tests that together take no
-longer than it does. On the workstation under TCG, much slower than CI's
-KVM, `alerting-a` took 999 seconds and `alerting-b` 1181 (2026-10-31); the
-pull request records the times measured in CI. When a shard grows past the others, move checks between
+are expected to run side by side, each sharing its runner with tests that
+together take no longer than it does. Expected, because Nix decides which
+check starts first in a shard's two build slots, not the order in the
+file. On the workstation under TCG, much slower than CI's KVM,
+`alerting-a` took TIME_A seconds and `alerting-b` TIME_B (2026-10-31); the
+pull request records the times measured in CI.
+
+When a shard grows past the others, move checks between
 shards, or add one: a new key in `.github/ci-shards.json` is a new matrix
 job, with no change to the workflow. Every shard costs a runner start and
 an evaluation of the host, a few minutes, so fewer, fuller shards are
