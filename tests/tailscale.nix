@@ -69,6 +69,10 @@ pkgs.testers.runNixOSTest {
       # The LAN's DNS server on this address, in place of the real one, so the
       # test can show port 53 is open on the LAN and closed on the tailnet.
       homeserver.dns.listenAddresses = lib.mkForce [ lanIp ];
+      # The host points this at its sops secret (hosts/nuc/dns.nix), which a
+      # test VM cannot decrypt; without the file, Blocky's LoadCredential fails
+      # and it never opens port 53. tests/dns.nix covers the private names.
+      homeserver.dns.privateHostsFile = lib.mkForce null;
 
       # The host points this at its sops secret (hosts/nuc/tailscale.nix), which
       # a test VM cannot decrypt. The test writes a Headscale key here instead.
