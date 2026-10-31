@@ -398,7 +398,7 @@ are expected to run side by side, each sharing its runner with tests that
 together take no longer than it does. Expected, because Nix decides which
 check starts first in a shard's two build slots, not the order in the
 file. On the workstation under TCG, much slower than CI's KVM,
-`alerting-a` took TIME_A seconds and `alerting-b` TIME_B (2026-10-31); the
+`alerting-a` took 1223 seconds and `alerting-b` 1397 (2026-10-31, with the 45 s grace and 1 minute `group_interval`); the
 pull request records the times measured in CI.
 
 When a shard grows past the others, move checks between
