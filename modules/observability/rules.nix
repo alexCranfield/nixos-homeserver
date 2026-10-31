@@ -11,11 +11,14 @@
 #             DnsNxdomainBurst also has `factor`, how many times its baseline
 #             a client's rate must exceed.
 #             `homeserver.alerting.thresholds` defaults to this.
-#   mkRules   `{ lib, thresholds, watchedUnits }: { groups = [ ... ]; }`.
+#   mkRules   `{ lib, thresholds, watchedUnits, nasProbed }: { groups = [ ... ]; }`.
 #             `thresholds` is merged over `defaults`, so a caller may give only
 #             the alerts it changes. `watchedUnits` lists unit names without
 #             `.service` (`homeserver.notify.units`): their failures are
 #             posted by the notifier already, so UnitFailed skips them.
+#             `nasProbed` is true when the NAS's DNS server is probed
+#             (`homeserver.alerting.dnsServers.secondaryTargetsFile` is set):
+#             only then is `DnsNasProbeMissing` included.
 #             The result is rendered to YAML by the caller.
 #
 # Every alert carries the label `severity` (`event` or `threshold`) and the
@@ -33,6 +36,8 @@ let
     GatewayUnreachable.for = "2m";
     DnsFailing.for = "2m";
     DnsServerDown.for = "2m";
+    # Long enough for a deploy or a Prometheus restart to reload the file.
+    DnsNasProbeMissing.for = "15m";
     # Longer than a list load: at boot Blocky resolves before its lists have
     # loaded (it fails open), and that must not alert.
     DnsServerNotBlocking.for = "15m";
@@ -94,6 +99,7 @@ let
       lib,
       thresholds ? { },
       watchedUnits,
+      nasProbed ? false,
     }:
     let
       t = lib.recursiveUpdate defaults thresholds;
@@ -210,6 +216,19 @@ let
               summary = "DNS server {{ $labels.server }} does not resolve (for ${t.DnsServerDown.for})";
               description = "The blackbox exporter's DNS lookup of example.com against {{ $labels.server }} fails. A dead secondary is noticed only on the day the nuc reboots.";
             })
+            # A target that vanishes from the file_sd file (an empty or broken
+            # sops template) leaves no series at all, so DnsServerDown, which
+            # reads probe_success == 0, would stay quiet about a NAS that is
+            # simply no longer probed.
+          ]
+          ++ lib.optionals nasProbed [
+            (event "DnsNasProbeMissing" {
+              expr = ''absent(probe_success{job="dns_resolve",server="nas"})'';
+              summary = "The NAS's DNS server is not being probed (for ${t.DnsNasProbeMissing.for})";
+              description = "Prometheus has no probe result for the NAS's DNS server, so its alerts are blind. The file_sd file that names it (rendered by sops-nix) may be missing, empty or unreadable by prometheus.";
+            })
+          ]
+          ++ [
             (event "DnsServerNotBlocking" {
               expr = ''probe_success{job="dns_blocked"} == 0'';
               summary = "DNS server {{ $labels.server }} does not block (for ${t.DnsServerNotBlocking.for})";

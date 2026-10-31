@@ -2,6 +2,8 @@
 # servers, probed from the nuc. The label `server` names the one, so the
 # summary never needs an address. 15 s is one scrape interval.
 #
+# DnsNasProbeMissing (for 15m) fires when the NAS has no probe series at all.
+#
 # Below them, the suspicious-activity rules, which read the series the nuc's
 # dns-watch timer writes (modules/dns/watch.nix): DnsThreatBlocked,
 # DnsNxdomainBurst, DnsNewClient, DnsWatchFailing and DnsQueryLogLarge.
@@ -42,6 +44,39 @@ tests:
     alert_rule_test:
       - eval_time: 20m
         alertname: DnsServerDown
+        exp_alerts: []
+
+  # DnsNasProbeMissing (for 15m): the NAS has no probe series at all (its
+  # file_sd file is empty or unreadable), while the nuc's own probe is there.
+  # Fires at its `for`, not 15 s before, labelled by the absent matchers.
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="dns_resolve",server="nuc",instance="target"}'
+        values: "1x80"
+    alert_rule_test:
+      - eval_time: 885s
+        alertname: DnsNasProbeMissing
+        exp_alerts: []
+      - eval_time: 900s
+        alertname: DnsNasProbeMissing
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: dns_resolve
+              server: nas
+            exp_annotations:
+              summary: "The NAS's DNS server is not being probed (for 15m)"
+              description: "Prometheus has no probe result for the NAS's DNS server, so its alerts are blind. The file_sd file that names it (rendered by sops-nix) may be missing, empty or unreadable by prometheus."
+
+  # Quiet control: the NAS probe is present, failing or not (a failing one is
+  # DnsServerDown's business), so nothing is absent.
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="dns_resolve",server="nas",instance="target"}'
+        values: "1x40 0x40"
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: DnsNasProbeMissing
         exp_alerts: []
 
   # DnsServerNotBlocking fires at its `for`, not 15 s before.

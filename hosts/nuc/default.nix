@@ -12,6 +12,7 @@
     ./network.nix
     ./secrets.nix
     ./tailscale.nix
+    ./dns.nix
     ./notify.nix
     ./observability.nix
     ../../modules/base

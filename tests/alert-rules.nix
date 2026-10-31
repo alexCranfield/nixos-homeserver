@@ -12,6 +12,7 @@ let
       rules.mkRules {
         inherit lib;
         thresholds = rules.defaults;
+        nasProbed = true;
         watchedUnits = [
           "sshd"
           "tailscaled"

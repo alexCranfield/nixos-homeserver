@@ -135,8 +135,9 @@ pkgs.testers.runNixOSTest {
         };
         allow = [ "allowed.test" ];
         records."svc.home.arpa" = [ "192.168.1.77" ];
-        # Where sops would write it; copied there at boot below.
-        privateHostsFile = "/run/dns-test/private-hosts";
+        # Where sops would write it (hosts/nuc/dns.nix); copied there at boot
+        # below instead, as the VM cannot decrypt.
+        privateHostsFile = lib.mkForce "/run/dns-test/private-hosts";
         # Only to see it rendered into unbound.conf: with no trust anchor
         # here, nothing is validated anyway.
         insecureDomains = [ "example.test" ];
@@ -159,7 +160,7 @@ pkgs.testers.runNixOSTest {
       specialisation.tiny-querylog-cap.configuration = {
         homeserver.dns.queryLogMaxBytes = 2000000;
       };
-      homeserver.alerting.dnsServers.secondaryTargetsFile = "/run/dns-test-sd/nas.json";
+      homeserver.alerting.dnsServers.secondaryTargetsFile = lib.mkForce "/run/dns-test-sd/nas.json";
       systemd.tmpfiles.rules = [
         "d /run/dns-test 0700 root root -"
         "C /run/dns-test/private-hosts 0400 root root - ${privateHosts}"

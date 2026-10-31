@@ -41,6 +41,7 @@ let
         inherit lib;
         inherit (cfg) thresholds;
         watchedUnits = notify.units;
+        nasProbed = cfg.dnsServers.secondaryTargetsFile != null;
       }
     )
   );
