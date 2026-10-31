@@ -3,12 +3,13 @@
 # are those of the test before it was split (#182), kept so that the
 # history and the runbooks still name the same subtest.
 
-# Subtest 2 counts every post from its start. Under emulation cAdvisor can
-# fail at boot (alerting.py), and the notifier's post of that may still be
-# on its way; in half a, subtest 4 gave it minutes.
-nuc.wait_until_fails(
-    "systemctl list-units --no-legend --state=activating 'notify-failure@*' | grep -q ."
-)
+# Subtest 2 counts every post from its start, so whatever boot set off must
+# have posted first. Under emulation cAdvisor can fail at boot, more than
+# once, and come up slowly enough for its TargetDown to fire (seen: it was
+# scraped again only about 2 minutes after the units were up, and its
+# TargetDown and resolve landed in subtest 2's count). In half a, subtest 4
+# takes those minutes first.
+settle()
 
 with subtest("2. UnitFailed: an unwatched unit posts; a watched one posts once, the notifier's"):
     n = len(received())

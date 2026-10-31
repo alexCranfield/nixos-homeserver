@@ -164,6 +164,25 @@ def wait_active_at(alertname, unit, timeout=120):
     return at
 
 
+def settle():
+    """Wait until every target is scraped, Alertmanager holds no alert, and
+    no post has arrived for a group interval: then nothing set off before
+    is still on its way."""
+    deadline = time.monotonic() + 600
+    while prom("up == 0") or am_alerts():
+        assert time.monotonic() < deadline, (prom("up == 0"), am_alerts())
+        time.sleep(1)
+    # A resolve is posted at its group's next flush.
+    quiet = GROUP_INTERVAL + SLACK
+    while True:
+        n = len(received())
+        time.sleep(quiet)
+        if len(received()) == n:
+            break
+        assert time.monotonic() < deadline, [title(m) for m in received()]
+    print("settled:", [title(m) for m in received()])
+
+
 def unit_failed(unit):
     return f"Unit {unit}.service failed"
 
