@@ -1,8 +1,10 @@
 # Deletes a pull request's Nix store caches (#137, docs/runbooks/ci.md), so
-# they do not crowd main's out of the repo's 10 GB. Each CI run that builds
-# something saves about 1.6 GB under the pull request's ref. When the pull
-# request gets a new push, only the newest cache is kept, the one the new run
-# restores; when it is closed or merged, all of them go.
+# they do not crowd main's out of the repo's 10 GB. Each CI shard (#180) that
+# builds something saves a cache under the pull request's ref: about 2 GB for
+# the lint shard, which holds the host's closure, and little for a VM shard.
+# When the pull request gets a new push, only each shard's newest cache is
+# kept, the one that shard's next run restores; when it is closed or merged,
+# all of them go.
 #
 # A separate workflow because deleting caches needs `actions: write`, which the
 # CI job, running the pull request's code, must not hold. This job runs only
@@ -35,13 +37,24 @@ jobs:
           ref="refs/pull/$NUMBER/merge"
           # The API filters by ref and key; the select checks both again, so a
           # change in the API cannot widen this to main's caches.
-          ids=$(gh api --paginate \
+          gh api --paginate \
             "repos/$REPO/actions/caches?ref=$ref&key=nix-Linux-&sort=created_at&direction=desc" \
-            --jq ".actions_caches[] | select(.ref == \"$ref\" and (.key | startswith(\"nix-Linux-\"))) | .id")
-          # Newest first. On a new push, keep the first; on close, keep none.
+            --jq ".actions_caches[] | select(.ref == \"$ref\" and (.key | startswith(\"nix-Linux-\")))" \
+            > "$RUNNER_TEMP/caches"
+          # Keys are nix-Linux-<shard>-<commit>-<attempt>; the shard is the
+          # key without its last two parts. Caches from before the shards,
+          # nix-Linux-<commit>-<attempt>, form a group of their own. Newest
+          # first within each group: on a new push keep each group's first,
+          # so every shard keeps the cache it restores next; on close keep
+          # none. Keeping only the newest overall would delete every other
+          # shard's cache on each push.
+          keep=0
           if [ "$ACTION" = synchronize ]; then
-            ids=$(echo "$ids" | tail -n +2)
+            keep=1
           fi
+          ids=$(jq -rs --argjson keep "$keep" '
+            group_by(.key | sub("-[0-9a-f]{40}-[0-9]+$"; ""))[]
+            | sort_by(.created_at) | reverse | .[$keep:][] | .id' "$RUNNER_TEMP/caches")
           for id in $ids; do
             gh api -X DELETE "repos/$REPO/actions/caches/$id"
             echo "deleted cache $id from $ref"
