@@ -95,8 +95,11 @@ with subtest("Firefox's canary gets NXDOMAIN"):
 with subtest("a public name can't answer with a LAN address"):
     # Control: the "internet" does answer with one.
     assert dig("a.rebind.test", server=ROUTER_IP) == "192.168.1.66"
-    out = dig("a.rebind.test")
-    print(f"a.rebind.test -> {out!r}")
+    # NOERROR with no answer: a SERVFAIL or a timeout would also lack the
+    # address, and the check would pass for the wrong reason.
+    out = client.succeed(f"dig +time=2 +tries=1 @{NUC_IP} a.rebind.test")
+    print(out)
+    assert "status: NOERROR" in out and "ANSWER: 0" in out, out
     assert "192.168.1.66" not in out, out
 
 with subtest("negative control: without private-address the LAN address comes back"):
