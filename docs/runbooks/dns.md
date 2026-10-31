@@ -102,7 +102,8 @@ Only when all pass does Alex change the router's DHCP.
    ```
 
    After step 1, the workstation's lookups should be there under its router
-   name. Blank names are devices the router has no reverse name for.
+   name. A device the router has no reverse name for appears under its
+   address instead (Blocky writes the client's IP as `client_name`).
 5. **The nuc's own resolver is the router, not Blocky:**
 
    ```bash
@@ -178,6 +179,28 @@ switch back by adding it as the first server again.
 The firewall rules in step 4 can stay: the NAS is excepted from them. If the
 nuc is the problem and the NAS is too, remove those rules first, or devices
 with built-in DNS servers are the only ones that still resolve.
+
+### Blocky does not start, status 243
+
+Blocky reads the private names through a systemd credential
+(`LoadCredential`), which needs the sops secret `dns-private-hosts`. If sops
+did not write that file, systemd cannot set the credential up and the unit
+exits before Blocky runs: `systemctl status blocky` shows
+`status=243/CREDENTIALS`, and the journal says it failed to set up the
+credential. It repeats every minute or so and the DNS alerts fire.
+
+```bash
+ls -l /run/secrets/dns-private-hosts          # missing: sops did not write it
+journalctl -u sops-install-secrets -b         # (or the activation messages in
+                                              # `journalctl -b | grep -i sops`)
+```
+
+Common causes: the nuc's age key no longer decrypts `secrets/dns.yaml` (a
+rekey that left it out, [secrets runbook](secrets.md)), or the `private-hosts`
+key is missing from that file. Fix the secret and deploy, or run
+`systemctl restart blocky` once the file is there. While it is down, point the
+router's DHCP back at the NAS (above); the nuc's own lookups use the router and
+are unaffected.
 
 ## During a nuc reboot
 

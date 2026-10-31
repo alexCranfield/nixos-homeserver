@@ -154,7 +154,7 @@ gates the server.
 check's output after everything that goes into it, so a change that touches
 none of a check's inputs leaves its output path the same, and `nix flake
 check` skips any check whose output is already in the store. Every run used
-to start with an empty store and rerun all 14 checks, VM tests
+to start with an empty store and rerun every check, VM tests
 included, whatever changed: a docs-only pull request took 24 minutes,
 and so did the run on `main` after it merged, though none of its checks had
 changed. Editing a comment in a `.nix` file that is only imported changes no
