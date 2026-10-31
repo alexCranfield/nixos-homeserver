@@ -39,7 +39,7 @@ let
     builtins.toJSON (
       rules.mkRules {
         inherit lib;
-        inherit (cfg) thresholds;
+        inherit (cfg) thresholds gapGrace;
         watchedUnits = notify.units;
       }
     )
@@ -63,6 +63,20 @@ in
       given is merged over `defaults` in rules.nix, a level deeper than the
       alert, so an entry need list only what it changes, and an alert left
       out keeps its default.
+    '';
+  };
+
+  options.homeserver.alerting.gapGrace = lib.mkOption {
+    type = lib.types.strMatching "[0-9]+[smh]";
+    default = rules.gapGrace;
+    defaultText = lib.literalMD "the `gapGrace` of `rules.nix`, `\"2m\"`";
+    example = "30s";
+    description = ''
+      How long a firing alert stays firing after its series stops matching
+      (Prometheus's `keep_firing_for`), so that one missed scrape does not
+      post a resolve and then a new alert. Every rule but TargetDown has it,
+      and every resolved post waits this long. Shortened only by the
+      alerting VM test, which waits out many resolves.
     '';
   };
 
