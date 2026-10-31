@@ -18,6 +18,7 @@ Operational procedures, written as tickets are completed.
 - [docker.md](docker.md) — rootful Docker: `sudo docker`, ports on loopback by default, logs, prune, storage (ticket 3.1)
 - [stacks.md](stacks.md) — Compose stacks as units: adding one, public ports and their log, what the check rejects, crash alerts (ticket 3.2)
 - [observability.md](observability.md) — Prometheus, the exporters and Grafana: opening it over the tailnet, the admin password, dashboards, retention (ticket 3.4); the alert rules, silencing and tuning (ticket 3.6)
+- [dns.md](dns.md) — the LAN's DNS (Domain Name System) on the nuc: Blocky and Unbound, the checks after deploy, the router and NAS steps, undoing it, blocklists and local names, the query log, the dashboard, every DNS alert (ticket 7.x, #164)
 - [data-layout.md](data-layout.md) — `/srv/data/<stack>` subvolumes, the ID convention, the nightly snapshot, `just snapshot` and `just rollback` (ticket 3.3)
 - [game-access.md](game-access.md) — for friends: installing Tailscale (Steam Deck included), accepting the share, installing the modpack, connecting, "can't connect?" (tickets 4.0 and 4.1)
 - [minecraft.md](minecraft.md) — the All the Mods 9 server: what is pinned, the whitelist in sops, updating the pack, the snapshot hooks, start times (ticket 4.1)

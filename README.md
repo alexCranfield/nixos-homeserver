@@ -94,6 +94,7 @@ drift and the server can be rebuilt from scratch.
 | Kernel reboots only in a weekly maintenance window | [updates runbook](docs/runbooks/updates.md) |
 | Alerting on failures, boots and shutdowns | [notifications runbook](docs/runbooks/notifications.md) |
 | Alert rules on the metrics (disk, memory, CPU, temperature, stacks, LAN, DNS, tailnet, deploys) with tunable thresholds, posting to Discord | [observability runbook](docs/runbooks/observability.md#alerts), [alerting design](docs/superpowers/specs/2026-10-28-alerting-design.md) |
+| The LAN's DNS on the nuc: Blocky blocks ads and malware domains, Unbound resolves with DNSSEC (DNS Security Extensions), the config is Nix, queries are logged for Grafana and watched by alerts | [ADR 0012](docs/adr/0012-lan-dns-blocky-unbound.md), [DNS runbook](docs/runbooks/dns.md) |
 | Metrics and dashboards, provisioned from the repo, reachable over the tailnet only | [observability runbook](docs/runbooks/observability.md) |
 | Rollback drilled on the real machine, with timings | [rollback runbook](docs/runbooks/rollback.md) |
 | Rebuild from scratch: a full wipe and reinstall, timed | [reinstall runbook](docs/runbooks/reinstall.md) |
@@ -182,6 +183,13 @@ modules/containers/stack-rollback.sh   lists a stack's snapshots, or rolls its d
 modules/containers/stack-watch.sh  the crash watcher's loop: posts container crashes to Discord
 stacks/hello/                      the example stack: compose.yml, and default.nix declaring it
 stacks/minecraft/                  Minecraft with the All the Mods 9 modpack, over Tailscale sharing (ticket 4.1)
+modules/dns/default.nix            Blocky, the LAN's DNS server: lists, local names, the firewall rule for port 53
+modules/dns/lists.nix              the blocklists, in the groups ads and threats
+modules/dns/unbound.nix            Unbound, the recursive resolver behind Blocky, and its exporter
+modules/dns/querylog.nix           the PostgreSQL query log: read-only roles, the reattach timer, the size cap
+modules/dns/watch.nix              the timer that turns the query log into alert metrics (watch.sql holds the queries)
+modules/base/router.nix            homeserver.network.router, the router's address that the DNS pieces share
+hosts/nuc/dns.nix                  the nuc's private DNS names and the NAS probe target, from sops
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
 tests/comin.nix                    VM test: comin runs, fetches `main`, ignores a testing branch
@@ -208,6 +216,8 @@ tests/compose-check.nix            flake check: compose files under stacks/ agai
 tests/compose-check/               one compose file per rule the check must reject, and one it must pass
 tests/stack-data.nix               VM test: data subvolumes and owners, nightly snapshots and hooks, retention, rollback; controls without each guard
 tests/stack-data.py                its test script
+tests/dns.nix                       VM test: Blocky, Unbound, the query log, the cap, the probes and every DNS alert, with controls
+tests/dns.py                       its test script
 tests/stack-watch.nix              flake check: the crash watcher's quiet posts and pings at several crash rates
 .sops.yaml                         which age keys can decrypt which files
 secrets/                           sops-encrypted secrets; ciphertext only
@@ -296,7 +306,7 @@ does not re-encrypt anything on its own.
 | [0. Workstation and repo foundations](https://github.com/alexCranfield/nixos-homeserver/milestone/1) | Done; the machine user for bot pull requests (#61) remains |
 | [1. Bare-metal install and base OS](https://github.com/alexCranfield/nixos-homeserver/milestone/2) | Done: installed 2026-10-18, wiped and reinstalled from the runbook 2026-10-19; follow-ups open |
 | [2. GitOps, updates, rollback](https://github.com/alexCranfield/nixos-homeserver/milestone/3) | Live: self-deploy (#16), weekly updates (#17), reboot window (#18), rollback drill (#19) and alerting (#20). Open: whether to auto-merge update pull requests (#17, due late November) and two comin bugs (#110, #123) |
-| [3. Containers, observability, backups](https://github.com/alexCranfield/nixos-homeserver/milestone/4) | Started: Docker is live (#22); Compose stacks run as systemd units, with public ports declared in Nix and enforced by the firewall (#23). Each stack's data has its own subvolume, nightly snapshots and a one-command rollback (#24). Prometheus, its exporters and Grafana collect and draw the host's and containers' metrics, Grafana reachable over the tailnet only (#25). Prometheus's alert rules post through Alertmanager to the alerts channel (#27). Next: LAN DNS on the nuc (#164) and HTTPS names (#163); backups (#26) wait on the NAS disaster-recovery work |
+| [3. Containers, observability, backups](https://github.com/alexCranfield/nixos-homeserver/milestone/4) | Started: Docker is live (#22); Compose stacks run as systemd units, with public ports declared in Nix and enforced by the firewall (#23). Each stack's data has its own subvolume, nightly snapshots and a one-command rollback (#24). Prometheus, its exporters and Grafana collect and draw the host's and containers' metrics, Grafana reachable over the tailnet only (#25). Prometheus's alert rules post through Alertmanager to the alerts channel (#27). The LAN's DNS runs on the nuc as Blocky in front of Unbound, with a query log, dashboard and alerts, once Alex switches the router over (#164). Next: HTTPS names (#163); backups (#26) wait on the NAS disaster-recovery work |
 | [4. Game servers](https://github.com/alexCranfield/nixos-homeserver/milestone/5) | Planned |
 | [5. Local LLMs](https://github.com/alexCranfield/nixos-homeserver/milestone/6) | Planned |
 | [6. Development environment](https://github.com/alexCranfield/nixos-homeserver/milestone/7) | Planned |

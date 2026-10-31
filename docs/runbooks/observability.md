@@ -19,8 +19,8 @@ dashboards keep working when Docker is what's broken.
 | comin's exporter | 127.0.0.1:4243 | Fetch, evaluation, build and deployment results |
 | Alertmanager | 127.0.0.1:9093 | Groups what Prometheus fires and passes it to the relay; its cluster listener (9094) is off |
 | alert relay | 127.0.0.1:9095 | Turns Alertmanager's webhook calls into Discord posts |
-| blackbox exporter | 127.0.0.1:9115 | Probes the LAN (local area network) gateway (ping) and the nuc's resolver (a DNS, Domain Name System, lookup) for Prometheus |
-| Grafana | 127.0.0.1:3000 | Dashboards; on the tailnet at `http://nuc:3000` through Tailscale Serve |
+| blackbox exporter | 127.0.0.1:9115 | Probes the LAN (local area network) gateway (ping), the nuc's own resolver (a DNS, Domain Name System, lookup) and, from ticket #164, both LAN DNS servers (does each resolve, does each block) for Prometheus |
+| Grafana | 127.0.0.1:3000 | Dashboards, the DNS one reading the query log in PostgreSQL; on the tailnet at `http://nuc:3000` through Tailscale Serve |
 
 Nothing here is reachable from the LAN: all of it is
 on loopback, and `tests/observability.nix` scans the LAN address to check.
@@ -42,6 +42,7 @@ folder:
 - **Node Exporter Full**: the host (grafana.com dashboard 1860).
 - **cadvisor dashboard**: containers, filtered by Compose project and
   container name (grafana.com dashboard 19792).
+- **DNS**: the LAN DNS server's queries, blocks, cache and query log ([dns.md](dns.md#the-dashboard)).
 - **Game servers**: CPU, memory and network of the containers whose names
   start `minecraft`. Memory is drawn from zero against the stack's own limit
   (`memoryMax`, dashed), so the headroom StackMemoryNearLimit watches is
@@ -189,6 +190,12 @@ normal busy spells. The values below are the deployed defaults, from the
 | `TailnetDisconnected` | event | Tailscale is not running and logged in (skipped while `tailscaled` is failed) | none | 2 m |
 | `GatewayUnreachable` | event | The LAN gateway does not answer ping | none | 2 m |
 | `DnsFailing` | event | A DNS lookup through the nuc's resolver fails | none | 2 m |
+| `DnsServerDown` | event | A DNS lookup against the nuc's Blocky or the Pi-hole on the NAS (network-attached storage) fails (`server` label) | none | 2 m |
+| `DnsNasProbeMissing` | event | The NAS's DNS server has no probe result at all (rendered only when it is probed) | none | 15 m |
+| `DnsServerNotBlocking` | event | A name on the blocklists comes back with a real address from `server` | none | 15 m |
+| `DnsThreatBlocked` | event | A device looked up a name on a threat list (blocked) in the last 5 minutes | none | 0 s |
+| `DnsNewClient` | event | A device appears in the DNS query log for the first time | none | 0 s |
+| `DnsWatchFailing` | event | The timer that writes the query-log metrics fails, never ran, or its file is over 5 minutes old | none | 10 m |
 | `OomKill` | event | The kernel killed a process for lack of memory in a named container | none | 0 s |
 | `DiskFilling` | threshold | `/` (the one btrfs filesystem: `/srv`, `/nix` and Docker's data too) is fuller than | 85 % | 10 m |
 | `HostMemoryLow` | threshold | Available memory is below | 10 % | 15 m |
@@ -198,6 +205,8 @@ normal busy spells. The values below are the deployed defaults, from the
 | `StackMemoryNearLimit` | threshold | A stack slice's memory is above this share of its own `memoryMax` | 90 % | 15 m |
 | `StackMemoryStalled` | threshold | Processes in a stack slice wait for memory (pressure stall information, "some") this share of the time | 10 % | 10 m |
 | `StackCpuStarved` | threshold | Processes in a stack slice are ready but wait for a core this share of the time | 25 % | 15 m |
+| `DnsNxdomainBurst` | threshold | One device gets more than this many "no such name" answers a minute, and more than 5 times its own 7-day baseline | 10 a minute | 5 m |
+| `DnsQueryLogLarge` | threshold | The DNS query log table with its indexes is larger than | 2 GB | 15 m |
 
 Notes on a few of them:
 
@@ -208,6 +217,10 @@ Notes on a few of them:
   while `tailscaled` is. It also skips the `notify-failure@` units: one of
   those fails when the notifier cannot reach Discord, and a second post would
   fail the same way and repeat every 12 hours.
+- The DNS alerts (everything starting `Dns`, except `DnsFailing`) are the
+  LAN DNS server's, [dns.md](dns.md#the-alerts) says what each means and what
+  to do. They sit in the groups `homeserver-events` and `homeserver-dns`.
+  `DnsFailing` still watches the nuc's own resolver, which is now the router.
 - `GatewayUnreachable` is the cause when the LAN goes: while it fires,
   `DnsFailing` and `TailnetDisconnected` are held back, so the outage is one
   post.
