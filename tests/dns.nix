@@ -280,6 +280,7 @@ pkgs.testers.runNixOSTest {
   testScript =
     { nodes, ... }:
     ''
+      import json as _json
       NUC_IP = ${builtins.toJSON reservedIp}
       ROUTER_IP = ${builtins.toJSON nodes.router.networking.primaryIPAddress}
       CLIENT_IP = ${builtins.toJSON nodes.client.networking.primaryIPAddress}
@@ -287,7 +288,7 @@ pkgs.testers.runNixOSTest {
       GRAFANA_PASSWORD = ${builtins.toJSON (import ./grafana-password.nix { inherit pkgs; }).password}
       # The real host's list-loading settings, evaluated from the flake's own
       # nuc configuration, which this test's overrides don't touch.
-      PRODUCTION_LOADING = json.loads(${builtins.toJSON (builtins.toJSON inputs.self.nixosConfigurations.nuc.config.services.blocky.settings.blocking.loading)})
+      PRODUCTION_LOADING = _json.loads(${builtins.toJSON (builtins.toJSON inputs.self.nixosConfigurations.nuc.config.services.blocky.settings.blocking.loading)})
     ''
     + builtins.readFile ./dns.py;
 }

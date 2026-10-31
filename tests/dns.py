@@ -497,8 +497,9 @@ with subtest("list downloads retry for minutes and lists refresh every 4 hours")
     # attempts, 500 ms apart) give up within two seconds and, with a refresh
     # every 24 hours, leave blocking off for a day.
     def seconds(text):
-        n, unit = re.fullmatch(r"(\d+)(s|m|h)", text).groups()
-        return int(n) * {"s": 1, "m": 60, "h": 3600}[unit]
+        m = re.fullmatch(r"(\d+)(s|m|h)", text)
+        assert m, text
+        return int(m.group(1)) * {"s": 1, "m": 60, "h": 3600}[m.group(2)]
 
     prod = PRODUCTION_LOADING
     print(f"production loading: {prod}")
