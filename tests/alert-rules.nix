@@ -13,6 +13,7 @@ let
         inherit lib;
         thresholds = rules.defaults;
         nasProbed = true;
+        dnsServed = true;
         watchedUnits = [
           "sshd"
           "tailscaled"

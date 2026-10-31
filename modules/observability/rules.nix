@@ -14,7 +14,7 @@
 #   gapGrace  The default grace for scrape gaps, "2m": how long a firing
 #             alert stays firing after its series stops matching (see
 #             `rule` below). `homeserver.alerting.gapGrace` defaults to this.
-#   mkRules   `{ lib, thresholds, gapGrace, watchedUnits, nasProbed }: { groups = [ ... ]; }`.
+#   mkRules   `{ lib, thresholds, gapGrace, watchedUnits, nasProbed, dnsServed }: { groups = [ ... ]; }`.
 #             `thresholds` is merged over `defaults`, so a caller may give only
 #             the alerts it changes. `gapGrace` is a Prometheus duration and
 #             defaults to the one above. `watchedUnits` lists unit names
@@ -22,7 +22,11 @@
 #             are posted by the notifier already, so UnitFailed skips them.
 #             `nasProbed` is true when the NAS's DNS server is probed
 #             (`homeserver.alerting.dnsServers.secondaryTargetsFile` is set):
-#             only then is `DnsNasProbeMissing` included.
+#             only then is `DnsNasProbeMissing` included. `dnsServed` is true
+#             when this host runs the LAN's DNS server
+#             (`homeserver.dns.listenAddresses` is not empty): only then are
+#             the alerts that read Blocky's metrics and the query-log watch
+#             included.
 #             The result is rendered to YAML by the caller.
 #
 # Every alert carries the label `severity` (`event` or `threshold`) and the
@@ -110,6 +114,7 @@ let
       gapGrace ? defaultGapGrace,
       watchedUnits,
       nasProbed ? false,
+      dnsServed ? false,
     }:
     let
       t = lib.recursiveUpdate defaults thresholds;
@@ -166,7 +171,8 @@ let
       thr = name: "${toString t.${name}.value}% for ${t.${name}.for}";
     in
     {
-      groups = [
+      # A group left with no rules (homeserver-dns without DNS) is dropped.
+      groups = builtins.filter (g: g.rules != [ ]) [
         {
           name = "homeserver-events";
           rules = [
@@ -242,6 +248,11 @@ let
               summary = "DNS server {{ $labels.server }} does not block (for ${t.DnsServerNotBlocking.for})";
               description = "A name on the blocklists, probed against {{ $labels.server }}, comes back with a real address instead of 0.0.0.0. Its lists may have failed to download.";
             })
+          ]
+          # Only where this host runs the DNS server: they read Blocky's
+          # metrics and the watch's file, and DnsWatchFailing's absent() would
+          # otherwise fire forever on a host without them.
+          ++ lib.optionals dnsServed [
             (event "DnsBlocklistEmpty" {
               # The blocking probe asks for a name on the ads lists only, so a
               # threats group that loaded nothing would never alert. One arm
@@ -279,6 +290,8 @@ let
               summary = "The DNS query-log watch is not running (for ${t.DnsWatchFailing.for})";
               description = "The dns-watch timer's queries fail or its file is missing, so the threat, NXDOMAIN and new-client alerts are blind.";
             })
+          ]
+          ++ [
             (event "OomKill" {
               # Named containers only: cgroup v2 counts a kill in memory.events
               # of every ancestor too, so the stack slice, /stack.slice and the
@@ -291,7 +304,7 @@ let
         }
         {
           name = "homeserver-dns";
-          rules = [
+          rules = lib.optionals dnsServed [
             (threshold "DnsNxdomainBurst" {
               # Both conditions on the same client. The baseline is 0 for a
               # client with no history, so its first burst counts.
