@@ -89,6 +89,7 @@
           nixfmt-tree # the formatter, also reachable as `nix fmt`
           editorconfig-checker # enforces .editorconfig in `just check`
           actionlint # lints .github/workflows in `just check`
+          jq # reads .github/ci-shards.json in `just check` and `just check-shard`
           shellcheck # actionlint runs it on each workflow's `run:` scripts
           nixos-anywhere # bare-metal install, ticket 1.6 (#13)
           nixos-rebuild # manual deploy escape hatch, `just deploy`
@@ -227,10 +228,18 @@
         alert-relay = import ./tests/alert-relay.nix { inherit pkgs; };
 
         # Ticket #27: alert conditions on the host reach the webhook through
-        # Prometheus, Alertmanager and the relay, once, and resolve.
-        alerting = import ./tests/alerting.nix {
+        # Prometheus, Alertmanager and the relay, once, and resolve. Two
+        # checks, each half of the subtests on the same machine, so that CI
+        # runs them side by side (#182).
+        alerting-a = import ./tests/alerting.nix {
           inherit pkgs inputs;
           inherit (nixpkgs) lib;
+          half = "a";
+        };
+        alerting-b = import ./tests/alerting.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+          half = "b";
         };
 
         # Fails `nix flake check` if the server stops using the dev shell's Nix,

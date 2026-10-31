@@ -1,8 +1,10 @@
 # CI (continuous integration). Validates every pull request and every push to
 # main on GitHub-hosted runners, so main is always something comin can deploy
-# (ADR, Architecture Decision Record, 0003 in docs/adr/). The steps are
-# `just check`, the same target run locally, so CI and the workstation cannot
-# drift apart.
+# (ADR, Architecture Decision Record, 0003 in docs/adr/). The checks are split
+# into shards, each a job on its own runner, so the VM (virtual machine) tests
+# run in parallel and the run stays under the job limit (#180). Each shard runs
+# `just check-shard <name>`, and `just check` runs them all locally, so CI and
+# the workstation cannot drift apart. .github/ci-shards.json lists the shards.
 name: CI
 
 on:
@@ -25,12 +27,39 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  check:
+  # The shard names, read from the file `just check-shard` reads, so the
+  # matrix below cannot list a shard the justfile does not know, or miss one.
+  list-shards:
     runs-on: ubuntu-latest
-    # Two builds at a time (below) makes the run longer than it was with four,
-    # and the alerting test (#27) waits out real alert durations: a change to
-    # the host reruns every host VM test and took over 45 minutes.
+    timeout-minutes: 5
+    outputs:
+      names: ${{ steps.read.outputs.names }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read .github/ci-shards.json
+        id: read
+        run: |
+          names=$(jq -c 'keys' .github/ci-shards.json)
+          echo "shards: $names"
+          echo "names=$names" >> "$GITHUB_OUTPUT"
+
+  shard:
+    needs: list-shards
+    runs-on: ubuntu-latest
+    # Before #180 every VM test shared one job and two build slots, and a
+    # change to the host took 76 minutes of this limit; the alerting test
+    # alone took about 50 (#27). Since #182 it is two halves in different
+    # shards, each expected to take about 16 minutes, and the limit stays
+    # until the shards' measured times show what a cold run takes.
     timeout-minutes: 90
+    strategy:
+      # A failing shard does not cancel the others: their results still
+      # report, and the checks they passed are cached for the next run.
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.list-shards.outputs.names) }}
     # Whether this run may use the Nix store cache (#137): pushes to main, and
     # pull requests from branches of this repository. Not pull requests from
     # forks: an early commit's run could save outputs that were never built,
@@ -38,6 +67,7 @@ jobs:
     # ran. Main's own caches are out of a pull request's reach either way.
     env:
       USE_CACHE: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      SHARD: ${{ matrix.shard }}
     steps:
       # Actions are pinned by commit, not tag: a tag can be moved to different
       # code after review, a commit hash cannot. The comment records the tag.
@@ -53,32 +83,36 @@ jobs:
           # At most two builds at once, so at most two VM tests: the runner has
           # 16 GB, and four tests booting together (about ten VMs, 10 GB of
           # guest memory) got the runner killed twice on 2026-10-24 (#133,
-          # docs/runbooks/ci.md).
+          # docs/runbooks/ci.md). Each shard has a runner of its own.
           extra_nix_config: |
             max-jobs = 2
 
       # The store from an earlier run (#137), so a check whose derivation is
-      # unchanged is already built and `just check` skips it: a docs-only
-      # change builds nothing, and a code change reruns only the checks it
-      # touches. Each run saves under its own key; the newest cache this ref
-      # can see is restored, its own branch's first, then main's. GitHub keeps
-      # caches per branch, so a pull request reads main's but cannot write it.
-      # The key carries the attempt: a cache cannot be overwritten, so a
-      # re-run of a failed job (a flaky test, #130) would otherwise find its
-      # commit's key taken by the failed attempt's partial store and save
-      # nothing, leaving that partial cache in use until the next commit.
+      # unchanged is already built and `just check-shard` skips it: a
+      # docs-only change builds nothing, and a code change reruns only the
+      # checks it touches. Each shard saves under its own key, so shards
+      # never restore each other's stores; the newest cache of this shard
+      # that this ref can see is restored, its own branch's first, then
+      # main's. GitHub keeps caches per branch, so a pull request reads
+      # main's but cannot write it. Shard names have no hyphen (`just
+      # check-shards-complete` fails on one), so one shard's prefix cannot
+      # match another's keys. The key carries the attempt: a cache cannot be
+      # overwritten, so a re-run of a failed job (a flaky test, #130) would
+      # otherwise find its commit's key taken by the failed attempt's partial
+      # store and save nothing, leaving that partial cache in use until the
+      # next commit.
       - name: Restore Nix store
         id: nix-cache
         if: ${{ env.USE_CACHE == 'true' }}
         uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
-          primary-key: nix-${{ runner.os }}-${{ github.sha }}-${{ github.run_attempt }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
+          primary-key: nix-${{ runner.os }}-${{ matrix.shard }}-${{ github.sha }}-${{ github.run_attempt }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-${{ matrix.shard }}-
 
       # The installer's Nix only enters the dev shell. The checks run with the
       # dev shell's Nix, which is the server's version; print both as evidence.
       # Entering the shell evaluates flake.nix, so a syntax error there fails
-      # here, before `just check`.
+      # here, before `just check-shard`.
       # The store as restored, so the trim step below can tell whether this
       # run added anything worth saving.
       - name: Enter dev shell (evaluates flake.nix)
@@ -88,24 +122,20 @@ jobs:
           echo "dev shell: $(nix develop --command nix --version)"
 
       # Checks restored above are skipped; the rest build, fetching what they
-      # can from cache.nixos.org. See docs/runbooks/ci.md. The log is kept for
-      # the trim step, which reads the checks' derivations from it.
-      - name: just check
-        shell: bash
-        run: nix develop --command just check 2>&1 | tee "$RUNNER_TEMP/check.log"
+      # can from cache.nixos.org. See docs/runbooks/ci.md. The recipe writes
+      # each check's name and derivation to $CHECK_DRVS for the trim step.
+      - name: just check-shard
+        run: CHECK_DRVS="$RUNNER_TEMP/check-drvs" nix develop --command just check-shard "$SHARD"
 
-      # Keep what the next run needs and nothing else: every check that passed,
-      # with its closure. A failed check has no output, so it reruns next time.
-      # Everything else, such as build inputs and the dev shell, comes from
-      # cache.nixos.org again, which keeps the cache small enough that the
-      # repo's 10 GB limit does not evict main's. The derivations come from
-      # the log of `just check`'s `nix flake check --no-build` ("checking
-      # derivation <name>" then "derivation evaluated to <drv>"), rather than
-      # from a third evaluation of the flake. If a Nix update changes those
-      # lines and none are
-      # found, the step warns and nothing is saved: later runs keep restoring
-      # the last cache saved, and rerun whatever changed since. A check whose
-      # name contains a dot is never matched, so it is never cached.
+      # Keep what the next run needs and nothing else: every check of this
+      # shard that passed, with its closure. A failed check has no output, so
+      # it reruns next time. Everything else, such as build inputs and the
+      # dev shell, comes from cache.nixos.org again, which keeps the cache
+      # small enough that the repo's 10 GB limit does not evict main's. The
+      # derivations are the ones `just check-shard` evaluated and wrote down,
+      # so this step evaluates nothing. If the list is missing, as when the
+      # recipe failed before writing it, the step warns and nothing is saved:
+      # the next run restores the last cache saved and reruns what changed.
       - name: Keep only built checks
         id: keep
         if: ${{ !cancelled() && env.USE_CACHE == 'true' }}
@@ -113,21 +143,8 @@ jobs:
         run: |
           roots="$RUNNER_TEMP/check-roots"
           mkdir -p "$roots"
-          # The name from each "checking derivation checks.<system>.<name>..."
-          # line, paired with the "derivation evaluated to" line after it.
-          # Other outputs' lines (the dev shell, the formatter) clear the name.
-          awk '
-            match($0, /checking derivation checks\.x86_64-linux\.[^.]+\.\.\./) {
-              name = substr($0, RSTART + 40, RLENGTH - 43); next
-            }
-            /checking derivation / { name = ""; next }
-            match($0, /derivation evaluated to \/nix\/store\/[^ ]+\.drv/) {
-              if (name != "") print name, substr($0, RSTART + 24, RLENGTH - 24)
-              name = ""
-            }
-          ' "$RUNNER_TEMP/check.log" > "$RUNNER_TEMP/check-drvs"
           if [ ! -s "$RUNNER_TEMP/check-drvs" ]; then
-            echo "::warning::no check derivations found in the nix flake check log; not saving the Nix store cache"
+            echo "::warning::no list of check derivations from just check-shard; not saving the Nix store cache"
             exit 0
           fi
           while read -r name drv; do
@@ -155,3 +172,25 @@ jobs:
         uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
         with:
           primary-key: ${{ steps.nix-cache.outputs.primary-key }}
+
+  # The required status check: ruleset `main` requires a check named `check`,
+  # and a matrix job reports as `shard (<name>)`, so this job stands for all
+  # of them. It runs whatever happened above (`always()`): a job skipped
+  # because what it needs failed reports as skipped, and GitHub counts a
+  # skipped required check as passing. So it fails unless every job it needs
+  # succeeded, which for the matrix means every shard did.
+  check:
+    needs: [list-shards, shard]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every shard passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"$NEEDS"
+          if ! jq -e 'length > 0 and all(.[]; .result == "success")' <<<"$NEEDS" >/dev/null; then
+            echo "::error::a job this check needs did not succeed; see the results above"
+            exit 1
+          fi
