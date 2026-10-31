@@ -287,7 +287,7 @@ pkgs.testers.runNixOSTest {
       GRAFANA_PASSWORD = ${builtins.toJSON (import ./grafana-password.nix { inherit pkgs; }).password}
       # The real host's list-loading settings, evaluated from the flake's own
       # nuc configuration, which this test's overrides don't touch.
-      PRODUCTION_LOADING = ${builtins.toJSON inputs.self.nixosConfigurations.nuc.config.services.blocky.settings.blocking.loading}
+      PRODUCTION_LOADING = json.loads(${builtins.toJSON (builtins.toJSON inputs.self.nixosConfigurations.nuc.config.services.blocky.settings.blocking.loading)})
     ''
     + builtins.readFile ./dns.py;
 }
