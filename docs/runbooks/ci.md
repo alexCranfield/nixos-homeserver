@@ -394,7 +394,9 @@ rather than by number: subtest 5 alone waits out `OomKill`'s 5 minute
 window, about 10 minutes, and the expected totals are about 16 minutes
 each. The halves are in different shards, `alerting` and `system`, so they
 run side by side; each shares its runner with tests that together take no
-longer than it does. The pull request records the measured times. When a shard grows past the others, move checks between
+longer than it does. On the workstation under TCG, much slower than CI's
+KVM, `alerting-a` took 999 seconds and `alerting-b` 1181 (2026-10-31); the
+pull request records the times measured in CI. When a shard grows past the others, move checks between
 shards, or add one: a new key in `.github/ci-shards.json` is a new matrix
 job, with no change to the workflow. Every shard costs a runner start and
 an evaluation of the host, a few minutes, so fewer, fuller shards are
