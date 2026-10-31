@@ -64,6 +64,25 @@ def title(msg):
     return msg["content"].split("\n", 1)[0]
 
 
+def posts_since(since):
+    """What a failed count of posts reports, in a few lines: CI shows only
+    the last lines of a failed test's log, not the journal above them
+    (#185). Each post from the since-th on, with when the receiver wrote it,
+    then what Alertmanager and the relay last logged about posting."""
+    out = nuc.shared_dir / "webhook"
+    lines = []
+    for f in sorted(out.glob("*.json"))[since:]:
+        when = datetime.datetime.fromtimestamp(f.stat().st_mtime, datetime.timezone.utc)
+        lines.append(f"{when:%H:%M:%S} {title(unstamped(json.loads(f.read_text())))}")
+    # Alertmanager logs a failed notification at WARN; the relay logs each
+    # post and how long it took, and the sender under it (curl) its errors.
+    log = nuc.execute(
+        "journalctl -u alertmanager -u alert-relay -o short-iso --no-pager"
+        " | grep -E 'level=(WARN|ERROR)|post of|curl:' | tail -n 8"
+    )[1]
+    return "\n".join(["posts:", *lines, "log:", log.strip() or "none"])
+
+
 def firing(summary):
     return f"{PING}**🔴 nuc: {summary}**"
 

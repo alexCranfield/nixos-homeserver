@@ -1,5 +1,7 @@
 # Unit tests for modules/observability/alert-relay.py. Standard library only.
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import stat
@@ -83,6 +85,25 @@ class MessagesTest(unittest.TestCase):
             self.assertEqual(relay.status_for({"alerts": [alert()]}, sender, "/w", "/r", "nuc"), 500)
             missing = os.path.join(d, "nonexistent")
             self.assertFalse(relay.handle({"alerts": [alert()]}, missing, "/w", "/r", "nuc"))
+
+    def test_each_post_logs_how_long_it_took(self):
+        # The journal's record of a post slower than Alertmanager's deadline,
+        # which Alertmanager then sends again (#185).
+        with tempfile.TemporaryDirectory() as d:
+            good = os.path.join(d, "good")
+            bad = os.path.join(d, "bad")
+            for path, code in ((good, 0), (bad, 1)):
+                with open(path, "w") as f:
+                    f.write(f"#!/bin/sh\ncat > /dev/null\nexit {code}\n")
+                os.chmod(path, stat.S_IRWXU)
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                self.assertTrue(relay.handle({"alerts": [alert()]}, good, "/w", "/r", "nuc"))
+                self.assertFalse(relay.handle({"alerts": [alert()]}, bad, "/w", "/r", "nuc"))
+        self.assertRegex(out.getvalue(), r"\Apost of DiskFilling took \d+\.\d s\n\Z")
+        self.assertRegex(
+            err.getvalue(), r"\Apost of DiskFilling failed: exit status 1, after \d+\.\d s\n\Z"
+        )
 
     def test_missing_summary_falls_back_to_alertname(self):
         a = alert(annotations={})
