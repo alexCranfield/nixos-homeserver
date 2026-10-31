@@ -10,6 +10,12 @@
 # TargetDown and resolve landed in subtest 2's count). In half a, subtest 4
 # takes those minutes first.
 settle()
+# The notifier posts a unit's failure once per cooldown (10 minutes), and
+# counts the rest. A boot-time failure of cAdvisor would hold back the post
+# subtest 2 expects for its kill; in half a, minutes of other subtests pass
+# first. Forget it, so that the post is this kill's (seen: held back, 303 s
+# after the boot's).
+nuc.succeed("rm -f /var/lib/notify-failure/cadvisor.service")
 
 with subtest("2. UnitFailed: an unwatched unit posts; a watched one posts once, the notifier's"):
     n = len(received())
