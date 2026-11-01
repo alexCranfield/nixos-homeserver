@@ -155,7 +155,7 @@ jobs:
           set -o pipefail
           log="$RUNNER_TEMP/check-shard.log"
           export CHECK_DRVS="$RUNNER_TEMP/check-drvs"
-          if { echo "error: unable to download 'https://cache.nixos.org/nar/fake.nar.zst': HTTP error 416"; false; } 2>&1 | tee "$log"; then
+          if { echo "error: Cannot build '/nix/store/fake-vm-test-run-fake.drv'."; false; } 2>&1 | tee "$log"; then
             exit 0
           fi
           if ! grep -qE "^error: unable to download '|is required, but there is no substituter that can build it|^error: some substitutes for the outputs of derivation" "$log"; then
