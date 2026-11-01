@@ -202,6 +202,16 @@ download installs nothing, so the second attempt starts clean. Seeing
 `Install Nix, second attempt` run in a job's log means the first download
 failed; the job's result is what counts.
 
+**A failed download from the binary cache is built from source (#187).** On
+2026-11-01 a shard failed when a package's download from `cache.nixos.org` broke
+off and its resume was refused (`HTTP error 416`). With `fallback = true` in
+CI's Nix configuration, Nix builds such a path from its recipe instead. The
+recipe is the same pinned one, and every source it fetches is checked against
+its hash, so the result is the same software, built on the runner. A small
+package costs a minute or two; a large one, such as QEMU, could run the job
+into its time limit, which fails it as the download would have. The
+`fallback:` line in the dev shell step shows the setting.
+
 **Checks that have not changed are not rerun (#137).** Nix names each
 check's output after everything that goes into it, so a change that touches
 none of a check's inputs leaves its output path the same, and `nix flake

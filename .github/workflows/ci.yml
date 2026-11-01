@@ -90,8 +90,12 @@ jobs:
           # 16 GB, and four tests booting together (about ten VMs, 10 GB of
           # guest memory) got the runner killed twice on 2026-10-24 (#133,
           # docs/runbooks/ci.md). Each shard has a runner of its own.
+          # fallback: a path whose download from cache.nixos.org fails is
+          # built from source instead of failing the shard (#187). The build
+          # uses the same pinned recipe, its sources checked by hash.
           extra_nix_config: |
             max-jobs = 2
+            fallback = true
 
       - name: Wait before installing Nix again
         if: steps.install-nix.outcome == 'failure'
@@ -104,6 +108,7 @@ jobs:
         with:
           extra_nix_config: |
             max-jobs = 2
+            fallback = true
 
       # The store from an earlier run (#137), so a check whose derivation is
       # unchanged is already built and `just check-shard` skips it: a
@@ -137,6 +142,7 @@ jobs:
         run: |
           find /nix/store -mindepth 1 -maxdepth 1 -printf '%f\n' | sort > "$RUNNER_TEMP/restored-paths"
           echo "installer: $(nix --version)"
+          echo "fallback: $(nix develop --command nix config show fallback)"
           echo "dev shell: $(nix develop --command nix --version)"
 
       # Checks restored above are skipped; the rest build, fetching what they
