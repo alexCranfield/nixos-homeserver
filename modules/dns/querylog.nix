@@ -137,8 +137,8 @@ in
       # After the setup that creates the database, not only the server: on
       # the first deploy the timer's 10 minutes after boot had long passed,
       # so it ran at the switch, between the two, and failed on a database
-      # that did not exist yet.
-      requires = [ "postgresql-setup.service" ];
+      # that did not exist yet. Ordering only, no `requires`: that would
+      # start PostgreSQL again whenever it is stopped.
       after = [ "postgresql-setup.service" ];
       path = [ config.services.postgresql.finalPackage ];
       serviceConfig = {
