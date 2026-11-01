@@ -40,7 +40,10 @@ in
   config = lib.mkIf enabled {
     systemd.services.dns-watch = {
       description = "Write the DNS query log's suspicious-activity metrics for node-exporter";
-      after = [ "postgresql.service" ];
+      # After the setup that creates the database and its roles, not only
+      # the server, as dns-querylog-cap (querylog.nix).
+      requires = [ "postgresql-setup.service" ];
+      after = [ "postgresql-setup.service" ];
       path = [ config.services.postgresql.finalPackage ];
       serviceConfig = {
         Type = "oneshot";

@@ -134,7 +134,12 @@ in
     # which reads the table's newest rows, more.
     systemd.services.dns-querylog-cap = {
       description = "Keep the DNS query log under its size cap";
-      after = [ "postgresql.service" ];
+      # After the setup that creates the database, not only the server: on
+      # the first deploy the timer's 10 minutes after boot had long passed,
+      # so it ran at the switch, between the two, and failed on a database
+      # that did not exist yet.
+      requires = [ "postgresql-setup.service" ];
+      after = [ "postgresql-setup.service" ];
       path = [ config.services.postgresql.finalPackage ];
       serviceConfig = {
         Type = "oneshot";
