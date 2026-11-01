@@ -193,6 +193,15 @@ default and calls upstream Nix unsupported and possibly removed later. The
 upstream installer keeps third-party distributions out of the pipeline that
 gates the server.
 
+**A failed Nix install is tried once more (#187).** Nix's installer downloads
+its tarball from `releases.nixos.org` once, without retrying. On 2026-10-31
+that download failed with a TLS (Transport Layer Security) error and failed a
+shard before any check ran. The install step may now fail; if it does, the job
+waits 30 seconds and runs it again, and a second failure fails the job. A failed
+download installs nothing, so the second attempt starts clean. Seeing
+`Install Nix, second attempt` run in a job's log means the first download
+failed; the job's result is what counts.
+
 **Checks that have not changed are not rerun (#137).** Nix names each
 check's output after everything that goes into it, so a change that touches
 none of a check's inputs leaves its output path the same, and `nix flake

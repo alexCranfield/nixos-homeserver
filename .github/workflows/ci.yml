@@ -78,12 +78,30 @@ jobs:
 
       # Upstream Nix, the same distribution the server runs, rather than
       # Determinate Nix. ADR 0007: CI checks what the server will evaluate.
-      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      # Nix's installer fetches its tarball once, with no retry, and that
+      # download failed a whole shard on 2026-10-31 before any check ran
+      # (#187). A failed download installs nothing, so the step is tried once
+      # more after a pause; if that fails too, the job fails.
+      - id: install-nix
+        continue-on-error: true
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           # At most two builds at once, so at most two VM tests: the runner has
           # 16 GB, and four tests booting together (about ten VMs, 10 GB of
           # guest memory) got the runner killed twice on 2026-10-24 (#133,
           # docs/runbooks/ci.md). Each shard has a runner of its own.
+          extra_nix_config: |
+            max-jobs = 2
+
+      - name: Wait before installing Nix again
+        if: steps.install-nix.outcome == 'failure'
+        run: sleep 30
+
+      # The same step as above, inputs included.
+      - name: Install Nix, second attempt
+        if: steps.install-nix.outcome == 'failure'
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
           extra_nix_config: |
             max-jobs = 2
 
