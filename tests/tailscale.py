@@ -50,13 +50,32 @@ def new_key(tags=""):
     return headscale.succeed(f"headscale preauthkeys -u 1 create {tags}").strip()
 
 
+def join_report():
+    """What a failed join reports, in the few lines CI keeps of a failed
+    test's log: the nuc's side of each login and register, and any link change
+    that closed its connections. Headscale's `elapsed` for a register is not
+    left out by mistake: it runs 30 s and more even when the nuc has its answer
+    in a tenth of a second. Nothing here may raise."""
+    return nuc.execute(
+        "journalctl -u tailscaled -u tailscaled-autoconnect -o short-monotonic --no-pager"
+        " | grep -E 'LoginInteractive|RegisterReq|authkey|auth key|link change|State =|tailscaled-autoconnect'"
+        " | tail -n 15"
+    )[1].strip() or "no tailscaled log"
+
+
 with subtest("the nuc joins the tailnet from its auth key file"):
     nuc.wait_for_unit("tailscaled.service")
+    # Join once the nuc has finished booting. On CI a join during the boot
+    # failed: tailscaled closed its connections "due to link change", logged in
+    # again with a new node key, and the single-use key, already spent by the
+    # first register, was refused: "authkey already used" (#184).
+    nuc.wait_for_unit("multi-user.target")
     nuc.succeed("install -m 600 /dev/null /run/ts-authkey")
     nuc.succeed(f"printf %s '{new_key('--tags tag:server')}' > /run/ts-authkey")
     # Started only now that the key exists, as on the real machine, where sops
     # writes the file before the unit starts (tests/tailscale.nix, #103).
-    nuc.succeed("systemctl start tailscaled-autoconnect.service")
+    rc, _ = nuc.execute("systemctl start tailscaled-autoconnect.service")
+    assert rc == 0, join_report()
     NUC_TS_IP = nuc.succeed("tailscale ip -4").strip()
     print(f"nuc's tailnet address: {NUC_TS_IP}")
     assert NUC_TS_IP.startswith("100."), NUC_TS_IP
