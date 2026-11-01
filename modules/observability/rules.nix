@@ -188,7 +188,10 @@ let
               description = "Prometheus cannot scrape {{ $labels.instance }} (job {{ $labels.job }}).";
             })
             (event "UnitFailed" {
-              expr = ''node_systemd_unit_state{state="failed"${notWatched}} == 1'';
+              # Without `type`: node-exporter reports it in one scrape and
+              # leaves it out of the next, and two label sets were two alerts
+              # for one unit, each posted (#185).
+              expr = ''max without (type) (node_systemd_unit_state{state="failed"${notWatched}}) == 1'';
               summary = "Unit {{ $labels.name }} failed";
               description = "systemd reports {{ $labels.name }} in the failed state. The notifier does not watch this unit.";
             })

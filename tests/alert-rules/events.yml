@@ -186,6 +186,34 @@ tests:
               summary: "Unit sshdXservice failed"
               description: "systemd reports sshdXservice in the failed state. The notifier does not watch this unit."
 
+  # One failed unit is one alert, even when node-exporter reports its `type`
+  # in one scrape and leaves it out of the next (#185): two label sets were
+  # two alerts, and each posted. The typed series goes stale at 30 s and the
+  # untyped one carries on.
+  - interval: 15s
+    input_series:
+      - series: 'node_systemd_unit_state{name="foo.service",state="failed",type="simple"}'
+        values: "1 1 stale"
+      - series: 'node_systemd_unit_state{name="foo.service",state="failed"}'
+        values: "_ _ 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 15s
+        alertname: UnitFailed
+        exp_alerts: &foo_failed_once
+          - exp_labels:
+              severity: event
+              name: foo.service
+              state: failed
+            exp_annotations:
+              summary: "Unit foo.service failed"
+              description: "systemd reports foo.service in the failed state. The notifier does not watch this unit."
+      - eval_time: 30s
+        alertname: UnitFailed
+        exp_alerts: *foo_failed_once
+      - eval_time: 75s
+        alertname: UnitFailed
+        exp_alerts: *foo_failed_once
+
   # A missed scrape (stale samples at 45 s and 60 s, as Prometheus writes
   # when a scrape fails) does not resolve UnitFailed: it stays firing
   # throughout (keep_firing_for 2m). Once the series is gone for good, the
