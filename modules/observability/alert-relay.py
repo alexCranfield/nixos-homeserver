@@ -16,11 +16,13 @@
 # ever one argument or the standard input.
 #
 # Replies 200 if every post succeeded, else 500, and Alertmanager then retries
-# the whole notification.
+# the whole notification. Logs one line per post with how long it took, failed
+# or not: a post slower than Alertmanager's deadline is sent again (#185).
 import json
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -81,12 +83,17 @@ def messages(payload, host="nuc"):
     return out
 
 
+def took(start):
+    return f"{time.monotonic() - start:.1f} s"
+
+
 def handle(payload, sender, webhook_file, role_file, host):
     """Post every alert; True only if all posts succeeded."""
     ok = True
     alerts = payload.get("alerts", [])
     for a, (icon, title, body, ping) in zip(alerts, messages(payload, host)):
         name = (a.get("labels") or {}).get("alertname", "alert")
+        start = time.monotonic()
         try:
             r = subprocess.run(
                 [sender, webhook_file, role_file if ping else "-", icon, title],
@@ -95,10 +102,16 @@ def handle(payload, sender, webhook_file, role_file, host):
                 check=False,
             )
             if r.returncode != 0:
-                print(f"post of {name} failed: exit status {r.returncode}", file=sys.stderr, flush=True)
+                print(
+                    f"post of {name} failed: exit status {r.returncode}, after {took(start)}",
+                    file=sys.stderr,
+                    flush=True,
+                )
                 ok = False
+            else:
+                print(f"post of {name} took {took(start)}", flush=True)
         except (OSError, subprocess.SubprocessError) as e:
-            print(f"post of {name} failed: {type(e).__name__}", file=sys.stderr, flush=True)
+            print(f"post of {name} failed: {type(e).__name__}, after {took(start)}", file=sys.stderr, flush=True)
             ok = False
     return ok
 
@@ -124,7 +137,7 @@ def serve(sender, webhook_file, role_file, host, port):
 
         def log_message(self, fmt, *args):
             # The default logs every request line; the journal needs only
-            # failures, which handle() reports.
+            # the posts, which handle() reports.
             pass
 
     # One thread per request: a request held up by a slow post must not queue
