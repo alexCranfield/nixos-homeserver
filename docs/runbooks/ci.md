@@ -202,15 +202,23 @@ download installs nothing, so the second attempt starts clean. Seeing
 `Install Nix, second attempt` run in a job's log means the first download
 failed; the job's result is what counts.
 
-**A failed download from the binary cache is built from source (#187).** On
-2026-11-01 a shard failed when a package's download from `cache.nixos.org` broke
-off and its resume was refused (`HTTP error 416`). With `fallback = true` in
-CI's Nix configuration, Nix builds such a path from its recipe instead. The
-recipe is the same pinned one, and every source it fetches is checked against
-its hash, so the result is the same software, built on the runner. A small
-package costs a minute or two; a large one, such as QEMU, could run the job
-into its time limit, which fails it as the download would have. The
-`fallback:` line in the dev shell step shows the setting.
+**A failed download from the binary cache reruns the checks once.** On
+2026-11-01 three shards failed in one evening, before any test ran, when a
+download from `cache.nixos.org` broke off (`Failed sending data to the peer`)
+and its resume was refused (`HTTP error 416`). If `just check-shard` fails and
+its output has one of Nix's download errors (`error: unable to download`,
+`no substituter that can build it`, `some substitutes ... failed`), the step
+waits 30 seconds and runs the checks again. Checks that already passed are not
+rebuilt, so the retry costs only what failed. A failure without a download
+error fails at once: a flaky test is never retried into a pass. A retried run
+shows the warning "Checks retried" on its summary page.
+
+Nix's `fallback` setting, which builds a path from source when its download
+fails, was tried first and removed (#189). The failed download was Docker's,
+and building it from source went down to the compiler bootstrap. One of its
+source downloads had a hash mismatch, so the build failed anyway. After a few
+download errors Nix also stops using the cache for 60 seconds, and with
+`fallback` everything needed in that window would be built from source.
 
 **Checks that have not changed are not rerun (#137).** Nix names each
 check's output after everything that goes into it, so a change that touches
