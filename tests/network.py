@@ -1,5 +1,5 @@
 # Test script for tests/network.nix. `nuc` and `router` are the test driver's
-# machines; RESERVED_IP is defined by the Nix file in front of this script.
+# machines; RESERVED_IP, OFFERED_DNS and ROUTER_IP are defined by the Nix file in front of this script.
 #
 # LAN: local area network. DHCP: Dynamic Host Configuration Protocol.
 import re
@@ -43,6 +43,30 @@ with subtest("the router resolves nuc.home.arpa to the reserved address"):
     print(f"nuc.home.arpa -> {answer}")
     assert answer == RESERVED_IP, answer
     router.succeed("ping -c 1 -W 2 nuc.home.arpa")
+
+with subtest("the nuc resolves through the router, not the DNS server DHCP offers"):
+    out = nuc.succeed("resolvectl dns lan0")
+    print(out)
+    assert ROUTER_IP in out, out
+    assert OFFERED_DNS not in out, out
+    nuc.succeed("resolvectl query nuc.home.arpa")  # answered by the router
+
+with subtest("a router advertisement's DNS servers are ignored too"):
+    # The same rule as for DHCP's, for the IPv6 (RDNSS) option: the file has
+    # UseDNS=false in both sections. The test LAN sends no router
+    # advertisement, so this reads the configuration rather than the effect.
+    conf = nuc.succeed("cat /etc/systemd/network/10-lan.network")
+    print(conf)
+    sections = {}
+    current = None
+    for line in conf.splitlines():
+        if line.startswith("["):
+            current = line.strip("[]")
+            sections[current] = []
+        elif current and line:
+            sections[current].append(line)
+    assert "UseDNS=false" in sections.get("DHCPv4", []), sections
+    assert "UseDNS=false" in sections.get("IPv6AcceptRA", []), sections
 
 with subtest("the firewall hides a listening port"):
     # The listener is really there, seen from the nuc itself.

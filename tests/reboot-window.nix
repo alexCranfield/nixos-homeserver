@@ -30,6 +30,9 @@ pkgs.testers.runNixOSTest {
     # The host's stacks pull images, and the build sandbox has no internet;
     # tests/compose-stack.nix covers them.
     homeserver.stacks = lib.mkForce { };
+    # The LAN's DNS server would bind the real nuc's address, which this VM
+    # doesn't have; tests/dns.nix covers it.
+    homeserver.dns.listenAddresses = lib.mkForce [ ];
     # As in base-ssh.nix: the sops secret cannot be decrypted here.
     services.tailscale.authKeyFile = lib.mkForce null;
     # Nor can any other: the VM has no key. At boot that failure is silent,

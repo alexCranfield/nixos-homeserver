@@ -19,6 +19,7 @@ it, or supersede it with a new ADR, rather than editing it quietly (see
 | [0009](0009-disk-encryption.md) | Whole-root LUKS2 (Linux Unified Key Setup) unlocked by a TPM (Trusted Platform Module) key sealed to PCR (Platform Configuration Register) 7; Secure Boot (#47) extends it to partial theft protection | Accepted; TPM condition met 2026-10-04 |
 | 0010 | Security posture | Reserved: ticket 7.2 (#45) |
 | [0011](0011-games-over-tailscale.md) | Friends reach game servers over Tailscale sharing, limited to the game ports; nothing is public | Accepted |
+| [0012](0012-lan-dns-blocky-unbound.md) | The LAN's DNS (Domain Name System) is Blocky in front of Unbound on the nuc, all declared in Nix, with a PostgreSQL query log; the NAS's (network-attached storage's) Pi-hole stays the secondary | Accepted |
 
 Numbers are claimed by the ticket that will write the ADR, which is why the
 sequence can run ahead of what exists. `docs/PLAN.md` lists the open decisions

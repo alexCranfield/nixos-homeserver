@@ -10,6 +10,7 @@
 #  - comin's own exporter (modules/base/comin.nix): fetch, evaluation, build
 #    and deployment results, which #27's rules read;
 #  - itself;
+#  - Blocky and the Unbound exporter, when the nuc serves DNS (#164);
 #  - the blackbox exporter, which probes the LAN gateway and the system's DNS,
 #    and node-exporter's textfile collector, which carries Tailscale's state
 #    (probes.nix).
@@ -71,6 +72,10 @@ let
       ${grafanaCom 19792 6 "sha256-ljSNfGjm0pztO6mo2kNYuGBb5oFb5S2vbYvoWkT5SXE="} \
       > $out/containers.json
     cp ${./dashboards/game-servers.json} $out/game-servers.json
+    ${lib.optionalString (config.homeserver.dns.listenAddresses != [ ]) ''
+      # Its data sources exist only with the DNS service (#164).
+      cp ${./dashboards/dns.json} $out/dns.json
+    ''}
   '';
   secretKey = "/var/lib/grafana/secret_key";
 
@@ -130,6 +135,11 @@ in
         (scrape "cadvisor" ports.cadvisor)
         (scrape "comin" ports.comin)
         (scrape "prometheus" ports.prometheus)
+      ]
+      # Blocky's own metrics and the Unbound exporter (#164).
+      ++ lib.optionals (config.homeserver.dns.listenAddresses != [ ]) [
+        (scrape "blocky" config.homeserver.dns.httpPort)
+        (scrape "unbound" config.services.prometheus.exporters.unbound.port)
       ];
     };
 
@@ -346,7 +356,22 @@ in
                 handleGrafanaManagedAlerts = false;
               };
             }
-          ];
+          ]
+          # Blocky's query log (#164), over PostgreSQL's socket as the
+          # `grafana` operating-system user: peer authentication, no
+          # password. The role can only SELECT (modules/dns/querylog.nix).
+          ++ lib.optional (config.homeserver.dns.listenAddresses != [ ]) {
+            name = "DNS query log";
+            type = "postgres";
+            uid = "dns-querylog";
+            url = "/run/postgresql";
+            user = "grafana";
+            editable = false;
+            jsonData = {
+              database = "blocky";
+              sslmode = "disable";
+            };
+          };
         };
         dashboards.settings = {
           apiVersion = 1;

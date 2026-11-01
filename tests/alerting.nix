@@ -232,6 +232,14 @@ pkgs.testers.runNixOSTest {
     systemd.network.wait-online.enable = false;
     # The host's stacks pull images, and the build sandbox has no internet.
     homeserver.stacks = lib.mkForce { };
+    # The LAN's DNS server would bind the real nuc's address, which this VM
+    # doesn't have; tests/dns.nix covers it.
+    homeserver.dns.listenAddresses = lib.mkForce [ ];
+    # The host names the NAS's DNS server in a sops template, which this VM
+    # cannot render: with the file missing, DnsNasProbeMissing would fire
+    # after its 15 minutes and post into a subtest's count. tests/dns.nix
+    # covers the NAS probe.
+    homeserver.alerting.dnsServers.secondaryTargetsFile = lib.mkForce null;
     # As in tests/notify.nix: the sops secrets cannot be decrypted here.
     services.tailscale.authKeyFile = lib.mkForce null;
     system.activationScripts.setupSecrets = lib.mkForce "";

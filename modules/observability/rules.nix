@@ -8,16 +8,25 @@
 #             `{ for = "10m"; }` plus, for the alerts that have a number to
 #             tune, `value`. TemperatureHigh also has `fallback`, the limit in
 #             degrees Celsius for a sensor that reports no `crit` mark.
+#             DnsNxdomainBurst also has `factor`, how many times its baseline
+#             a client's rate must exceed.
 #             `homeserver.alerting.thresholds` defaults to this.
 #   gapGrace  The default grace for scrape gaps, "2m": how long a firing
 #             alert stays firing after its series stops matching (see
 #             `rule` below). `homeserver.alerting.gapGrace` defaults to this.
-#   mkRules   `{ lib, thresholds, gapGrace, watchedUnits }: { groups = [ ... ]; }`.
+#   mkRules   `{ lib, thresholds, gapGrace, watchedUnits, nasProbed, dnsServed }: { groups = [ ... ]; }`.
 #             `thresholds` is merged over `defaults`, so a caller may give only
 #             the alerts it changes. `gapGrace` is a Prometheus duration and
 #             defaults to the one above. `watchedUnits` lists unit names
 #             without `.service` (`homeserver.notify.units`): their failures
 #             are posted by the notifier already, so UnitFailed skips them.
+#             `nasProbed` is true when the NAS's DNS server is probed
+#             (`homeserver.alerting.dnsServers.secondaryTargetsFile` is set):
+#             only then is `DnsNasProbeMissing` included. `dnsServed` is true
+#             when this host runs the LAN's DNS server
+#             (`homeserver.dns.listenAddresses` is not empty): only then are
+#             the alerts that read Blocky's metrics and the query-log watch
+#             included.
 #             The result is rendered to YAML by the caller.
 #
 # Every alert carries the label `severity` (`event` or `threshold`) and the
@@ -37,6 +46,20 @@ let
     TailnetDisconnected.for = "2m";
     GatewayUnreachable.for = "2m";
     DnsFailing.for = "2m";
+    DnsServerDown.for = "2m";
+    # Long enough for a deploy or a Prometheus restart to reload the file.
+    DnsNasProbeMissing.for = "15m";
+    # Longer than a list load: at boot Blocky resolves before its lists have
+    # loaded (it fails open), and that must not alert.
+    DnsServerNotBlocking.for = "15m";
+    # The same wait, for the same reason: a boot's list load.
+    DnsBlocklistEmpty.for = "15m";
+    # The watch's series (modules/dns/watch.nix). A threat lookup or a new
+    # device is worth knowing at once.
+    DnsThreatBlocked.for = "0s";
+    DnsNewClient.for = "0s";
+    # The timer runs every minute; ten missed minutes is a real fault.
+    DnsWatchFailing.for = "10m";
     OomKill.for = "0s";
 
     # Threshold alerts: long durations, to ignore normal busy spells.
@@ -73,6 +96,15 @@ let
       value = 25; # percent of the time waiting
       for = "15m";
     };
+    DnsNxdomainBurst = {
+      value = 10; # NXDOMAIN answers per minute, for one client
+      factor = 5; # and this many times that client's own baseline
+      for = "5m";
+    };
+    DnsQueryLogLarge = {
+      value = 2000000000; # bytes, the log table with its indexes
+      for = "15m";
+    };
   };
 
   mkRules =
@@ -81,6 +113,8 @@ let
       thresholds ? { },
       gapGrace ? defaultGapGrace,
       watchedUnits,
+      nasProbed ? false,
+      dnsServed ? false,
     }:
     let
       t = lib.recursiveUpdate defaults thresholds;
@@ -137,15 +171,16 @@ let
       thr = name: "${toString t.${name}.value}% for ${t.${name}.for}";
     in
     {
-      groups = [
+      # A group left with no rules (homeserver-dns without DNS) is dropped.
+      groups = builtins.filter (g: g.rules != [ ]) [
         {
           name = "homeserver-events";
           rules = [
             (event "TargetDown" {
               rideOutGaps = false;
               expr = ''
-                (up{job!~"cadvisor|comin|blackbox_.+"} == 0)
-                or (up{job=~"blackbox_.+"} == 0 unless on() (${failed "prometheus-blackbox-exporter"}))
+                (up{job!~"cadvisor|comin|blackbox_.+|dns_.+"} == 0)
+                or (up{job=~"blackbox_.+|dns_.+"} == 0 unless on() (${failed "prometheus-blackbox-exporter"}))
                 or (up{job="cadvisor"} == 0 unless on() (${failed "cadvisor"}))
                 or (up{job="comin"} == 0 unless on() (${failed "comin"}))
               '';
@@ -190,6 +225,73 @@ let
               summary = "DNS lookups through the nuc's resolver fail (for ${t.DnsFailing.for})";
               description = "The blackbox exporter's DNS probe fails.";
             })
+            (event "DnsServerDown" {
+              expr = ''probe_success{job="dns_resolve"} == 0'';
+              summary = "DNS server {{ $labels.server }} does not resolve (for ${t.DnsServerDown.for})";
+              description = "The blackbox exporter's DNS lookup of example.com against {{ $labels.server }} fails. A dead secondary is noticed only on the day the nuc reboots.";
+            })
+            # A target that vanishes from the file_sd file (an empty or broken
+            # sops template) leaves no series at all, so DnsServerDown, which
+            # reads probe_success == 0, would stay quiet about a NAS that is
+            # simply no longer probed.
+          ]
+          ++ lib.optionals nasProbed [
+            (event "DnsNasProbeMissing" {
+              expr = ''absent(probe_success{job="dns_resolve",server="nas"})'';
+              summary = "The NAS's DNS server is not being probed (for ${t.DnsNasProbeMissing.for})";
+              description = "Prometheus has no probe result for the NAS's DNS server, so its alerts are blind. The file_sd file that names it (rendered by sops-nix) may be missing, empty or unreadable by prometheus.";
+            })
+          ]
+          ++ [
+            (event "DnsServerNotBlocking" {
+              expr = ''probe_success{job="dns_blocked"} == 0'';
+              summary = "DNS server {{ $labels.server }} does not block (for ${t.DnsServerNotBlocking.for})";
+              description = "A name on the blocklists, probed against {{ $labels.server }}, comes back with a real address instead of 0.0.0.0. Its lists may have failed to download.";
+            })
+          ]
+          # Only where this host runs the DNS server: they read Blocky's
+          # metrics and the watch's file, and DnsWatchFailing's absent() would
+          # otherwise fire forever on a host without them.
+          ++ lib.optionals dnsServed [
+            (event "DnsBlocklistEmpty" {
+              # The blocking probe asks for a name on the ads lists only, so a
+              # threats group that loaded nothing would never alert. One arm
+              # per group the module declares (modules/dns/lists.nix), for a
+              # group missing from the metrics altogether, but only while
+              # Blocky is scraped: a dead Blocky is DnsServerDown's and
+              # TargetDown's.
+              expr = ''
+                blocky_denylist_cache_entries == 0
+                  or (absent(blocky_denylist_cache_entries{group="ads"}) and on() (up{job="blocky"} == 1))
+                  or (absent(blocky_denylist_cache_entries{group="threats"}) and on() (up{job="blocky"} == 1))
+              '';
+              summary = "Blocky's {{ $labels.group }} blocklist group is empty (for ${t.DnsBlocklistEmpty.for})";
+              description = "The group loaded no names, so nothing in it is blocked and its alerts cannot fire. Its lists may have failed to download or parsed to nothing.";
+            })
+            (event "DnsThreatBlocked" {
+              expr = "homeserver_dns_threat_blocks > 0";
+              summary = "{{ $labels.client }} asked for {{ $labels.domain }}, a name on the threat lists (blocked)";
+              description = "Blocky refused a lookup whose name is on a threat list (malware, phishing) in the last 5 minutes. The device may be infected or the user followed a bad link.";
+            })
+            (event "DnsNewClient" {
+              expr = "homeserver_dns_new_client == 1";
+              summary = "A new device asked the DNS server for the first time: {{ $labels.client }}";
+              description = "The client's first entry in the query log is less than 10 minutes old. A guest, or something that should not be on the network.";
+            })
+            (event "DnsWatchFailing" {
+              # absent(): the file is missing (the timer never ran). The last
+              # arm: the file is over 5 minutes old, the timer stuck, with
+              # the old values still in it.
+              expr = ''
+                homeserver_dns_watch_success == 0
+                  or absent(homeserver_dns_watch_success)
+                  or time() - node_textfile_mtime_seconds{file=~".*dns-watch.prom"} > 300
+              '';
+              summary = "The DNS query-log watch is not running (for ${t.DnsWatchFailing.for})";
+              description = "The dns-watch timer's queries fail or its file is missing, so the threat, NXDOMAIN and new-client alerts are blind.";
+            })
+          ]
+          ++ [
             (event "OomKill" {
               # Named containers only: cgroup v2 counts a kill in memory.events
               # of every ancestor too, so the stack slice, /stack.slice and the
@@ -197,6 +299,29 @@ let
               expr = ''increase(container_oom_events_total{name!=""}[5m]) > 0'';
               summary = "Out-of-memory kill in container {{ $labels.name }}";
               description = "The kernel killed a process for running out of memory in container {{ $labels.name }} (cAdvisor's container_oom_events_total rose in the last 5 minutes).";
+            })
+          ];
+        }
+        {
+          name = "homeserver-dns";
+          rules = lib.optionals dnsServed [
+            (threshold "DnsNxdomainBurst" {
+              # Both conditions on the same client. The baseline is 0 for a
+              # client with no history, so its first burst counts.
+              expr = ''
+                homeserver_dns_nxdomain_recent > ${toString t.DnsNxdomainBurst.value}
+                  and
+                homeserver_dns_nxdomain_recent > ${toString t.DnsNxdomainBurst.factor} * homeserver_dns_nxdomain_baseline
+              '';
+              summary = "{{ $labels.client }} gets ${pct} NXDOMAIN answers a minute (threshold above ${toString t.DnsNxdomainBurst.value} a minute and ${toString t.DnsNxdomainBurst.factor} times its baseline, for ${t.DnsNxdomainBurst.for})";
+              description = "A device is asking for many names that do not exist, as malware generating domain names does.";
+            })
+            (threshold "DnsQueryLogLarge" {
+              expr = "homeserver_dns_querylog_bytes > ${toString t.DnsQueryLogLarge.value}";
+              summary = "The DNS query log is {{ $value | humanize }}B (threshold above ${
+                toString (t.DnsQueryLogLarge.value / 1000000000)
+              } GB for ${t.DnsQueryLogLarge.for})";
+              description = "Blocky's query log table in PostgreSQL is growing past what 14 days of use should need. The hard cap (homeserver.dns.queryLogMaxBytes) will delete the oldest rows, so look for a client that floods the server.";
             })
           ];
         }

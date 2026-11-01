@@ -50,13 +50,32 @@ def new_key(tags=""):
     return headscale.succeed(f"headscale preauthkeys -u 1 create {tags}").strip()
 
 
+def join_report():
+    """What a failed join reports, in the few lines CI keeps of a failed
+    test's log: the nuc's side of each login and register, and any link change
+    that closed its connections. Headscale's `elapsed` for a register is not
+    left out by mistake: it runs 30 s and more even when the nuc has its answer
+    in a tenth of a second. Nothing here may raise."""
+    return nuc.execute(
+        "journalctl -u tailscaled -u tailscaled-autoconnect -o short-monotonic --no-pager"
+        " | grep -E 'LoginInteractive|RegisterReq|authkey|auth key|link change|State =|tailscaled-autoconnect'"
+        " | tail -n 15"
+    )[1].strip() or "no tailscaled log"
+
+
 with subtest("the nuc joins the tailnet from its auth key file"):
     nuc.wait_for_unit("tailscaled.service")
+    # Join once the nuc has finished booting. On CI a join during the boot
+    # failed: tailscaled closed its connections "due to link change", logged in
+    # again with a new node key, and the single-use key, already spent by the
+    # first register, was refused: "authkey already used" (#184).
+    nuc.wait_for_unit("multi-user.target")
     nuc.succeed("install -m 600 /dev/null /run/ts-authkey")
     nuc.succeed(f"printf %s '{new_key('--tags tag:server')}' > /run/ts-authkey")
     # Started only now that the key exists, as on the real machine, where sops
     # writes the file before the unit starts (tests/tailscale.nix, #103).
-    nuc.succeed("systemctl start tailscaled-autoconnect.service")
+    rc, _ = nuc.execute("systemctl start tailscaled-autoconnect.service")
+    assert rc == 0, join_report()
     NUC_TS_IP = nuc.succeed("tailscale ip -4").strip()
     print(f"nuc's tailnet address: {NUC_TS_IP}")
     assert NUC_TS_IP.startswith("100."), NUC_TS_IP
@@ -151,6 +170,36 @@ with subtest("a full TCP scan over the tailnet finds SSH, the peer API and Serve
             break
         print(f"scan {attempt} found {sorted(found)}, not all known ports")
     assert found == expected, sorted(found)
+
+with subtest("DNS answers the LAN, not the tailnet"):
+    # Port 53 joins SSH and the rest among the ports the tailnet must not
+    # reach. Checked here, before any access policy, which would otherwise
+    # close it too. `healthcheck.blocky` is answered by Blocky itself, so the
+    # answer doesn't depend on Unbound, which has no internet here.
+    def query(ip, tcp):
+        return f"dig {'+tcp ' if tcp else ''}+time=2 +tries=1 @{ip} healthcheck.blocky"
+
+    nuc.wait_for_open_port(53, LAN_IP)
+    for tcp in (False, True):
+        # Control: the LAN gets an answer.
+        out = headscale.succeed(query(LAN_IP, tcp))
+        assert "status: NOERROR" in out, out
+        # The tailnet gets none: dig exits 9 when no server answers.
+        status, out = client.execute(query(NUC_TS_IP, tcp))
+        print(out)
+        assert status == 9, (status, out)
+    # Blocky listens on the LAN address alone; this is the firewall's half.
+    rules = nuc.succeed("nft list chain inet nixos-fw input-allow")
+    dns_rules = sorted(
+        line.strip()
+        for line in rules.split("\n")
+        if re.search(r"dport (53\b|\{[^}]*\b53\b)", line)
+    )
+    print(dns_rules)
+    assert dns_rules == [
+        'iifname "lan0" tcp dport 53 accept',
+        'iifname "lan0" udp dport 53 accept',
+    ], dns_rules
 
 with subtest("Grafana answers over the tailnet through Serve"):
     out = client.succeed("curl -fsS http://nuc.tailnet:3000/api/health")

@@ -54,6 +54,11 @@ pkgs.testers.runNixOSTest {
       # The host's stacks pull images, and the build sandbox has no internet;
       # tests/compose-stack.nix covers them.
       homeserver.stacks = lib.mkForce { };
+      # Grafana, Prometheus, PostgreSQL and Blocky's list loads boot together
+      # on this host. On one emulated CPU (central processing unit) they slow
+      # the boot enough that tailscaled-autoconnect times out before the nuc
+      # has joined the tailnet. As in tests/dns.nix.
+      virtualisation.cores = 4;
 
       # One port on the LAN, renamed lan0 as on the real machine, with a fixed
       # address in place of the router's reservation (tests/network.nix covers
@@ -66,6 +71,13 @@ pkgs.testers.runNixOSTest {
         networkConfig.DHCP = lib.mkForce "no";
         address = [ "${lanIp}/24" ];
       };
+      # The LAN's DNS server on this address, in place of the real one, so the
+      # test can show port 53 is open on the LAN and closed on the tailnet.
+      homeserver.dns.listenAddresses = lib.mkForce [ lanIp ];
+      # The host points this at its sops secret (hosts/nuc/dns.nix), which a
+      # test VM cannot decrypt; without the file, Blocky's LoadCredential fails
+      # and it never opens port 53. tests/dns.nix covers the private names.
+      homeserver.dns.privateHostsFile = lib.mkForce null;
 
       # The host points this at its sops secret (hosts/nuc/tailscale.nix), which
       # a test VM cannot decrypt. The test writes a Headscale key here instead.
@@ -94,11 +106,16 @@ pkgs.testers.runNixOSTest {
     services.tailscale.enable = true;
     environment.systemPackages = [
       pkgs.curl
+      pkgs.dig
       pkgs.nmap
     ];
   };
 
-  nodes.headscale = headscale.node;
+  nodes.headscale = {
+    imports = [ headscale.node ];
+    # For the DNS check from the LAN (tests/tailscale.py).
+    environment.systemPackages = [ pkgs.dig ];
+  };
 
   testScript = ''
     LAN_IP = ${builtins.toJSON lanIp}

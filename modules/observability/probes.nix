@@ -14,6 +14,13 @@
 #    drop them all, including CAP_NET_RAW), so ICMP goes through unprivileged
 #    ICMP datagram sockets, which the kernel allows for the groups in
 #    `net.ipv4.ping_group_range`; an assertion below keeps that setting.
+#  - The LAN's two DNS servers, the nuc's Blocky and the NAS's Pi-hole, each
+#    probed from the nuc for two things: that it resolves a public name, and
+#    that it blocks a name on the blocklists (every answer 0.0.0.0). The
+#    label `server` (`nuc` or `nas`) names the server in the alerts. The
+#    NAS's address is private, so it is not in this repository: it comes from
+#    a file on the host that Prometheus reads at runtime (`file_sd`, file-based
+#    service discovery). With no such file the NAS jobs have no targets.
 #  - The Minecraft server's player count, whether it answers and how fast. A
 #    timer runs `mc-monitor status` (from itzg, who makes the server's image)
 #    against the port the container publishes on the host, and writes
@@ -32,6 +39,7 @@
 }:
 let
   cfg = config.homeserver.alerting;
+  dnsCfg = config.homeserver.dns;
   blackboxPort = 9115;
   textDir = "/var/lib/prometheus-node-exporter-text";
   # The port the Minecraft stack publishes on the host (stacks/minecraft).
@@ -56,39 +64,111 @@ let
           preferred_ip_protocol = "ip4";
         };
       };
+      # A public name, to a DNS server: any valid answer passes.
+      dns_resolve = {
+        prober = "dns";
+        timeout = "5s";
+        dns = {
+          query_name = "example.com";
+          query_type = "A";
+          preferred_ip_protocol = "ip4";
+        };
+      };
+      # A name on the blocklists. It passes only if the answer has records and
+      # every one is 0.0.0.0, which is how Blocky and Pi-hole block. The
+      # exporter fails `fail_if_not_matches_regexp` when any record does not
+      # match, and also when there are none, so NXDOMAIN or an empty answer
+      # (a server that is not answering sensibly) is not "blocked".
+      dns_blocked = {
+        prober = "dns";
+        timeout = "5s";
+        dns = {
+          query_name = cfg.blockedProbeName;
+          query_type = "A";
+          preferred_ip_protocol = "ip4";
+          validate_answer_rrs.fail_if_not_matches_regexp = [ "\\s0\\.0\\.0\\.0$" ];
+        };
+      };
     };
   };
 
+  # The nuc is a static target; the NAS comes from the runtime file.
+  dnsTargets =
+    job: module:
+    probeWith job module (
+      lib.optionalAttrs (dnsCfg.listenAddresses != [ ]) {
+        static_configs = [
+          {
+            targets = [ (builtins.head dnsCfg.listenAddresses) ];
+            labels.server = "nuc";
+          }
+        ];
+      }
+      // lib.optionalAttrs (cfg.dnsServers.secondaryTargetsFile != null) {
+        file_sd_configs = [ { files = [ cfg.dnsServers.secondaryTargetsFile ]; } ];
+      }
+    );
+
   # Prometheus scrapes the exporter, not the target: the target goes in as a
-  # parameter and the exporter probes it.
-  probe = job: module: target: {
-    job_name = job;
-    metrics_path = "/probe";
-    params.module = [ module ];
-    static_configs = [ { targets = [ target ]; } ];
-    relabel_configs = [
-      {
-        source_labels = [ "__address__" ];
-        target_label = "__param_target";
-      }
-      {
-        source_labels = [ "__param_target" ];
-        target_label = "instance";
-      }
-      {
-        target_label = "__address__";
-        replacement = "127.0.0.1:${toString blackboxPort}";
-      }
-    ];
-  };
+  # parameter and the exporter probes it. `sd` is the job's service
+  # discovery: static targets, a `file_sd` file, or both.
+  probeWith =
+    job: module: sd:
+    {
+      job_name = job;
+      metrics_path = "/probe";
+      params.module = [ module ];
+    }
+    // sd
+    // {
+      relabel_configs = [
+        {
+          source_labels = [ "__address__" ];
+          target_label = "__param_target";
+        }
+        {
+          source_labels = [ "__param_target" ];
+          target_label = "instance";
+        }
+        {
+          target_label = "__address__";
+          replacement = "127.0.0.1:${toString blackboxPort}";
+        }
+      ];
+    };
+
+  probe =
+    job: module: target:
+    probeWith job module { static_configs = [ { targets = [ target ]; } ]; };
 in
 {
   options.homeserver.alerting.gateway = lib.mkOption {
     type = lib.types.str;
-    default = "192.168.1.1";
+    default = config.homeserver.network.router;
     description = ''
       The LAN's default gateway, the router, which the blackbox exporter pings.
       `GatewayUnreachable` fires when it stops answering.
+    '';
+  };
+
+  options.homeserver.alerting.blockedProbeName = lib.mkOption {
+    type = lib.types.str;
+    default = "doubleclick.net";
+    description = ''
+      The name `DnsServerNotBlocking` asks both DNS servers for. It must be on
+      the blocklists of both: it is on StevenBlack's list and on the NAS's.
+    '';
+  };
+
+  options.homeserver.alerting.dnsServers.secondaryTargetsFile = lib.mkOption {
+    type = lib.types.nullOr lib.types.str;
+    default = null;
+    description = ''
+      Runtime path of a Prometheus `file_sd` JSON file naming the NAS's DNS
+      server, `[{"targets": ["<address>"], "labels": {"server": "nas"}}]`. The
+      address is private, so a sops template on the host writes the file and
+      it never enters the repository. The file must be readable by the
+      prometheus user. With `null`, the NAS has no probe jobs.
     '';
   };
 
@@ -124,8 +204,10 @@ in
     services.prometheus.scrapeConfigs = [
       (probe "blackbox_gateway" "icmp" cfg.gateway)
       # systemd-resolved's stub, which is where the system's DNS goes
-      # (Pi-hole behind it today).
+      # (the router behind it, which forwards).
       (probe "blackbox_dns" "dns_local" "127.0.0.53")
+      (dnsTargets "dns_resolve" "dns_resolve")
+      (dnsTargets "dns_blocked" "dns_blocked")
     ];
 
     systemd.services.tailscale-state = {

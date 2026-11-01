@@ -21,6 +21,9 @@
 }:
 let
   reservedIp = "192.168.1.50";
+  # A DNS server the router offers in DHCP but that does not exist: the nuc
+  # must not use it. Stands in for the Pi-hole DHCP hands out today.
+  offeredDns = "192.168.1.99";
   # QEMU's (Quick Emulator's) address for a test VM's port: 52:54:00:12, then
   # the network number and the machine number, two hex digits each. As in
   # nixpkgs' nixos/lib/qemu-common.nix.
@@ -39,7 +42,7 @@ pkgs.testers.runNixOSTest {
   defaults.nixpkgs.pkgs = pkgs;
 
   nodes.nuc =
-    { config, ... }:
+    { config, nodes, ... }:
     let
       n = config.virtualisation.test.nodeNumber;
     in
@@ -51,6 +54,9 @@ pkgs.testers.runNixOSTest {
       # The host's stacks pull images, and the build sandbox has no internet;
       # tests/compose-stack.nix covers them.
       homeserver.stacks = lib.mkForce { };
+      # The LAN's DNS server would bind the real nuc's address, which this VM
+      # doesn't have; tests/dns.nix covers it.
+      homeserver.dns.listenAddresses = lib.mkForce [ ];
       # The host's Tailscale key is a sops secret no test VM can decrypt, so
       # leave Tailscale logged out, as it was before #14: without this,
       # tailscaled-autoconnect runs `tailscale up` with an empty key and holds up
@@ -65,6 +71,10 @@ pkgs.testers.runNixOSTest {
       };
       systemd.network.links."10-lan".matchConfig.PermanentMACAddress = lib.mkForce (testMac 1 n);
       systemd.network.networks."10-unused".matchConfig.PermanentMACAddress = lib.mkForce (testMac 2 n);
+
+      # The router stand-in's address on the LAN (the test framework gives
+      # each machine 192.168.1.<number> on network 1).
+      homeserver.network.router = nodes.router.networking.primaryIPAddress;
 
       # A listener the firewall should hide, for the scan to not find.
       systemd.services.probe = {
@@ -85,6 +95,8 @@ pkgs.testers.runNixOSTest {
           # is set here, so nuc.home.arpa resolving shows the nuc sent its own.
           dhcp-range = "192.168.1.100,192.168.1.200,1h";
           dhcp-host = "${testMac 1 nodes.nuc.virtualisation.test.nodeNumber},${reservedIp}";
+          # DHCP offers a different DNS server than the router itself.
+          dhcp-option = "option:dns-server,${offeredDns}";
           domain = "home.arpa";
           local = "/home.arpa/";
           expand-hosts = true;
@@ -100,8 +112,12 @@ pkgs.testers.runNixOSTest {
       ];
     };
 
-  testScript = ''
-    RESERVED_IP = ${builtins.toJSON reservedIp}
-  ''
-  + builtins.readFile ./network.py;
+  testScript =
+    { nodes, ... }:
+    ''
+      RESERVED_IP = ${builtins.toJSON reservedIp}
+      OFFERED_DNS = ${builtins.toJSON offeredDns}
+      ROUTER_IP = ${builtins.toJSON nodes.router.networking.primaryIPAddress}
+    ''
+    + builtins.readFile ./network.py;
 }

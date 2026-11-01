@@ -41,6 +41,8 @@ let
         inherit lib;
         inherit (cfg) thresholds gapGrace;
         watchedUnits = notify.units;
+        nasProbed = cfg.dnsServers.secondaryTargetsFile != null;
+        dnsServed = config.homeserver.dns.listenAddresses != [ ];
       }
     )
   );

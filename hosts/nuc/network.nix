@@ -8,7 +8,7 @@
 # Protocol) reservation for the I226-V's MAC (hardware) address, and the name
 # nuc.home.arpa, both set on the UniFi Dream Router 7. See
 # docs/runbooks/network.md.
-{ ... }:
+{ config, ... }:
 let
   # From the hardware survey (#8). The kernel's names for these, enp45s0 and
   # enp44s0, come from the PCI (Peripheral Component Interconnect) slot, so
@@ -37,6 +37,18 @@ in
     # at networkd's default, so the port also takes an IPv6 address if the
     # router offers one; the firewall covers both.
     networkConfig.DHCP = "ipv4";
+    # DNS: the router, not whatever DHCP hands out (the Pi-hole today). The
+    # nuc's alerts go out by name, so the path that raises them must not depend
+    # on the DNS server they watch; the router always answers, and forwards.
+    # See docs/superpowers/specs/2026-10-29-lan-dns-design.md, "The nuc's and
+    # the NAS's own resolvers".
+    dhcpV4Config.UseDNS = false;
+    networkConfig.DNS = [ config.homeserver.network.router ];
+    # The same for IPv6: a router advertisement can carry DNS servers (RDNSS,
+    # Recursive DNS Server option), and networkd would add them to lan0. One
+    # naming Blocky or the Pi-hole would put the alert path behind the server
+    # it watches. Fuller IPv6 handling is #175.
+    ipv6AcceptRAConfig.UseDNS = false;
     # Boot waits for this port alone, not for the unused one.
     linkConfig.RequiredForOnline = "routable";
   };

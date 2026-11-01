@@ -216,7 +216,7 @@ into its time limit, which fails it as the download would have. The
 check's output after everything that goes into it, so a change that touches
 none of a check's inputs leaves its output path the same, and `nix flake
 check` skips any check whose output is already in the store. Every run used
-to start with an empty store and rerun all 14 checks, VM tests
+to start with an empty store and rerun every check, VM tests
 included, whatever changed: a docs-only pull request took 24 minutes,
 and so did the run on `main` after it merged, though none of its checks had
 changed. Editing a comment in a `.nix` file that is only imported changes no
@@ -389,7 +389,7 @@ prints when a build starts but not when it ends. The shards in
 | Shard | Checks | Expected, all rebuilt |
 |---|---|---|
 | `lint` | `nix flake check --no-build`, the shard check, the host's closure, the checks with no VM, format and lint | about 10 minutes |
-| `alerting` | `alerting-a`, with `base-ssh`, `reboot-window`, `game-access` and `network` in its second slot | about 20 minutes: `alerting-a` sets the floor |
+| `alerting` | `alerting-a`, with `dns` (#164), `base-ssh`, `reboot-window`, `game-access` and `network` in its second slot | about 20 minutes: `alerting-a` sets the floor |
 | `services` | `observability`, `docker`, `compose-stack`, `stack-data`, `announce` | about 20 minutes |
 | `system` | `alerting-b`, with `tailscale`, `comin`, `notify` and `disk-tpm` in its second slot | about 20 minutes |
 

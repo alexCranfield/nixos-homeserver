@@ -15,8 +15,9 @@
 # and garbage collection), system.nix (clock, bootloader retention, tools),
 # comin.nix (deploys itself from `main`), reboot-window.nix (kernel reboots
 # in a weekly window), notify.nix (failure notifications to Discord),
-# announce.nix (public status messages, in Discord and in game), vm.nix
-# (SSH into `just vm`, which changes nothing on a real host).
+# announce.nix (public status messages, in Discord and in game), router.nix
+# (the router's LAN address, read by the modules that need it), vm.nix (SSH
+# into `just vm`, which changes nothing on a real host).
 # Hardware-specific settings, such as the kernel series and CPU microcode,
 # belong to the host.
 { lib, inputs, ... }:
@@ -32,6 +33,7 @@
     ./reboot-window.nix
     ./notify.nix
     ./announce.nix
+    ./router.nix
     ./vm.nix
   ];
 

@@ -93,6 +93,22 @@ nslookup nuc.home.arpa 192.168.1.1    # the router: the reserved address
 nslookup nuc.home.arpa                # the LAN's DNS server: the same
 ```
 
+**The nuc's own resolver is the router (ticket 7.x, #164).** The nuc ignores
+the DNS server DHCP offers (`dhcpV4Config.UseDNS = false` on `lan0`) and asks
+the router, `homeserver.network.router` (192.168.1.1), whatever DHCP hands
+the rest of the LAN. Its boot, comin and the alert relay's Discord posts then
+never depend on the DNS server they would report, the Pi-hole today and the
+nuc's own Blocky later. Check it on the nuc:
+
+```bash
+resolvectl status lan0    # DNS Servers: 192.168.1.1 only
+```
+
+The nuc is also the LAN's DNS server once the router's DHCP hands it out
+([dns.md](dns.md)). The Pi-hole paragraph above describes the state until
+that cutover; the router still answers `home.arpa` after it, and Blocky
+forwards `home.arpa` and the LAN's reverse names to it.
+
 ## The firewall
 
 Default deny, on nftables. Nothing is open on any interface except:
@@ -101,6 +117,7 @@ Default deny, on nftables. Nothing is open on any interface except:
 |---|---|---|---|
 | TCP 22 (SSH) | `tailscale0` | admin access over the tailnet; see [tailscale.md](tailscale.md) | |
 | TCP 22 (SSH) | `eth0`, `just vm` only | the 127.0.0.1:2222 forward into the VM (virtual machine) | |
+| TCP and UDP 53 (DNS) | `lan0` | Blocky, the LAN's DNS server; see [dns.md](dns.md). Not on `tailscale0` | |
 
 NixOS's firewall also lets in, on any interface:
 

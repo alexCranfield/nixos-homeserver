@@ -128,6 +128,13 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket #164: the LAN's DNS through Blocky and Unbound, blocking by
+        # group, local names, and nothing but port 53 open to the LAN.
+        dns = import ./tests/dns.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
         # Ticket 1.5 (#12): ops logs in over the tailnet from another network,
         # and the tailnet sees only SSH.
         tailscale = import ./tests/tailscale.nix {
