@@ -103,7 +103,6 @@ jobs:
         if: steps.install-nix.outcome == 'failure'
         uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
-          install_url: https://releases.nixos.org/nix/nix-0.0.0/install
           extra_nix_config: |
             max-jobs = 2
 
