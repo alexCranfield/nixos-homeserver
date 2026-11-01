@@ -372,7 +372,7 @@ alerts and a deliberate break of each check.
 Follow the path from the end:
 
 ```bash
-ssh nuc 'journalctl -u alert-relay -b --no-pager'      # failed posts, with the exit status
+ssh nuc 'journalctl -u alert-relay -b --no-pager'      # each post and how long it took; failures with the exit status
 ssh nuc 'journalctl -u alertmanager -b --no-pager'     # delivery to the relay
 ssh nuc 'curl -s 127.0.0.1:9090/api/v1/alerts'         # what Prometheus has pending or firing
 ssh nuc 'curl -s 127.0.0.1:9093/api/v2/alerts'         # what Alertmanager holds, and silenced or inhibited
@@ -382,6 +382,10 @@ If an alert is in Prometheus but not in Alertmanager, check the Alertmanager
 unit. If it is in both and silenced or inhibited, that is the reason. The
 relay answers Alertmanager with an error when a post fails, and Alertmanager
 then retries.
+
+If an alert arrives twice, look at the relay's times. Alertmanager gives each
+notification as long as the group interval (5 minutes) and sends it again if
+the relay has not answered by then, though the post may still go through.
 
 Alertmanager and the relay have start limits: five failed starts in 15 minutes
 (Alertmanager, which must also be ready within 100 s) or in 5 minutes (relay),

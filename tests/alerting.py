@@ -67,14 +67,31 @@ def title(msg):
 def posts_since(since):
     """What a failed count of posts reports, in a few lines: CI shows only
     the last lines of a failed test's log, not the journal above them
-    (#185). Each post from the since-th on, then what Alertmanager and the
-    relay last logged about posting, then the alerts that fired. Every time
-    is the VM's: a post's is the stamp in its title."""
-    lines = []
-    for f in sorted((nuc.shared_dir / "webhook").glob("*.json"))[since:]:
-        msg = json.loads(f.read_text())
-        m = STAMP.match(msg["content"])
-        lines.append(f"{m.group(2) if m else '?'} {title(unstamped(msg))}")
+    (#185). The alerts that fired, then what Alertmanager and the relay last
+    logged about posting, then each post from the since-th on, last so that
+    they are the lines CI keeps. Every time is the VM's: a post's is the
+    stamp in its title. Nothing here may raise, or it would hide the failure
+    it reports."""
+    # Prometheus's side: each alert that fired in the last 15 minutes, and
+    # how often its activeAt changed. A change means it went inactive and
+    # fired again; two lines for one unit mean two alerts, whose labels
+    # differ.
+    expr = (
+        "changes(ALERTS_FOR_STATE[15m])"
+        ' and ignoring(alertstate) max_over_time(ALERTS{alertstate="firing"}[15m])'
+    )
+    q = urllib.parse.quote(expr, safe="")
+    rc, out = nuc.execute(f"curl -fsS --max-time 10 'http://127.0.0.1:9090/api/v1/query?query={q}'")
+    try:
+        assert rc == 0, f"curl exited with {rc}"
+        alerts = []
+        for r in json.loads(out)["data"]["result"]:
+            labels = {k: v for k, v in sorted(r["metric"].items()) if k not in ("instance", "severity")}
+            alerts.append(f"{labels} activeAt changed {r['value'][1]} times")
+    except (AssertionError, ValueError, KeyError, TypeError) as e:
+        alerts = [f"query failed: {e}"]
+    if len(alerts) > 6:
+        alerts = alerts[:6] + [f"and {len(alerts) - 6} more"]
     # Alertmanager logs a failed notification at WARN; the relay logs each
     # post and how long it took, and the sender under it (curl) its errors.
     # Not the curl of Alertmanager's start, which waits for it to listen.
@@ -82,19 +99,15 @@ def posts_since(since):
         "journalctl -u alertmanager -u alert-relay -o short-iso --no-pager"
         " | grep -E 'level=(WARN|ERROR)|post of|curl:' | grep -v post-start | tail -n 6"
     )[1]
-    # Prometheus's side: each alert that fired in the last 15 minutes, and
-    # how often its activeAt changed. A change means it went inactive and
-    # fired again; two lines for one unit mean two alerts, whose labels
-    # differ.
-    alerts = []
-    fired = prom(
-        "changes(ALERTS_FOR_STATE[15m])"
-        ' and ignoring(alertstate) max_over_time(ALERTS{alertstate="firing"}[15m])'
-    )
-    for r in fired:
-        labels = {k: v for k, v in sorted(r["metric"].items()) if k not in ("instance", "severity")}
-        alerts.append(f"{labels} activeAt changed {r['value'][1]} times")
-    return "\n".join(["posts:", *lines, "log:", log.strip() or "none", "alerts:", *alerts])
+    posts = []
+    for f in sorted((nuc.shared_dir / "webhook").glob("*.json"))[since:]:
+        content = json.loads(f.read_text()).get("content", "")
+        m = STAMP.match(content)
+        # The title without its stamp, as title(unstamped(...)) would give,
+        # but without unstamped()'s assertion.
+        text = STAMP.sub(r"\1 ", content, count=1).split("\n", 1)[0]
+        posts.append(f"{m.group(2) if m else '?'} {text}")
+    return "\n".join(["alerts:", *alerts, "log:", log.strip() or "none", "posts:", *posts])
 
 
 def firing(summary):

@@ -137,7 +137,7 @@ def serve(sender, webhook_file, role_file, host, port):
 
         def log_message(self, fmt, *args):
             # The default logs every request line; the journal needs only
-            # failures, which handle() reports.
+            # the posts, which handle() reports.
             pass
 
     # One thread per request: a request held up by a slow post must not queue
