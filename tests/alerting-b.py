@@ -27,7 +27,7 @@ with subtest("2. UnitFailed: an unwatched unit posts; a watched one posts once, 
     print(f"UnitFailed: {time.monotonic() - start:.0f} s from failure to post")
     nuc.succeed("systemctl reset-failed fail-me.service")
     check_resolved(unit_failed("fail-me"), n)
-    assert len(received()) == n + 2, received()[n:]
+    assert len(received()) == n + 2, posts_since(n)
 
     # Negative control: cAdvisor is watched, so its failure is the
     # notifier's to post; UnitFailed skips it, and its TargetDown is held
@@ -40,7 +40,7 @@ with subtest("2. UnitFailed: an unwatched unit posts; a watched one posts once, 
     time.sleep(to_post(TARGET_DOWN_FOR) + SLACK)
     got = received()[n:]
     print([title(m) for m in got])
-    assert len(got) == 1, got
+    assert len(got) == 1, posts_since(n)
     pings(got[0])
     # Test-only tolerance: under emulation cAdvisor may also have failed at boot, killed by
     # Docker's restart while it started (it is part of docker.service); the
@@ -55,7 +55,7 @@ with subtest("2. UnitFailed: an unwatched unit posts; a watched one posts once, 
     # Nothing on the way back either: no TargetDown, no resolved post. A
     # TargetDown would follow a cAdvisor too slow to be scraped again.
     time.sleep(to_post(TARGET_DOWN_FOR) + SLACK)
-    assert received()[n + 1 :] == [], received()[n + 1 :]
+    assert received()[n + 1 :] == [], posts_since(n + 1)
 
 with subtest("3. DiskFilling: a file past the threshold posts, its removal resolves"):
     # Measured as node-exporter does (statfs: size and the space available
@@ -74,7 +74,7 @@ with subtest("3. DiskFilling: a file past the threshold posts, its removal resol
     nuc.succeed("rm /var/fill")
     msg = wait_post(re.compile(r"\*\*✅ nuc: resolved: " + disk.pattern + r"\*\*"), n)
     quiet(msg)
-    assert len(received()) == n + 2, received()[n:]
+    assert len(received()) == n + 2, posts_since(n)
 
 with subtest("5. OomKill and StackMemoryNearLimit: a container past its slice's limit"):
     slice_id = "/stack.slice/stack-oomtest.slice"
@@ -116,7 +116,7 @@ with subtest("5. OomKill and StackMemoryNearLimit: a container past its slice's 
     nuc.succeed(f"rm /proc/{pid}/root/fill/a")
     msg = wait_post(re.compile(r"\*\*✅ nuc: resolved: " + near.pattern + r"\*\*"), m)
     quiet(msg)
-    assert len(received()) == m + 1, received()[m:]
+    assert len(received()) == m + 1, posts_since(m)
 
     # tail keeps the whole of an endless line: it grows until killed.
     oom = "Out-of-memory kill in container oomtest"
@@ -135,7 +135,7 @@ with subtest("5. OomKill and StackMemoryNearLimit: a container past its slice's 
     # series qualifies, not the slices above it, which have no name. (Not
     # the `stack` regex, which only the stack alerts use.)
     time.sleep(to_post(0) + SLACK)
-    assert [title(x) for x in received()[m:]] == [firing(oom)], received()[m:]
+    assert [title(x) for x in received()[m:]] == [firing(oom)], posts_since(m)
 
     # The rule looks at the last 5 minutes, and a range keeps the samples
     # from before the container's series went stale, so the alert resolves
@@ -144,7 +144,7 @@ with subtest("5. OomKill and StackMemoryNearLimit: a container past its slice's 
     # removal).
     nuc.succeed("docker rm -f oomtest")
     check_resolved(oom, m, timeout=720)
-    assert len(received()) == m + 2, received()[m:]
+    assert len(received()) == m + 2, posts_since(m)
 
 with subtest("9. Alertmanager, the relay and the blackbox exporter listen on loopback only"):
     loopback_only()

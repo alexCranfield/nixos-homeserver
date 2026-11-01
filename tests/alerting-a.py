@@ -51,7 +51,7 @@ with subtest("1. TargetDown: a stopped node-exporter posts once, then resolves")
     print(f"TargetDown: {time.monotonic() - start:.0f} s from stop to post")
     nuc.succeed("systemctl start prometheus-node-exporter.service")
     check_resolved(target, n)
-    assert len(matching(firing(target), n)) == 1, received()[n:]
+    assert len(matching(firing(target), n)) == 1, posts_since(n)
 
 with subtest("6. two alerts firing, one resolving: the other is not posted again"):
     amtool = f"amtool --alertmanager.url={AM}"
@@ -116,11 +116,11 @@ with subtest("6. two alerts firing, one resolving: the other is not posted again
     time.sleep(2 * GROUP_INTERVAL + SLACK)
     wait_am("TargetDown", lambda s: s is None)
     nuc.succeed(f"{amtool} silence expire {gap_silence}")
-    assert len(matching(firing(unit_failed("fail-b")), n)) == 1, received()[n:]
-    assert len(received()) == n + 3, received()[n:]
+    assert len(matching(firing(unit_failed("fail-b")), n)) == 1, posts_since(n)
+    assert len(received()) == n + 3, posts_since(n)
     nuc.succeed("systemctl reset-failed fail-b.service")
     check_resolved(unit_failed("fail-b"), n)
-    assert len(received()) == n + 4, received()[n:]
+    assert len(received()) == n + 4, posts_since(n)
 
 with subtest("7. a silence stops the post"):
     amtool = f"amtool --alertmanager.url={AM}"
@@ -138,14 +138,14 @@ with subtest("7. a silence stops the post"):
     # It reached Alertmanager, so its group's first flush is due within
     # group_wait.
     time.sleep(GROUP_WAIT + SLACK)
-    assert received()[n:] == [], received()[n:]
+    assert received()[n:] == [], posts_since(n)
     nuc.succeed("systemctl start prometheus-node-exporter.service")
     wait_am("TargetDown", lambda s: s is None)
     nuc.succeed(f"{amtool} silence expire {silence}")
     # Resolved while silenced, never posted: nothing to say it resolved, at
     # the group's next flush.
     time.sleep(GROUP_INTERVAL + SLACK)
-    assert received()[n:] == [], received()[n:]
+    assert received()[n:] == [], posts_since(n)
 
 with subtest("8. a post that fails while Discord is down arrives once it is back"):
     n = len(received())
@@ -164,7 +164,7 @@ with subtest("8. a post that fails while Discord is down arrives once it is back
     # Once: no retry of a post that went through, which would come at the
     # group's next flush.
     time.sleep(GROUP_INTERVAL + SLACK)
-    assert len(received()) == n + 1, received()[n:]
+    assert len(received()) == n + 1, posts_since(n)
     nuc.succeed("systemctl reset-failed fail-outage.service")
     check_resolved(unit_failed("fail-outage"), n)
 
