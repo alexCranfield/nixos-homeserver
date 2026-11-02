@@ -90,12 +90,8 @@ jobs:
           # 16 GB, and four tests booting together (about ten VMs, 10 GB of
           # guest memory) got the runner killed twice on 2026-10-24 (#133,
           # docs/runbooks/ci.md). Each shard has a runner of its own.
-          # fallback: a path whose download from cache.nixos.org fails is
-          # built from source instead of failing the shard (#187). The build
-          # uses the same pinned recipe, its sources checked by hash.
           extra_nix_config: |
             max-jobs = 2
-            fallback = true
 
       - name: Wait before installing Nix again
         if: steps.install-nix.outcome == 'failure'
@@ -108,7 +104,6 @@ jobs:
         with:
           extra_nix_config: |
             max-jobs = 2
-            fallback = true
 
       # The store from an earlier run (#137), so a check whose derivation is
       # unchanged is already built and `just check-shard` skips it: a
@@ -142,14 +137,33 @@ jobs:
         run: |
           find /nix/store -mindepth 1 -maxdepth 1 -printf '%f\n' | sort > "$RUNNER_TEMP/restored-paths"
           echo "installer: $(nix --version)"
-          echo "fallback: $(nix develop --command nix config show fallback)"
           echo "dev shell: $(nix develop --command nix --version)"
 
       # Checks restored above are skipped; the rest build, fetching what they
       # can from cache.nixos.org. See docs/runbooks/ci.md. The recipe writes
       # each check's name and derivation to $CHECK_DRVS for the trim step.
+      #
+      # A download from cache.nixos.org that breaks off fails the build
+      # before any test runs (2026-11-01, three times in one evening). Only
+      # then are the checks run once more, after a pause: a fresh attempt
+      # downloads again, and the checks that passed are not rebuilt. A
+      # failure with no download error fails the job at once, so a flaky
+      # test is never retried into a pass. The warning marks the retry on
+      # the run's summary page.
       - name: just check-shard
-        run: CHECK_DRVS="$RUNNER_TEMP/check-drvs" nix develop --command just check-shard "$SHARD"
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/check-shard.log"
+          export CHECK_DRVS="$RUNNER_TEMP/check-drvs"
+          if nix develop --command just check-shard "$SHARD" 2>&1 | tee "$log"; then
+            exit 0
+          fi
+          if ! grep -qE "^error: unable to download '|is required, but there is no substituter that can build it|^error: some substitutes for the outputs of derivation" "$log"; then
+            exit 1
+          fi
+          echo "::warning title=Checks retried::A download from the binary cache failed; running the checks once more (docs/runbooks/ci.md)"
+          sleep 30
+          nix develop --command just check-shard "$SHARD"
 
       # Keep what the next run needs and nothing else: every check of this
       # shard that passed, with its closure. A failed check has no output, so
