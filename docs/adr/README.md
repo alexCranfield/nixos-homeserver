@@ -20,6 +20,7 @@ it, or supersede it with a new ADR, rather than editing it quietly (see
 | 0010 | Security posture | Reserved: ticket 7.2 (#45) |
 | [0011](0011-games-over-tailscale.md) | Friends reach game servers over Tailscale sharing, limited to the game ports; nothing is public | Accepted |
 | [0012](0012-lan-dns-blocky-unbound.md) | The LAN's DNS (Domain Name System) is Blocky in front of Unbound on the nuc, all declared in Nix, with a PostgreSQL query log; the NAS's (network-attached storage's) Pi-hole stays the secondary | Accepted |
+| [0013](0013-tenant-microvms.md) | A tenant's dev environment and scheduled jobs run in two microVMs (virtual machines), cut off from everything but the internet | Accepted |
 
 Numbers are claimed by the ticket that will write the ADR, which is why the
 sequence can run ahead of what exists. `docs/PLAN.md` lists the open decisions

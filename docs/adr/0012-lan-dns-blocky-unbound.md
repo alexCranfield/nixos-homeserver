@@ -101,6 +101,9 @@ only about its own names.
   database within about five minutes. DNS availability beats the log.
 - Port 53 is open on `lan0` only, never on the tailnet. DNS for devices away
   from home, which would reverse that, is a separate decision.
+- Note, 2026-11-02: ADR 0013 also opens port 53 on the tenant microVMs' tap
+  interfaces, so those VMs can use Blocky at its LAN address. Still never on
+  the tailnet.
 - IPv4 only. The router hands out no IPv6 DNS server today. Turning IPv6 on
   at the router would advertise the router itself as one, a leak that breaks
   nothing visibly, so it is done together with a change here (#175).
