@@ -264,7 +264,14 @@ with subtest("negative control: a server that stops answering shows down, with n
 with subtest("negative control: with the exporter broken the panels have no data"):
     # The same check, against a timer that no longer writes: the file goes,
     # and the panels' queries come back empty, so the test above would fail.
+    # A run already going when the timer stops would write the file again
+    # after it is removed, so the test waits for it to finish. Stopping the
+    # service instead would kill the run, fail the unit and post the failure.
     nuc.succeed("systemctl stop minecraft-status.timer")
+    nuc.wait_until_succeeds(
+        "! systemctl list-jobs --no-legend | grep -qF minecraft-status.service"
+        " && [ $(systemctl show -P ActiveState minecraft-status.service) = inactive ]"
+    )
     nuc.succeed("rm /var/lib/prometheus-node-exporter-text/minecraft.prom")
     deadline = time.monotonic() + 120
     while any((got := minecraft_series()).values()):
