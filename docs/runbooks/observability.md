@@ -401,6 +401,13 @@ If an alert arrives twice, look at the relay's times. Alertmanager gives each
 notification as long as the group interval (5 minutes) and sends it again if
 the relay has not answered by then, though the post may still go through.
 
+Two firing posts for one problem can also be two alerts. Prometheus treats
+each set of labels as its own alert, so a label that comes and goes makes a
+second alert. node-exporter does this to a unit's `type`, which it reported in
+one scrape and left out of the next (#185); `UnitFailed` drops `type` for that
+reason. To check, list the alerts with their labels:
+`curl -s localhost:9090/api/v1/alerts` on the nuc.
+
 Alertmanager and the relay have start limits: five failed starts in 15 minutes
 (Alertmanager, which must also be ready within 100 s) or in 5 minutes (relay),
 and then the unit stays `failed`, which the notifier posts. So a relay that
