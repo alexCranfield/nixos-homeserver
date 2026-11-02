@@ -1,5 +1,6 @@
 # Ticket 6.7 (#197); see tests/tenant-net.nix for the machines.
 import json
+import re
 
 STAND_INS = {
     # namespace: (VM name, address)
@@ -77,15 +78,23 @@ with subtest("stand-ins get the taps' network from networkd"):
         # link-local.
         nuc.fail(f"ip -6 addr show dev {tap} | grep -q inet6")
 
-with subtest("IPv6 a guest sends anyway is dropped"):
-    # The stand-in's router solicitations, and the neighbour discovery for
-    # a ping to an address nobody has, are IPv6 traffic to the host, which
-    # the input chain drops. (Not ff02::1: the stand-in would answer that
-    # itself.)
-    before = drops("input")
+with subtest("IPv6 a guest sends anyway gets no answer and goes nowhere"):
+    # The tap has no IPv6 address or route, so the host can't answer a
+    # guest's IPv6, and the reverse-path filter drops it in prerouting, before
+    # this table's IPv6 rules, which stay as a further layer. The check is
+    # the outcome: the only answer to a ping to all nodes is the stand-in's
+    # own (multicast loops back), and the host forwards no IPv6 at all.
     nuc.wait_until_succeeds("ip -n tdev -6 addr show dev eth0 | grep -q 'scope link'")
-    nuc.fail("ip netns exec tdev ping -6 -c 3 -W 1 fe80::1%eth0")
-    assert drops("input") > before, "no IPv6 was dropped"
+    own = nuc.succeed(
+        "ip -n tdev -6 -o addr show dev eth0 scope link | awk '{print $4}' | cut -d/ -f1"
+    ).strip()
+    assert own, "the stand-in has no link-local address"
+    out = nuc.succeed("ip netns exec tdev ping -6 -c 3 -W 1 ff02::1%eth0 || true")
+    responders = {r.split("%")[0] for r in re.findall(r"bytes from ([0-9a-f:%a-z0-9]+):", out)}
+    assert own in responders, f"the ping didn't run: {out}"
+    assert responders == {own}, f"answered by {responders - {own}}"
+    assert nuc.succeed("sysctl -n net.ipv6.conf.all.forwarding").strip() == "0"
+
     # From here the stand-ins send IPv4 only, as the VMs will (6.8), so the
     # counters below move only for the probe that is being tested.
     for ns in STAND_INS:
