@@ -36,6 +36,31 @@
 }:
 let
   dir = config.microvm.stateDir;
+
+  check = pkgs.writeShellApplication {
+    name = "microvm-state-check";
+    runtimeInputs = [
+      pkgs.btrfs-progs
+      pkgs.coreutils
+      pkgs.e2fsprogs
+    ];
+    text = ''
+      dir=${lib.escapeShellArg dir}
+      if ! btrfs subvolume show "$dir" > /dev/null; then
+        echo "$dir is not a btrfs subvolume" >&2
+        exit 1
+      fi
+      # lsattr prints the flags first, `C` among them when NOCOW is set.
+      flags=$(lsattr -d "$dir" | cut -d' ' -f1)
+      case "$flags" in
+        *C*) echo "$dir is a NOCOW btrfs subvolume" ;;
+        *)
+          echo "$dir is not NOCOW (lsattr: $flags)" >&2
+          exit 1
+          ;;
+      esac
+    '';
+  };
 in
 {
   systemd.tmpfiles.settings."10-microvm".${dir} = lib.mkForce {
@@ -47,34 +72,21 @@ in
     h.argument = "+C";
   };
 
+  environment.systemPackages = [ check ];
+
   systemd.services.microvm-state = {
     description = "Check the microVM state directory is a NOCOW btrfs subvolume";
     after = [ "systemd-tmpfiles-setup.service" ];
+    # Never restarted by a deploy: every microvm@ unit requires this one, and
+    # a restart would pass on to them all, restarting every VM. microvm.nix
+    # sets the same on microvm@ for the same reason. To check again by hand,
+    # run `microvm-state-check`, not a restart of this unit.
+    restartIfChanged = false;
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
+      ExecStart = lib.getExe check;
     };
-    path = [
-      pkgs.btrfs-progs
-      pkgs.e2fsprogs
-    ];
-    script = ''
-      set -eu
-      dir=${lib.escapeShellArg dir}
-      if ! btrfs subvolume show "$dir" > /dev/null; then
-        echo "$dir is not a btrfs subvolume" >&2
-        exit 1
-      fi
-      # lsattr prints the flags first, `C` among them when NOCOW is set.
-      flags=$(lsattr -d "$dir" | cut -d' ' -f1)
-      case "$flags" in
-        *C*) ;;
-        *)
-          echo "$dir is not NOCOW (lsattr: $flags)" >&2
-          exit 1
-          ;;
-      esac
-    '';
   };
 
   systemd.services."microvm@" = {

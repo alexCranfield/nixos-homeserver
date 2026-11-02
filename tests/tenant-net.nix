@@ -17,10 +17,14 @@
 #    must not reach: a port opened on purpose to every interface, a Docker
 #    published port, and the other stand-in.
 #  - `lan`, a LAN device with a web server.
-#  - `router`, the default gateway at 192.168.1.1, with a web server, also
-#    answering on 100.100.100.100, in the shared address space (100.64/10)
-#    the tailnet uses. Tailscale reserves that address for its own service,
-#    so it is never a real device's.
+#  - `router`, the default gateway at 192.168.1.1, with a web server and a
+#    DNS server (dnsmasq) knowing one LAN name, as the real router does. Its
+#    public (WAN) address is 203.0.113.1, where the web server answers too, as
+#    the real router's console does from the LAN. It also answers on
+#    100.100.100.100, in the shared address space (100.64/10) the tailnet
+#    uses; Tailscale reserves that address for its own service, so it is
+#    never a real device's. Unbound forwards everything to it, since the test
+#    has no internet.
 #  - `internet`, on network 2, a web server at 203.0.113.10 (TEST-NET-3,
 #    reserved for documentation, so not in the table's closed set).
 #
@@ -77,6 +81,10 @@ let
 
   adsList = pkgs.writeText "tenant-net-ads.txt" "ad.test\n";
   threatsList = pkgs.writeText "tenant-net-threats.txt" "threat.test\n";
+  # The LAN Blocky's private hosts file, a sops secret on the real machine.
+  privateHosts = pkgs.writeText "tenant-net-private-hosts" ''
+    192.168.1.88 secret-host.home.arpa
+  '';
 in
 pkgs.testers.runNixOSTest {
   name = "tenant-net";
@@ -116,16 +124,37 @@ pkgs.testers.runNixOSTest {
       system.activationScripts.setupSecrets = lib.mkForce "";
       services.tailscale.authKeyFile = lib.mkForce null;
 
-      # Blocky with local lists and a name to look up, and no private hosts
-      # file, which is a sops secret on the real machine.
+      # Blocky with local lists, and every kind of LAN name the real one
+      # answers: a local record, the private hosts file and, through the
+      # router, the DHCP (Dynamic Host Configuration Protocol) devices.
+      homeserver.network.router = routerIp;
       homeserver.dns = {
         lists = lib.mkForce {
           ads = [ "${adsList}" ];
           threats = [ "${threatsList}" ];
         };
         records."probe.home.arpa" = [ "192.0.2.7" ];
-        privateHostsFile = lib.mkForce null;
+        privateHostsFile = lib.mkForce "/run/tenant-net/private-hosts";
       };
+      systemd.tmpfiles.rules = [
+        "d /run/tenant-net 0700 root root -"
+        "C /run/tenant-net/private-hosts 0400 root root - ${privateHosts}"
+      ];
+      # As in tests/dns.nix: Unbound asks the router, as there is no internet.
+      services.unbound = {
+        settings.forward-zone = lib.mkForce [
+          {
+            name = ".";
+            forward-addr = routerIp;
+          }
+        ];
+        enableRootTrustAnchor = lib.mkForce false;
+        settings.server.local-zone = [ ''"test." nodefault'' ];
+      };
+      services.blocky.settings.specialUseDomains.enable = false;
+
+      # The router's public address, which the real machine looks up.
+      homeserver.tenants.routerWanCommand = "echo ${routerWanIp}";
 
       # A port opened to every interface, as a careless later change might.
       networking.firewall.allowedTCPPorts = [ openPort ];
@@ -222,6 +251,20 @@ pkgs.testers.runNixOSTest {
         }
       ];
       boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
+      networking.firewall.allowedUDPPorts = [ 53 ];
+      networking.firewall.allowedTCPPorts = [ 53 ];
+      services.dnsmasq = {
+        enable = true;
+        resolveLocalQueries = false;
+        settings = {
+          interface = "eth1";
+          bind-interfaces = true;
+          # A public name, for the tenants' Blocky to resolve.
+          address = [ "/ok.test/198.51.100.7" ];
+          # A DHCP device's name, as the real router knows them.
+          host-record = [ "lan.home.arpa,${lanIp}" ];
+        };
+      };
     }
   ];
 
@@ -229,6 +272,7 @@ pkgs.testers.runNixOSTest {
     web
     {
       virtualisation.vlans = [ 1 ];
+      environment.systemPackages = [ pkgs.dnsutils ];
       networking.interfaces.eth1.ipv4.addresses = lib.mkForce [
         {
           address = lanIp;
@@ -265,6 +309,7 @@ pkgs.testers.runNixOSTest {
     LAN_IP = ${builtins.toJSON lanIp}
     INTERNET_IP = ${builtins.toJSON internetIp}
     SHARED_IP = ${builtins.toJSON sharedIp}
+    ROUTER_WAN_IP = ${builtins.toJSON routerWanIp}
     OPEN_PORT = ${toString openPort}
     PUBLISHED_PORT = ${toString publishedPort}
     BUSYBOX = "${pkgs.busybox}/bin/busybox"

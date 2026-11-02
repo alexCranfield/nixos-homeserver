@@ -10,6 +10,7 @@
 {
   config,
   lib,
+  pkgs,
   inputs,
   ...
 }:
@@ -19,6 +20,7 @@ in
 {
   imports = [
     inputs.microvm.nixosModules.host
+    ./dns.nix
     ./network.nix
     ./state.nix
   ];
@@ -48,6 +50,16 @@ in
       default = "10.88.0";
       readOnly = true;
       description = "The tenant network's first three octets; a /24.";
+    };
+
+    routerWanCommand = lib.mkOption {
+      type = lib.types.str;
+      default = "${pkgs.curl}/bin/curl -sSf --max-time 10 https://1.1.1.1/cdn-cgi/trace | ${pkgs.gnused}/bin/sed -n 's/^ip=//p'";
+      description = ''
+        A shell command printing the router's public IPv4 address, which
+        ./network.nix closes to the VMs. Cloudflare's trace page, asked by
+        address so it doesn't depend on DNS.
+      '';
     };
 
     hostAddress = lib.mkOption {

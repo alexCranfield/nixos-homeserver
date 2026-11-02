@@ -87,18 +87,6 @@ in
       '';
     };
 
-    clientNames = lib.mkOption {
-      type = lib.types.attrsOf (lib.types.listOf lib.types.str);
-      default = { };
-      example = {
-        tenant-dev = [ "10.88.0.2" ];
-      };
-      description = ''
-        Names for clients the router doesn't know, by address, for the query
-        log and the DNS alerts. Used before the router's reverse lookups.
-      '';
-    };
-
     privateHostsFile = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -161,7 +149,6 @@ in
         };
         # Device names for the query log, from the router's reverse names.
         clientLookup.upstream = router;
-        clientLookup.clients = lib.mkIf (cfg.clientNames != { }) cfg.clientNames;
         customDNS.mapping = lib.mapAttrs (_: lib.concatStringsSep ",") cfg.records;
         hostsFile = lib.mkIf (cfg.privateHostsFile != null) {
           sources = [ privateHostsCredential ];
