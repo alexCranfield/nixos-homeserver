@@ -193,7 +193,8 @@ modules/base/router.nix            homeserver.network.router, the router's addre
 hosts/nuc/dns.nix                  the nuc's private DNS names and the NAS probe target, from sops
 hosts/nuc/tenants.nix              the tenant VMs (ADR 0013): their names and addresses
 modules/tenants/default.nix        homeserver.tenants.vms: one VM each, its name and index; imports microvm.nix's host module
-modules/tenants/network.nix        the tenant VMs' routed taps, NAT (network address translation), and the tenant-isolation table: internet and Blocky only
+modules/tenants/dns.nix            the tenant VMs' own Blocky on 10.88.0.1: the LAN's lists and query log, none of its names
+modules/tenants/network.nix        the tenant VMs' routed taps, NAT (network address translation), and the tenant-isolation table (internet and their Blocky only), the router's public address kept closed
 modules/tenants/state.nix          /var/lib/microvms as a NOCOW (no copy-on-write) btrfs subvolume, checked before any VM starts; KSM (kernel samepage merging) off
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)

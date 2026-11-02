@@ -57,12 +57,17 @@ What mattered:
      nuc.
 2. **Both VMs reach the internet and the nuc's DNS (Domain Name System), and
    nothing else.** They sit on routed tap interfaces with their own nftables
-   rules: no LAN (local area network), no router, no service on the nuc
-   but DNS, no Docker network, no tailnet address and not each other. They
-   ask Blocky at its existing LAN address, which the host routes to it, so
-   port 53 is opened on the tap interfaces as well as on `lan0`; this
-   extends ADR 0012, which opened it on `lan0` only. Their lookups are
-   filtered and logged like any LAN device's.
+   rules: no LAN (local area network), no router (its public address
+   included, where it answers from the LAN too), no service on the nuc but
+   DNS, no Docker network, no tailnet address and not each other. Their DNS
+   is a second Blocky of their own on the host's tap address, 10.88.0.1,
+   with the LAN Blocky's lists and query log but none of its LAN names: the
+   LAN Blocky answers its local records and private hosts file, reverse
+   lookups included, before any per-client blocking, so a VM asking it could
+   read back the house's device names. Port 53 is opened on the tap
+   interfaces for that Blocky alone, which extends ADR 0012 (port 53 on
+   `lan0` only). Their lookups are filtered, and logged under their VM
+   names in the same query log, with the same alerts.
 3. **Nothing is public.** The store's pages, the class calendar among them,
    stay on the store's own platform, and the jobs update them through its API.
    ADR 0011 stands: nothing on the nuc is reachable from the internet.

@@ -22,7 +22,7 @@ Operational procedures, written as tickets are completed.
 - [data-layout.md](data-layout.md) — `/srv/data/<stack>` subvolumes, the ID convention, the nightly snapshot, `just snapshot` and `just rollback` (ticket 3.3)
 - [game-access.md](game-access.md) — for friends: installing Tailscale (Steam Deck included), accepting the share, installing the modpack, connecting, "can't connect?" (tickets 4.0 and 4.1)
 - [minecraft.md](minecraft.md) — the All the Mods 9 server: what is pinned, the whitelist in sops, updating the pack, the snapshot hooks, start times (ticket 4.1)
-- [tenants.md](tenants.md) — the tenant microVMs (virtual machines): their network and what it blocks, the drop counters, their DNS names, the state directory (ticket 6.7, #197; grows with 6.8 to 6.12)
+- [tenants.md](tenants.md) — the tenant microVMs (virtual machines): their network and what it blocks, the drop counters, the router's public address, their own Blocky, the state directory (ticket 6.7, #197; grows with 6.8 to 6.12)
 - [hardware.md](hardware.md) — the live USB, assembly, BIOS settings and the hardware survey (ticket 1.1; the record fills in when it closes)
 
 ## Planned
