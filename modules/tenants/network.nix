@@ -55,8 +55,11 @@ let
   address = vm: "${cfg.subnet}.${toString vm.index}";
 
   # Puts the last known public address back, then looks it up again and
-  # replaces it. A failed lookup fails the unit, which posts, and leaves the
-  # last address in place.
+  # replaces it. A failed lookup leaves the last address in place. It fails
+  # the unit, which posts, only once lookups have failed for 30 minutes since
+  # boot or since the last success: the router's WAN comes up minutes after
+  # its LAN after a power cut, and a short outage isn't worth a post. A VM
+  # test, with no internet, never gets that far.
   routerWan = pkgs.writeShellScript "tenant-router-wan" ''
     set -euo pipefail
     PATH=${
@@ -72,9 +75,15 @@ let
     if [ -s "$state" ] && valid "$(cat "$state")"; then
       nft add element "''${set[@]}" "{ $(cat "$state") }"
     fi
-    address=$(${cfg.routerWanCommand})
-    if ! valid "$address"; then
+    if ! address=$(${cfg.routerWanCommand}) || ! valid "$address"; then
       echo "the lookup gave no IPv4 address: '$address'" >&2
+      uptime=$(cut -d. -f1 /proc/uptime)
+      last=$(stat -c %Y "$state" 2> /dev/null || echo 0)
+      if [ "$uptime" -lt 1800 ] || [ $(($(date +%s) - last)) -lt 1800 ]; then
+        echo "keeping the last address; trying again in 5 minutes" >&2
+        exit 0
+      fi
+      echo "no successful lookup for 30 minutes" >&2
       exit 1
     fi
     nft flush set "''${set[@]}"

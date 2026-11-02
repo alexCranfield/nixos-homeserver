@@ -75,9 +75,11 @@ systemctl status tenant-router-wan.service
 sudo systemctl reload tenant-router-wan.service       # look it up now
 ```
 
-A failed lookup fails the unit, which posts to Discord, and leaves the last
-address in place. Between a change of address and the next lookup, up to
-five minutes, the new address is open to the VMs.
+A failed lookup leaves the last address in place. Once lookups have failed
+for 30 minutes since boot or since the last success, the unit fails, which
+posts to Discord; a short outage, or the router's WAN coming up a few
+minutes after its LAN after a power cut, doesn't. Between a change of
+address and the next good lookup, the new address is open to the VMs.
 
 ### DNS
 

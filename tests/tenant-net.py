@@ -59,6 +59,11 @@ nuc.wait_for_unit("tenant-router-wan.service")
 nuc.wait_for_unit("stack-probe.service")
 nuc.wait_for_open_port(OPEN_PORT)
 nuc.wait_until_succeeds(http(f"http://{NUC_IP}:{PUBLISHED_PORT}/"))
+# Unbound forwards to the router here. If it asked before the router's DNS
+# was up, it holds the router as unreachable for about 15 minutes; restart
+# it, as on the real nuc after an outage, now that dnsmasq is up.
+nuc.succeed("systemctl restart unbound.service")
+nuc.wait_until_succeeds(f"{dig(TENANT_DNS, 'ok.test')} | grep -qx 198.51.100.7", timeout=60)
 
 with subtest("stand-ins get the taps' network from networkd"):
     for ns, (name, addr) in STAND_INS.items():
