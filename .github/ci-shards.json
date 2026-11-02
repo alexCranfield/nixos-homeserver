@@ -8,7 +8,8 @@
       "compose-check",
       "stack-watch",
       "alert-rules",
-      "alert-relay"
+      "alert-relay",
+      "tenant-names"
     ]
   },
   "alerting": {
@@ -23,13 +24,14 @@
     ]
   },
   "services": {
-    "why": "The services the host runs: observability (about 12 minutes), Docker and the Compose stacks (the two largest VMs, 4 GB and 3 GB) and the announcements to players.",
+    "why": "The services the host runs: observability (about 12 minutes), Docker and the Compose stacks (the two largest VMs, 4 GB and 3 GB), the announcements to players, and the tenant network (#197), whose nuc runs Docker beside three small VMs.",
     "checks": [
       "observability",
       "docker",
       "compose-stack",
       "stack-data",
-      "announce"
+      "announce",
+      "tenant-net"
     ]
   },
   "system": {
