@@ -51,14 +51,18 @@ What mattered:
      private repository every few minutes and runs its Compose stack, in
      which supercronic (a cron built for containers) runs the jobs on the
      schedule the repository declares. The tenant has no shell on it.
-   - qemu rather than cloud-hypervisor, because only qemu's runner passes
-     systemd credentials into the guest, which is how the VMs get their
-     secrets.
+   - qemu rather than cloud-hypervisor, because in the microvm.nix pinned
+     here only qemu's runner passes systemd credentials into the guest,
+     which is how the VMs get their secrets. Ticket 6.8 confirms it on the
+     nuc.
 2. **Both VMs reach the internet and the nuc's DNS (Domain Name System), and
    nothing else.** They sit on routed tap interfaces with their own nftables
-   rules: no LAN (local area network), no router, no service on the nuc, no
-   Docker network, no tailnet address and not each other. Their DNS goes
-   through Blocky like any LAN device (ADR 0012), filtered and logged.
+   rules: no LAN (local area network), no router, no service on the nuc
+   but DNS, no Docker network, no tailnet address and not each other. They
+   ask Blocky at its existing LAN address, which the host routes to it, so
+   port 53 is opened on the tap interfaces as well as on `lan0`; this
+   extends ADR 0012, which opened it on `lan0` only. Their lookups are
+   filtered and logged like any LAN device's.
 3. **Nothing is public.** The store's pages, the class calendar among them,
    stay on the store's own platform, and the jobs update them through its API.
    ADR 0011 stands: nothing on the nuc is reachable from the internet.
@@ -91,22 +95,28 @@ Phase 6 items 6.2, 6.3 and 6.5 are superseded by tickets 6.6 to 6.12;
   file is contained to a VM that can reach only the internet. Reaching the
   nuc means a VM escape through qemu or KVM (Kernel-based Virtual Machine),
   not a container escape.
-- The VMs cost a fixed 12 GB of the nuc's 96 GB, and their CPU (central
+- The VMs cost a fixed 12 GB of the nuc's 96 GB between them (8 GB for
+  dev, 4 GB for the runner), and their CPU (central
   processing unit) and I/O (input/output) weights are below the game
-  servers', so games and LLMs win any contention.
+  servers', so games and LLMs (large language models) win any contention.
 - Kubernetes is not needed for this. If ADR 0008 later adopts K3s, the
   runner's jobs are a candidate workload; nothing here blocks that.
-- CI cannot boot the microVMs: the VM tests already run inside a VM, and a
-  third level of virtualisation is not available on GitHub's runners. The
+- CI does not boot the microVMs. GitHub's runners give the VM tests KVM,
+  but a microVM inside a test VM would be a third level of virtualisation,
+  which this repo does not rely on: it would be unaccelerated, slow and
+  flaky if it ran at all. The
   network rules are tested with stand-in interfaces of the same names, the
   runner's deploy loop on a plain test node, and the real VMs by a smoke
   test on the nuc after each deploy.
 - The tenant has sudo in `tenant-dev`, so they can change its Tailscale flags.
   Advertising routes needs Alex's approval in the admin console, and the
   host's rules drop the VM's traffic to the LAN whatever the VM does.
-- The tenant is on Alex's tailnet as a share recipient of one device. Its
-  access policy lets share recipients reach that device's SSH port only, and
-  gives the device no access to anything. Whether a tagged device can be
+- The tenant is on Alex's tailnet as a share recipient of one device,
+  `tenant-dev`, never the nuc. The access policy lets share recipients reach
+  that device's SSH port only, and gives the device no access to anything;
+  friends who play games are not shared `tenant-dev`, and the tenant is not
+  shared the nuc, so neither rule widens the other or ADR 0011's game-port
+  rule. Whether a tagged device can be
   shared, and how many shares the plan allows, are checked on the live
   tailnet in ticket 6.10, as ADR 0011 did for games.
 - The tenant sees their jobs through failure posts and per-job metrics; a
