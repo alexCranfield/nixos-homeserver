@@ -171,9 +171,10 @@ UniFi Dream Router 7.
      cannot reorder them; the Internal to External cell of the zone view
      (Settings, then Zones) can. With Deny above, the nuc and the NAS lose
      their own upstream and clients fail as cached answers expire.
-   - After any mistake that cut the nuc off, Unbound keeps answering SERVFAIL (a server failure) for up to
-     about 15 minutes once the block is lifted, because it has marked the
-     upstream servers unreachable. On the nuc this clears it:
+   - After any mistake that cut the nuc off, Unbound keeps answering
+     SERVFAIL (a server failure) for up to about 15 minutes once the block
+     is lifted, because it has marked the upstream servers unreachable. On
+     the nuc this clears it:
 
      ```bash
      sudo systemctl restart unbound
