@@ -146,9 +146,9 @@ UniFi Dream Router 7.
    nuc up) changes nothing for clients. That is an acceptance check, not a
    removal.
 4. **Block outbound DNS from the LAN, except from the nuc and the NAS.**
-   Two firewall rules on the router, from the LAN to the internet: drop TCP and UDP
-   port 53, and TCP port 853 (DNS over TLS, Transport Layer Security), from
-   every source other than the nuc and the NAS. Devices with built-in DNS
+   Two firewall rules on the router, from the LAN to the internet: block
+   TCP and UDP ports 53 and 853 (853 is DNS over TLS, Transport Layer
+   Security), from every source other than the nuc and the NAS. Devices with built-in DNS
    servers (Chromecasts, some TVs and apps) would otherwise ask 8.8.8.8
    directly and skip the blocking. DNS over HTTPS (Hypertext Transfer
    Protocol Secure) cannot be blocked this way; the nuc answers NXDOMAIN
@@ -162,7 +162,7 @@ UniFi Dream Router 7.
    | Policy | Action | Source | Destination port |
    |---|---|---|---|
    | DNS Allow | Allow | the nuc's and the NAS's addresses | 53, 853 |
-   | DNS Deny | Block | any | 53, 853 |
+   | DNS Deny | Block (Deny) | any | 53, 853 |
 
    - The ports go in the **destination** port field. In the source port
      field, Deny blocks everything from the LAN to the internet: the first
@@ -171,15 +171,18 @@ UniFi Dream Router 7.
      cannot reorder them; the Internal to External cell of the zone view
      (Settings, then Zones) can. With Deny above, the nuc and the NAS lose
      their own upstream and clients fail as cached answers expire.
-   - After any mistake that cut the nuc off, Unbound keeps answering
-     SERVFAIL for up to about 15 minutes once the block is lifted, because
-     it has marked the upstream servers unreachable. `sudo systemctl
-     restart unbound` on the nuc clears it.
+   - After any mistake that cut the nuc off, Unbound keeps answering SERVFAIL (a server failure) for up to
+     about 15 minutes once the block is lifted, because it has marked the
+     upstream servers unreachable. On the nuc this clears it:
+
+     ```bash
+     sudo systemctl restart unbound
+     ```
 
    There is no need to wait for leases to renew first. Before the cutover
    DHCP handed out only the NAS, which is on the LAN and exempt, so a
-   device with an old lease is unaffected; only devices that ignore DHCP
-   are.
+   device with an old lease is unaffected. Only devices that ignore DHCP
+   are affected, and they are what the rule is for.
 
    Check it from a LAN device, not from WSL (Windows Subsystem for Linux):
    WSL's DNS tunnelling hands every query, even `dig @8.8.8.8`, to Windows's
@@ -225,8 +228,11 @@ reconnected to Wi-Fi or its network follows at once. Then fix the nuc, and
 switch back by adding it as the first server again.
 
 The firewall rules in step 4 can stay: the NAS is excepted from them. If the
-nuc is the problem and the NAS is too, turn off the DNS Deny policy first, or
-devices with built-in DNS servers are the only ones that still resolve.
+nuc is the problem and the NAS is too, turn off the DNS Deny policy first
+(its toggle in Settings, then Policy Engine, then Policy Table), or devices
+with built-in DNS servers are the only ones that still resolve. If the block
+itself cut the nuc off, restart Unbound once it is lifted
+(the last bullet of step 4 above).
 
 ### Blocky does not start, status 243
 
