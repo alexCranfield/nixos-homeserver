@@ -191,6 +191,11 @@ modules/dns/querylog.nix           the PostgreSQL query log: read-only roles, th
 modules/dns/watch.nix              the timer that turns the query log into alert metrics (watch.sql holds the queries)
 modules/base/router.nix            homeserver.network.router, the router's address that the DNS pieces share
 hosts/nuc/dns.nix                  the nuc's private DNS names and the NAS probe target, from sops
+hosts/nuc/tenants.nix              the tenant VMs (ADR 0013): their names and addresses
+modules/tenants/default.nix        homeserver.tenants.vms: one VM each, its name and index; imports microvm.nix's host module
+modules/tenants/dns.nix            the tenant VMs' own Blocky on 10.88.0.1: the LAN's lists and query log, none of its names
+modules/tenants/network.nix        the tenant VMs' routed taps, NAT (network address translation), and the tenant-isolation table (internet and their Blocky only), the router's public address kept closed
+modules/tenants/state.nix          /var/lib/microvms as a NOCOW (no copy-on-write) btrfs subvolume, checked before any VM starts; KSM (kernel samepage merging) off
 modules/dev/vm-secrets.nix         test-only: proves sops-nix decrypts in a VM (virtual machine)
 tests/base-ssh.nix                 VM test: key-only SSH as ops, root refused (a flake check)
 tests/comin.nix                    VM test: comin runs, fetches `main`, ignores a testing branch
@@ -213,6 +218,8 @@ tests/docker.nix                   VM test: published ports bind to loopback on 
 tests/docker.py                    its test script
 tests/compose-stack.nix            VM test: stacks as units, slices and limits, public ports enforced, crash alerts; controls without each firewall layer
 tests/compose-stack.py             its test script
+tests/tenant-net.nix               VM test: stand-ins for the tenant VMs reach the internet and Blocky, nothing else; control without the table
+tests/tenant-net.py                its test script
 tests/compose-check.nix            flake check: compose files under stacks/ against ADR 0006, with a failing fixture per rule
 tests/compose-check/               one compose file per rule the check must reject, and one it must pass
 tests/stack-data.nix               VM test: data subvolumes and owners, nightly snapshots and hooks, retention, rollback; controls without each guard

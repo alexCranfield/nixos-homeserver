@@ -27,7 +27,20 @@ let
   pgIsReady = "${config.services.postgresql.finalPackage}/bin/pg_isready -q -t 3 -h /run/postgresql -d ${psqlDatabase}";
 in
 {
+  options.homeserver.dns.queryLogUnits = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    description = ''
+      The Blocky units that write to the query log, for the reattach timer
+      below. This module adds the LAN's Blocky, the tenant VMs'
+      (modules/tenants/dns.nix) adds itself. Not a default: a default is
+      dropped as soon as any module defines the option.
+    '';
+  };
+
   config = lib.mkIf enabled {
+    homeserver.dns.queryLogUnits = [ "blocky" ];
+
     services.postgresql = {
       enable = true;
       # The socket only: no network address to listen on.
@@ -96,9 +109,9 @@ in
     # database at start, then carries on logging to its console instead (and
     # DNS keeps answering). It doesn't try again, so a start while PostgreSQL
     # is down loses the log until Blocky restarts. Every five minutes, if the
-    # current Blocky run said it fell back and PostgreSQL is back, restart it
-    # to log again. A restart is a second without an answer on port 53, so
-    # only when needed.
+    # current run of a Blocky unit (queryLogUnits) said it fell back and
+    # PostgreSQL is back, restart it to log again. A restart is a second
+    # without an answer on port 53, so only when needed.
     systemd.services.dns-querylog-reattach = {
       description = "Restart Blocky to log queries again, once PostgreSQL is back";
       serviceConfig.Type = "oneshot";
@@ -107,13 +120,15 @@ in
         pkgs.gnugrep
       ];
       script = ''
-        id=$(systemctl show -P InvocationID blocky.service)
-        if [ -n "$id" ] \
-          && journalctl --no-pager _SYSTEMD_INVOCATION_ID="$id" | grep -qF 'using console as fallback' \
-          && ${pgIsReady}; then
-          echo "PostgreSQL is back: restarting Blocky to log queries again"
-          systemctl restart blocky.service
-        fi
+        for unit in ${lib.escapeShellArgs cfg.queryLogUnits}; do
+          id=$(systemctl show -P InvocationID "$unit.service")
+          if [ -n "$id" ] \
+            && journalctl --no-pager _SYSTEMD_INVOCATION_ID="$id" | grep -qF 'using console as fallback' \
+            && ${pgIsReady}; then
+            echo "PostgreSQL is back: restarting $unit to log queries again"
+            systemctl restart "$unit.service"
+          fi
+        done
       '';
     };
     systemd.timers.dns-querylog-reattach = {

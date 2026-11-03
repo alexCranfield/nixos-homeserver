@@ -33,6 +33,19 @@
       # as a second full nixpkgs, which the weekly lock bump would then churn on.
       inputs.treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # The tenant microVMs (virtual machines), ADR 0013. No release tags
+    # upstream: the lock pins a commit, and the weekly bump moves it with
+    # nixpkgs, which it follows.
+    microvm = {
+      url = "github:microvm-nix/microvm.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+      # Its other input, the Spectrum OS repository, is fetched from
+      # spectrum-os.org and used only for a cloud-hypervisor graphics package
+      # this flake never builds. Pointed at this flake instead, so nothing
+      # here depends on that server being up.
+      inputs.spectrum.follows = "";
+    };
   };
 
   # `outputs` is a function. It receives the resolved inputs and returns the
@@ -199,6 +212,38 @@
           inherit pkgs inputs;
           inherit (nixpkgs) lib;
         };
+
+        # Ticket 6.7 (#197): stand-ins for the tenant VMs reach the internet
+        # and Blocky, nothing else, and the VM state directory is a NOCOW
+        # btrfs subvolume (ADR 0013).
+        tenant-net = import ./tests/tenant-net.nix {
+          inherit pkgs inputs;
+          inherit (nixpkgs) lib;
+        };
+
+        # Ticket 6.7 (#197): a tenant VM name that the firewall rules would
+        # not match (or that Docker's `br-*` rule would), one too long for a
+        # tap, or a second VM on the same address fails evaluation; a good
+        # one passes, so the check can tell them apart.
+        tenant-names =
+          let
+            evaluates =
+              vms:
+              (builtins.tryEval
+                (nixpkgs.lib.nixosSystem {
+                  specialArgs = { inherit inputs; };
+                  modules = [
+                    ./hosts/nuc
+                    { homeserver.tenants.vms = vms; }
+                  ];
+                }).config.system.build.toplevel.drvPath
+              ).success;
+          in
+          assert evaluates { tenant-ok.index = 9; };
+          assert !evaluates { br-tenant.index = 9; };
+          assert !evaluates { tenant-much-too-long.index = 9; };
+          assert !evaluates { tenant-twin.index = 2; };
+          pkgs.runCommand "tenant-names" { } "touch $out";
 
         # Ticket 3.4 (#25): Prometheus scrapes the host, its containers and
         # comin, and nothing that collects metrics is reachable from the LAN.

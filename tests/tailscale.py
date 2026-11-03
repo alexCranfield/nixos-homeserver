@@ -189,6 +189,8 @@ with subtest("DNS answers the LAN, not the tailnet"):
         print(out)
         assert status == 9, (status, out)
     # Blocky listens on the LAN address alone; this is the firewall's half.
+    # The tenant VMs' taps open 53 too, for their own Blocky on 10.88.0.1
+    # (ADR 0013); never tailscale0.
     rules = nuc.succeed("nft list chain inet nixos-fw input-allow")
     dns_rules = sorted(
         line.strip()
@@ -199,6 +201,10 @@ with subtest("DNS answers the LAN, not the tailnet"):
     assert dns_rules == [
         'iifname "lan0" tcp dport 53 accept',
         'iifname "lan0" udp dport 53 accept',
+        'iifname "vm-tenant-dev" tcp dport 53 accept',
+        'iifname "vm-tenant-dev" udp dport 53 accept',
+        'iifname "vm-tenant-run" tcp dport 53 accept',
+        'iifname "vm-tenant-run" udp dport 53 accept',
     ], dns_rules
 
 with subtest("Grafana answers over the tailnet through Serve"):

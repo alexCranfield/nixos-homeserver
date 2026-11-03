@@ -208,6 +208,10 @@ Copies off the machine are the backup job (3.5, #26), which will back up each
 stack's newest nightly snapshot rather than `@srv` itself, since a snapshot
 of `@srv` does not include the stacks' nested subvolumes.
 
+The tenant VMs' (virtual machines') disks at `/var/lib/microvms` are a
+nested subvolume of the root for the same reason, and are never backed up
+(ADR, Architecture Decision Record, 0013; [tenants.md](tenants.md)).
+
 ## Practising on `hello`
 
 `hello` mounts nothing, so its subvolume is empty. Use a marker file to try
