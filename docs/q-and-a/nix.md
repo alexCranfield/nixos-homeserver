@@ -310,3 +310,39 @@ rejected or undone. They would also fall outside the generations, so rolling
 back from the boot menu would no longer cover them.
 
 </details>
+
+### Is it safe for Nix to build from source when a download fails?
+
+*2026-11-01*
+
+> Is it safe to build from source?
+
+<details>
+<summary>Answer</summary>
+
+**Safe, yes; practical, often not.** The question came up with Nix's
+`fallback = true` setting, which makes a failed download from the binary
+cache (`cache.nixos.org`) build that path from source instead of failing.
+
+**Safe:** a source build produces the same store path from the same recipe,
+and every source download is checked against the hash in the recipe. A
+tampered or wrong source fails with `hash mismatch`; it cannot slip in. The
+result is no less trustworthy than the cached one.
+
+**Practical:** the first answer here said it would cost "a minute or two" for
+the odd failed path. That was wrong. When the cache failed in CI
+(continuous integration) on 2026-11-01, the missing path was Docker. Building
+Docker needs its compiler, which was not cached locally either, and so on
+down to the bootstrap tools (`tinycc`, `mes`). One of those bootstrap
+sources then failed its own download with a hash mismatch, and the job
+failed anyway, much later. On top of that, after a few errors Nix stops
+using the cache for 60 seconds, and with `fallback` everything needed in
+that window is built from source too.
+
+**What the repo does instead:** `fallback` was removed (#189). When the checks
+fail with one of Nix's download errors, CI waits 30 seconds and runs them
+once more, which fetches the path from the cache on the second try. Any
+other failure fails at once, so a flaky test is never retried into a pass
+(`docs/runbooks/ci.md`).
+
+</details>

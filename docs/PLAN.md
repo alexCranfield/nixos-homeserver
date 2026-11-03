@@ -2,7 +2,7 @@
 
 ## Context
 
-Alex is standing up a new home server on an ASRock Industrial NUC BOX-358H (Intel Core Ultra X7 358H "Panther Lake", 4P+8E+4LPE cores, Arc B390 Xe3 iGPU and NPU (Neural Processing Unit), 96 GB DDR5, 1 TB NVMe, dual Intel 2.5GbE, second M.2 slot free). Workloads: dockerised game servers (Minecraft, Palworld, Satisfactory, others), local LLMs, and a dev environment for Shopify admin scripting.
+Alex is standing up a new home server on an ASRock Industrial NUC BOX-358H (Intel Core Ultra X7 358H "Panther Lake", 4P+8E+4LPE cores, Arc B390 Xe3 iGPU and NPU (Neural Processing Unit), 96 GB DDR5, 1 TB NVMe, dual Intel 2.5GbE, second M.2 slot free). Workloads: dockerised game servers (Minecraft, Palworld, Satisfactory, others), local LLMs, a dev environment for Alex, and an isolated dev and job-runner platform for a tenant (ADR 0013).
 
 The previous NAS (network-attached storage) project, `alexCranfield/ansible-nas`, ran OMV (OpenMediaVault) on a Raspberry Pi. It used Ansible, pixi, Ansible Vault, unattended-upgrades, fail2ban, SSH via `~/.ssh/config` host `nas` (user `<nas-user>`, `<nas-host>`). This project is the "step further": the whole OS is declared in a Nix flake, installs and updates are automated, and the repo doubles as public CV evidence of a GitOps workflow.
 
@@ -37,7 +37,9 @@ NUC (NixOS 26.05, hostname: nuc)
   │    games/minecraft  games/palworld  games/satisfactory
   │    ai/ollama + open-webui        obs/grafana + prometheus + cadvisor
   ├─ /srv/data/<stack>   persistent volumes (btrfs subvolume, snapshotted + restic'd)
-  └─ dev: home-manager user, direnv + flake dev shells (Shopify tooling), VS Code Remote over Tailscale
+  ├─ dev: home-manager user, direnv, VS Code Remote over Tailscale
+  └─ tenant microVMs (ADR 0013): tenant-dev (shell over a Tailscale share)
+       and tenant-run (scheduled jobs), internet and DNS only
 
 Backups: NUC ──restic/SFTP──▶ <nas-host>:<nas-backup-path>
 Admin:   WSL/laptop ──Tailscale──▶ nuc (SSH, Grafana, Open WebUI)
@@ -57,7 +59,7 @@ modules/
 stacks/        docker-compose.yml + .env.sops per stack (games/, ai/, obs/)
 secrets/       *.yaml encrypted with sops (age)
 .sops.yaml
-dev/           dev shells (shopify, python, node)
+dev/           dev shells (python, node)
 .github/workflows/  ci.yml, update-flake-lock.yml
 docs/          PLAN.md (this plan), adr/*.md, runbooks/*.md
 ```
@@ -122,12 +124,19 @@ Ticket bodies with tasks and acceptance criteria are in `scripts/tickets.py`; `s
 - **5.4** Intel iGPU trial (stretch): `hardware.graphics` with `intel-compute-runtime` + `level-zero`, pass `/dev/dri` into an IPEX-LLM or llama.cpp SYCL/Vulkan image; benchmark tokens/s vs CPU. Known blocker: Level Zero init crashes on Panther Lake (intel/compute-runtime #918/#920). AC: written benchmark result and go/no-go.
 - **5.5** NPU trial (stretch): check `intel-npu-driver` availability in nixpkgs, OpenVINO runtime. AC: go/no-go note.
 
-### Phase 6: Development environment (Shopify scripting)
+### Phase 6: Development environment and tenant platform
 - **6.1** `home-manager` for `ops`: shell, git, tmux (port NAS `tmux.conf`), starship, direnv. AC: login shell matches WSL config.
-- **6.2** Dev shells in `dev/`: `shopify` (Node + Shopify CLI + Ruby if needed), `python` (uv), `scripting`. AC: `nix develop .#shopify` gives working `shopify version`.
-- **6.3** Shopify API tokens via sops → env in dev shell only, never in compose. AC: token available in shell, absent from repo history.
+- **6.2** Superseded by 6.6 to 6.12 (ADR 0013): store scripting moved off the host into the tenant microVMs.
+- **6.3** Superseded by 6.6 to 6.12 (ADR 0013): the tenant's API (application programming interface) tokens are sops files in their own private repository.
 - **6.4** VS Code Remote-SSH over Tailscale + `nix-ld` for binaries that expect FHS. AC: open a project on nuc from workstation VS Code.
-- **6.5** Optional: scheduled scripts as systemd timers declared in Nix (e.g. nightly Shopify report). AC: one timer runs a hello script.
+- **6.5** Superseded by 6.6 to 6.12 (ADR 0013): scheduled jobs run under supercronic in `tenant-run`.
+- **6.6** (#196) ADR 0013 and this rewrite of Phase 6. AC: ADR accepted, 6.2, 6.3 and 6.5 closed as superseded.
+- **6.7** (#197) microvm.nix input, routed taps, the `tenant-isolation` nftables table and Blocky names for the VMs. AC: the `tenant-net` VM test shows the stand-ins reach the internet and Blocky only, with a negative control for every blocked target.
+- **6.8** (#198) `homeserver.tenants.<name>` options, the guest base (qemu, read-only store, `/var` volume, credentials) and the platform secrets. AC: both VMs boot on the nuc, host keys persist, `just tenant-smoke` shows every blocked probe failing.
+- **6.9** (#199) `tenant-run`: deploy loop from the private repository's `main`, per-job metrics, failure posts to the tenant's webhook, platform alerts for Alex. AC: the `tenant-runner` VM test deploys a good commit and reports a broken one.
+- **6.10** (#200) `tenant-dev`: own `tailscaled` on a tag shared only with the tenant, tools and Claude Code. AC: the tenant SSHes in; the VM reaches no tailnet peer and cannot decrypt production secrets.
+- **6.11** (#201) Template repository with a hello-world job, end to end, and the tenant runbook. AC: a merged pull request deploys within 5 minutes; a failing job reaches the tenant's webhook, not Alex's Discord.
+- **6.12** (#202) A view of the tenant's own job runs that does not open the nuc's dashboards. AC: the tenant sees each job's last run and outcome, and nothing else.
 
 ### Phase 7: Hardening, DR (disaster recovery), and write-up
 - **7.1** DR drill: full reinstall from flake + restic restore onto the same NVMe (or the second slot), time it. AC: under 1 hour, runbook updated.
