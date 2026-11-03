@@ -135,8 +135,9 @@ for ns in STAND_INS:
         nuc.succeed(http(f"http://{INTERNET_IP}/", ns))
         nuc.succeed(ping(INTERNET_IP, ns))
         for flags in ("", "+tcp"):
-            out = nuc.succeed(dig(TENANT_DNS, f"{flags} ok.test", ns)).strip()
-            assert out == "198.51.100.7", out
+            nuc.wait_until_succeeds(
+                f"{dig(TENANT_DNS, f'{flags} ok.test', ns)} | grep -qx 198.51.100.7", timeout=30
+            )
         # Filtered, like the LAN's, once its lists have loaded.
         nuc.wait_until_succeeds(f"{dig(TENANT_DNS, 'ad.test', ns)} | grep -qx 0.0.0.0", timeout=60)
 

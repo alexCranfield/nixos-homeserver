@@ -51,6 +51,24 @@ let
   configFile = (pkgs.formats.yaml { }).generate "blocky-tenant.yml" settings;
 
   lan = config.systemd.services.blocky;
+
+  # Both Blockys create the query log's table when they start, and two at
+  # once collide in PostgreSQL's catalog ("duplicate key value violates
+  # unique constraint pg_type_typname_nsp_index"); Blocky retries three
+  # times and then logs to its console instead. So this one starts after the
+  # LAN's has made the table, up to a minute, and then starts regardless:
+  # the tenants' DNS doesn't wait on the log.
+  waitForTable = pkgs.writeShellScript "blocky-tenant-wait-for-log" ''
+    for _ in $(${pkgs.coreutils}/bin/seq 60); do
+      if ${config.services.postgresql.finalPackage}/bin/psql -h /run/postgresql -d blocky -Atc \
+        "SELECT 1 FROM information_schema.columns WHERE table_name = 'log_entries' AND column_name = 'id'" \
+        2> /dev/null | ${pkgs.gnugrep}/bin/grep -qx 1; then
+        exit 0
+      fi
+      ${pkgs.coreutils}/bin/sleep 1
+    done
+    echo "the query log's table is still missing; starting anyway" >&2
+  '';
 in
 {
   config = lib.mkIf enabled {
@@ -68,7 +86,8 @@ in
     systemd.services.blocky-tenant = {
       description = "DNS server for the tenant VMs";
       wantedBy = [ "multi-user.target" ];
-      inherit (lan) wants after;
+      inherit (lan) wants;
+      after = lan.after ++ [ "blocky.service" ];
       # The LAN Blocky's hardening and restart settings, with this
       # configuration and no private hosts file.
       serviceConfig =
@@ -78,6 +97,7 @@ in
           "LogsDirectory"
         ]
         // {
+          ExecStartPre = waitForTable;
           ExecStart = "${lib.getExe config.services.blocky.package} --config ${configFile}";
           User = "blocky";
           LogsDirectory = "blocky-tenant";
