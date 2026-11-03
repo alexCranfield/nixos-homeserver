@@ -57,12 +57,14 @@ let
   # unique constraint pg_type_typname_nsp_index"); Blocky retries three
   # times and then logs to its console instead. So this one starts after the
   # LAN's has made the table, up to a minute, and then starts regardless:
-  # the tenants' DNS doesn't wait on the log.
+  # the tenants' DNS doesn't wait on the log. It asks whether the table
+  # exists, not for a column: Blocky adds its `id` column only for the type
+  # "postgres", not the "postgresql" configured here.
   waitForTable = pkgs.writeShellScript "blocky-tenant-wait-for-log" ''
     for _ in $(${pkgs.coreutils}/bin/seq 60); do
       if ${config.services.postgresql.finalPackage}/bin/psql -h /run/postgresql -d blocky -Atc \
-        "SELECT 1 FROM information_schema.columns WHERE table_name = 'log_entries' AND column_name = 'id'" \
-        2> /dev/null | ${pkgs.gnugrep}/bin/grep -qx 1; then
+        "SELECT to_regclass('public.log_entries') IS NOT NULL" \
+        2> /dev/null | ${pkgs.gnugrep}/bin/grep -qx t; then
         exit 0
       fi
       ${pkgs.coreutils}/bin/sleep 1
