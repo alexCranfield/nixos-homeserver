@@ -69,6 +69,11 @@ in
           tag = "ro-store";
           source = "/nix/store";
           mountPoint = "/nix/.ro-store";
+          # virtiofsd runs as root on the host; `--readonly` makes it refuse
+          # writes itself. Without it only the host's own read-only mount
+          # of the store stood between a guest's root (the tenant has sudo
+          # in tenant-dev) and store paths the host runs as root.
+          readOnly = true;
         }
       ];
       volumes = [

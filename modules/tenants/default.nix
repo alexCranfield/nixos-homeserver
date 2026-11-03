@@ -70,7 +70,10 @@ in
             varSize = lib.mkOption {
               type = lib.types.ints.positive;
               default = 30 * 1024;
-              description = "Size of the VM's /var volume, in MiB.";
+              description = ''
+                Size of the VM's /var volume, in MiB. Used when the image is
+                first made; changing it later doesn't resize an existing one.
+              '';
             };
             modules = lib.mkOption {
               type = lib.types.listOf lib.types.deferredModule;
@@ -126,19 +129,30 @@ in
     };
   }) cfg.vms;
 
-  # Drop-ins on microvm.nix's template, not whole units: a unit defined here
-  # under the instance's name would replace the template's.
-  config.systemd.services = lib.mapAttrs' (
-    name: vm:
-    lib.nameValuePair "microvm@${name}" {
-      overrideStrategy = "asDropin";
-      serviceConfig = {
-        MemoryMax = "${toString (vm.memory + 1024)}M";
-        CPUWeight = 50;
-        IOWeight = 50;
+  # Drop-ins on microvm.nix's templates, not whole units: a unit defined here
+  # under the instance's name would replace the template's. The store's
+  # file server, virtiofsd, is a unit of its own, run as root, and gets the
+  # same weights and a ceiling of its own.
+  config.systemd.services = lib.mkMerge (
+    lib.mapAttrsToList (name: vm: {
+      "microvm@${name}" = {
+        overrideStrategy = "asDropin";
+        serviceConfig = {
+          MemoryMax = "${toString (vm.memory + 1024)}M";
+          CPUWeight = 50;
+          IOWeight = 50;
+        };
       };
-    }
-  ) cfg.vms;
+      "microvm-virtiofsd@${name}" = {
+        overrideStrategy = "asDropin";
+        serviceConfig = {
+          MemoryMax = "1G";
+          CPUWeight = 50;
+          IOWeight = 50;
+        };
+      };
+    }) cfg.vms
+  );
 
   config.homeserver.notify.units = lib.mapAttrsToList (name: _: "microvm@${name}") cfg.vms;
 

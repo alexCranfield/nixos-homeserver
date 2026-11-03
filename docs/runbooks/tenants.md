@@ -13,8 +13,8 @@ in 6.9 (the runner) and 6.10 (the dev environment).
 
 | VM | vCPU | RAM | `/var` | Host-side memory ceiling |
 |---|---|---|---|---|
-| `tenant-dev` | 4 | 8 GB | 60 GB | 9 GB |
-| `tenant-run` | 2 | 4 GB | 30 GB | 5 GB |
+| `tenant-dev` | 4 | 8 GB | 60 GB | 9 GB for qemu, 1 GB for its virtiofsd |
+| `tenant-run` | 2 | 4 GB | 30 GB | 5 GB for qemu, 1 GB for its virtiofsd |
 
 Each is a microvm.nix guest on qemu, built from `modules/tenants/guest-base.nix`
 and run by `microvm@<name>.service`, which starts at boot. A VM's CPU and I/O
@@ -30,7 +30,8 @@ journalctl -u microvm@tenant-dev            # qemu's side; the guest's own log i
 **Inside a VM:**
 - **Root:** the root filesystem is tmpfs, rebuilt from the configuration at every boot.
 - **What persists:** only `/var`, an ext4 image at `/var/lib/microvms/<name>/var.img` on the host. That covers the SSH host keys (`/var/lib/ssh`), the journal, and later Docker and the tenant's work.
-- **Store:** the host's `/nix/store` is shared in read-only, so a deploy updates the VM's software, and the VM restarts when its configuration changes.
+- **Store:** the host's `/nix/store` is shared in read-only by `microvm-virtiofsd@<name>`, which runs as root on the host with `--readonly`. A deploy updates the VM's software, and the VM restarts when its configuration changes.
+- **Sizes:** the `/var` image is sparse and is made once. Changing `varSize` later doesn't resize it; that needs the VM stopped and the image grown by hand (`truncate`, then `resize2fs` inside).
 
 **SSH in.** A VM accepts SSH from the nuc's address alone, so go through the nuc:
 
@@ -38,6 +39,10 @@ journalctl -u microvm@tenant-dev            # qemu's side; the guest's own log i
 ssh -J ops@nuc ops@10.88.0.2     # tenant-dev
 ssh -J ops@nuc ops@10.88.0.3     # tenant-run
 ```
+
+Never forward your SSH agent (`-A`) into a VM. The tenant is root in
+`tenant-dev`, and could use a forwarded agent to log in anywhere your keys
+are accepted, the nuc included.
 
 **Secrets** reach a VM as systemd credentials:
 - The host names a file per credential (`microvm.credentialFiles` in the VM's configuration), and qemu passes it in. qemu runs as the `microvm` user, so a host-side secret must be readable by that user.
@@ -51,7 +56,10 @@ network, firewall or DNS:
 just tenant-smoke
 ```
 
-This runs `modules/tenants/smoke.sh` inside each VM. That VM must reach:
+The recipe first checks, from the nuc, that the targets the VMs must not
+reach do answer (the router's 443 and 53, the nuc's SSH on the tailnet, each
+VM's SSH), so a blocked probe means a block, not a closed port. Then it runs
+`modules/tenants/smoke.sh` inside each VM. That VM must reach:
 - the internet;
 - its own Blocky, which blocks ads and returns NXDOMAIN (no such name) for every LAN name.
 
@@ -59,8 +67,8 @@ It must not reach:
 - the LAN's Blocky;
 - the router, including its console on the public address;
 - the nuc's SSH, on both the tenant network and the tailnet;
-- a Docker published port;
-- the other VM;
+- a Docker published port (Minecraft's 25565: a real probe only while that stack is up);
+- the other VM, by ping, which it answers from anywhere;
 - the LAN by ping.
 
 The recipe exits non-zero if any probe goes the wrong way.

@@ -49,12 +49,15 @@ for name in nuc.home.arpa "-x $nuc" "-x $router"; do
 done
 
 blocked "the LAN's Blocky ($nuc:53)" dig +short +time=3 +tries=1 @$nuc example.com
-blocked "the router ($router:443)" tcp "$router" 443
+blocked "the router's console ($router:443)" tcp "$router" 443
+blocked "the router's DNS ($router:53)" tcp "$router" 53
 blocked "the router's console on its public address" curl -sk --max-time 5 -o /dev/null "https://$wan/"
 blocked "the nuc's SSH on the tenant network" tcp "$dns" 22
 blocked "the nuc on the tailnet" tcp "$tailnet" 22
 blocked "a Docker published port (25565)" tcp "$nuc" 25565
-blocked "the other tenant VM ($other:22)" tcp "$other" 22
+# By ping, which the other VM answers from anywhere; its SSH answers the
+# host alone, so a probe of that couldn't tell the host's rules were gone.
+blocked "the other tenant VM ($other, ping)" ping -c 1 -W 2 "$other"
 blocked "the LAN by ping" ping -c 1 -W 2 "$router"
 
 echo "== $(hostname): $wrong wrong"

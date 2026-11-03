@@ -203,11 +203,19 @@ tenant-smoke:
     set -euo pipefail
     router=$(ssh ops@nuc ip -4 route show default | awk '{print $3; exit}')
     tailnet=$(ssh ops@nuc tailscale ip -4)
+    # Controls: from the nuc, which may, each target the VMs must not reach
+    # answers, so a blocked probe means a block, not a closed port.
+    ssh ops@nuc bash -s -- "$router" "$tailnet" <<'EOF'
+    for target in "$1 443" "$1 53" "$2 22" "10.88.0.3 22" "10.88.0.2 22"; do
+      set -- $target
+      timeout 3 bash -c "</dev/tcp/$1/$2" && echo "control ok  $1:$2" || { echo "CONTROL FAILED $1:$2"; exit 1; }
+    done
+    EOF
     wrong=0
     for pair in "10.88.0.2 10.88.0.3" "10.88.0.3 10.88.0.2"; do
       set -- $pair
       ssh -o StrictHostKeyChecking=accept-new -J ops@nuc "ops@$1" \
-        bash -s -- "$router" "$tailnet" "$2" < modules/tenants/smoke.sh || wrong=$((wrong + $?))
+        bash -s -- "$router" "$tailnet" "$2" < modules/tenants/smoke.sh || wrong=1
     done
     exit "$wrong"
 
