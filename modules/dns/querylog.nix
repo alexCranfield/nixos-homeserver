@@ -29,14 +29,18 @@ in
 {
   options.homeserver.dns.queryLogUnits = lib.mkOption {
     type = lib.types.listOf lib.types.str;
-    default = [ "blocky" ];
+    default = [ ];
     description = ''
       The Blocky units that write to the query log, for the reattach timer
-      below. The tenant VMs' Blocky (modules/tenants/dns.nix) adds itself.
+      below. This module adds the LAN's Blocky, the tenant VMs'
+      (modules/tenants/dns.nix) adds itself. Not a default: a default is
+      dropped as soon as any module defines the option.
     '';
   };
 
   config = lib.mkIf enabled {
+    homeserver.dns.queryLogUnits = [ "blocky" ];
+
     services.postgresql = {
       enable = true;
       # The socket only: no network address to listen on.
