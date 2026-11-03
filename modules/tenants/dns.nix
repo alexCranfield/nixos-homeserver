@@ -95,6 +95,9 @@ in
           "ExecStart"
           "LoadCredential"
           "LogsDirectory"
+          # Shared, systemd would remove it under the other Blocky whenever
+          # this one stops.
+          "RuntimeDirectory"
         ]
         // {
           ExecStartPre = waitForTable;

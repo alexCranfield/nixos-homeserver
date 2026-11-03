@@ -210,8 +210,7 @@ in
       timerConfig = {
         OnBootSec = "1min";
         OnUnitActiveSec = "5min";
-        # Start the service again rather than leave it active: a oneshot
-        # with RemainAfterExit would otherwise run only once.
+        # A oneshot with RemainAfterExit would otherwise run only once.
         Unit = "tenant-router-wan-refresh.service";
       };
     };
@@ -219,7 +218,9 @@ in
       description = "Look up the router's public address again";
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${config.systemd.package}/bin/systemctl reload-or-restart tenant-router-wan.service";
+        # A restart, not a reload: a failed reload leaves the unit active,
+        # so OnFailure would never post. Stopping it doesn't touch the set.
+        ExecStart = "${config.systemd.package}/bin/systemctl restart tenant-router-wan.service";
       };
     };
     homeserver.notify.units = lib.mkIf isolated [ "tenant-router-wan" ];

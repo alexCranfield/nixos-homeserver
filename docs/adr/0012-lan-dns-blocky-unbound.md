@@ -103,8 +103,8 @@ only about its own names.
   from home, which would reverse that, is a separate decision.
 - Note, 2026-11-02: ADR 0013 also opens port 53 on the tenant microVMs' tap
   interfaces, for a second Blocky of theirs on 10.88.0.1 that has the same
-  lists and query log but none of the LAN's names. The VMs can't reach this
-  Blocky. Still never on the tailnet.
+  lists and query log but none of the LAN's names. The VMs can't reach the
+  LAN's Blocky. Still never on the tailnet.
 - IPv4 only. The router hands out no IPv6 DNS server today. Turning IPv6 on
   at the router would advertise the router itself as one, a leak that breaks
   nothing visibly, so it is done together with a change here (#175).

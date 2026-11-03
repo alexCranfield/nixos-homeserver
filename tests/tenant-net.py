@@ -142,15 +142,20 @@ for ns in STAND_INS:
         nuc.wait_until_succeeds(f"{dig(TENANT_DNS, 'ad.test', ns)} | grep -qx 0.0.0.0", timeout=60)
 
     with subtest(f"{ns} learns no LAN name from its Blocky"):
-        for query in (
-            "secret-host.home.arpa",
-            "probe.home.arpa",
-            "lan.home.arpa",
-            "-x 192.168.1.88",
-            f"-x {LAN_IP}",
+        # NXDOMAIN, not just no answer: a failing Blocky (SERVFAIL) would
+        # also give none.
+        for query, secret in (
+            ("secret-host.home.arpa", "192.168.1.88"),
+            ("probe.home.arpa", "192.0.2.7"),
+            ("lan.home.arpa", LAN_IP),
+            ("-x 192.168.1.88", "secret-host"),
+            (f"-x {LAN_IP}", "lan.home.arpa"),
         ):
-            out = nuc.succeed(dig(TENANT_DNS, query, ns)).strip()
-            assert out == "", f"{query} from {ns}: {out}"
+            out = nuc.succeed(
+                f"ip netns exec {ns} dig +time=3 +tries=1 @{TENANT_DNS} {query}"
+            )
+            assert "status: NXDOMAIN" in out and "ANSWER: 0," in out, f"{query} from {ns}: {out}"
+            assert secret not in out, f"{query} from {ns} gave {secret}: {out}"
 
     with subtest(f"{ns} reaches nothing else"):
         blocked(http(f"http://{LAN_IP}/", ns), "forward")
@@ -191,6 +196,13 @@ with subtest("the router's public address comes back after a reload"):
         f"nft get element inet tenant-isolation router-wan '{{ {ROUTER_WAN_IP} }}'", timeout=30
     )
     blocked(http(f"http://{ROUTER_WAN_IP}/", "tdev"), "forward")
+    # A restart of the ruleset empties it too; the service is restarted with
+    # it.
+    nuc.succeed("systemctl restart nftables.service")
+    nuc.wait_until_succeeds(
+        f"nft get element inet tenant-isolation router-wan '{{ {ROUTER_WAN_IP} }}'", timeout=30
+    )
+    blocked(http(f"http://{ROUTER_WAN_IP}/", "tdev"), "forward")
 
 with subtest("negative control: without the table, the same probes get through"):
     # The system to come back to: once switched, /run/current-system is the
@@ -207,6 +219,10 @@ with subtest("negative control: without the table, the same probes get through")
     nuc.succeed(f"{base}/bin/switch-to-configuration test")
     nuc.succeed("nft list table inet tenant-isolation")
     blocked(http(f"http://{LAN_IP}/", "tdev"), "forward")
+    # Switching back starts the address service again.
+    nuc.wait_until_succeeds(
+        f"nft get element inet tenant-isolation router-wan '{{ {ROUTER_WAN_IP} }}'", timeout=30
+    )
 
 with subtest("negative control: tmpfiles' plain-directory fallback fails the check"):
     # tmpfiles `v` makes a subvolume only when / is one, as on the nuc
