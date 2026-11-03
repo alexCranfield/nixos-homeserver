@@ -14,10 +14,12 @@
 # default CPU and I/O weights, so the game servers and the LLMs win any
 # contention. A VM that fails posts to Discord.
 #
-# Not started when this configuration is itself a VM, a test node or `just
-# vm`: a VM inside it would have no KVM (Kernel-based Virtual Machine), and
-# every test that imports the host would fail on it. They are still built,
-# so CI's build of the host covers them.
+# Not declared at all when this configuration is itself a VM, a test node or
+# `just vm`: a VM inside it would have no KVM (Kernel-based Virtual Machine)
+# to run on, and evaluating two more NixOS systems in each of the tests that
+# import the host ran CI's runners out of memory (2.7 GB for the host alone,
+# against 1.3 GB without them). Their network and DNS stay, which
+# tests/tenant-net.nix tests; the real host's build in CI covers the VMs.
 {
   config,
   options,
@@ -110,51 +112,56 @@ in
     };
   };
 
-  config.microvm.vms = lib.mapAttrs (name: vm: {
-    # The host's own nixpkgs, so a VM shares its store paths and its pin.
-    inherit pkgs;
-    specialArgs = { inherit inputs; };
-    autostart = !inVm;
-    config = {
-      imports = [ ./guest-base.nix ] ++ vm.modules;
-      homeserver.guest = {
-        inherit name;
-        inherit (vm) index varSize;
-        inherit (cfg) subnet;
-      };
-      microvm = {
-        inherit (vm) vcpu;
-        mem = vm.memory;
-      };
-    };
-  }) cfg.vms;
-
-  # Drop-ins on microvm.nix's templates, not whole units: a unit defined here
-  # under the instance's name would replace the template's. The store's
-  # file server, virtiofsd, is a unit of its own, run as root, and gets the
-  # same weights and a ceiling of its own.
-  config.systemd.services = lib.mkMerge (
-    lib.mapAttrsToList (name: vm: {
-      "microvm@${name}" = {
-        overrideStrategy = "asDropin";
-        serviceConfig = {
-          MemoryMax = "${toString (vm.memory + 1024)}M";
-          CPUWeight = 50;
-          IOWeight = 50;
+  config.microvm.vms = lib.mkIf (!inVm) (
+    lib.mapAttrs (name: vm: {
+      # The host's own nixpkgs, so a VM shares its store paths and its pin.
+      inherit pkgs;
+      specialArgs = { inherit inputs; };
+      config = {
+        imports = [ ./guest-base.nix ] ++ vm.modules;
+        homeserver.guest = {
+          inherit name;
+          inherit (vm) index varSize;
+          inherit (cfg) subnet;
         };
-      };
-      "microvm-virtiofsd@${name}" = {
-        overrideStrategy = "asDropin";
-        serviceConfig = {
-          MemoryMax = "1G";
-          CPUWeight = 50;
-          IOWeight = 50;
+        microvm = {
+          inherit (vm) vcpu;
+          mem = vm.memory;
         };
       };
     }) cfg.vms
   );
 
-  config.homeserver.notify.units = lib.mapAttrsToList (name: _: "microvm@${name}") cfg.vms;
+  # Drop-ins on microvm.nix's templates, not whole units: a unit defined here
+  # under the instance's name would replace the template's. The store's
+  # file server, virtiofsd, is a unit of its own, run as root, and gets the
+  # same weights and a ceiling of its own.
+  config.systemd.services = lib.mkIf (!inVm) (
+    lib.mkMerge (
+      lib.mapAttrsToList (name: vm: {
+        "microvm@${name}" = {
+          overrideStrategy = "asDropin";
+          serviceConfig = {
+            MemoryMax = "${toString (vm.memory + 1024)}M";
+            CPUWeight = 50;
+            IOWeight = 50;
+          };
+        };
+        "microvm-virtiofsd@${name}" = {
+          overrideStrategy = "asDropin";
+          serviceConfig = {
+            MemoryMax = "1G";
+            CPUWeight = 50;
+            IOWeight = 50;
+          };
+        };
+      }) cfg.vms
+    )
+  );
+
+  config.homeserver.notify.units = lib.mkIf (!inVm) (
+    lib.mapAttrsToList (name: _: "microvm@${name}") cfg.vms
+  );
 
   config.assertions = lib.concatLists (
     lib.mapAttrsToList (name: vm: [

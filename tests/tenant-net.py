@@ -227,12 +227,11 @@ with subtest("negative control: without the table, the same probes get through")
         f"nft get element inet tenant-isolation router-wan '{{ {ROUTER_WAN_IP} }}'", timeout=30
     )
 
-with subtest("the VMs are declared, but a test node doesn't start them"):
+with subtest("a test node has the tenants' network but declares no VMs"):
     # A VM inside this one would have no KVM (modules/tenants/default.nix).
-    for name in ("tenant-dev", "tenant-run"):
-        nuc.succeed(f"systemctl cat microvm@{name}.service | grep -qF MemoryMax")
-        state = nuc.succeed(f"systemctl show -P ActiveState microvm@{name}.service").strip()
-        assert state == "inactive", f"microvm@{name} is {state}"
+    out = nuc.succeed("systemctl list-units --all --no-legend 'microvm@*' 'install-microvm-*'")
+    assert out.strip() == "", out
+    nuc.fail("systemctl cat microvm@tenant-dev.service")
 
 with subtest("negative control: tmpfiles' plain-directory fallback fails the check"):
     # tmpfiles `v` makes a subvolume only when / is one, as on the nuc

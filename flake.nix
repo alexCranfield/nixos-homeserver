@@ -232,19 +232,25 @@
         # not match (or that Docker's `br-*` rule would), one too long for a
         # tap, or a second VM on the same address fails evaluation; a good
         # one passes, so the check can tell them apart.
+        # The host's assertions only, not a build of it, which would evaluate
+        # every tenant VM's whole system four more times.
         tenant-names =
           let
             evaluates =
               vms:
-              (builtins.tryEval
-                (nixpkgs.lib.nixosSystem {
-                  specialArgs = { inherit inputs; };
-                  modules = [
-                    ./hosts/nuc
-                    { homeserver.tenants.vms = vms; }
-                  ];
-                }).config.system.build.toplevel.drvPath
-              ).success;
+              let
+                inherit
+                  (nixpkgs.lib.nixosSystem {
+                    specialArgs = { inherit inputs; };
+                    modules = [
+                      ./hosts/nuc
+                      { homeserver.tenants.vms = vms; }
+                    ];
+                  })
+                  config
+                  ;
+              in
+              builtins.all (a: a.assertion) config.assertions;
           in
           assert evaluates { tenant-ok.index = 9; };
           assert !evaluates { br-tenant.index = 9; };
