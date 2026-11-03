@@ -95,10 +95,14 @@ with subtest("no UDP port is allowed in, beyond the DHCPv6 client"):
     rules = nuc.succeed("nft list chain inet nixos-fw input-allow")
     print(rules)
     # NixOS's own rule, for replies to the DHCPv6 (DHCP for IPv6) client,
-    # sent to the link-local address only.
+    # sent to the link-local address only; and DNS on the tenant VMs' taps,
+    # for their own Blocky (ADR 0013), which the tenant-isolation table
+    # limits to that Blocky's address (tests/tenant-net.py).
     udp = [line.strip() for line in rules.split("\n") if "udp" in line]
     assert udp == [
-        'ip6 daddr fe80::/64 udp dport 546 accept comment "DHCPv6 client"'
+        'iifname "vm-tenant-dev" udp dport 53 accept',
+        'iifname "vm-tenant-run" udp dport 53 accept',
+        'ip6 daddr fe80::/64 udp dport 546 accept comment "DHCPv6 client"',
     ], udp
     # nixos-firewall-tool's set for ports opened by hand until reboot: empty.
     temp = nuc.succeed("nft list set inet nixos-fw temp-ports")
