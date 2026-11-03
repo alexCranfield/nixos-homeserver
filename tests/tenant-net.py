@@ -55,6 +55,9 @@ router.wait_for_unit("dnsmasq.service")
 nuc.wait_for_unit("multi-user.target")
 nuc.wait_for_unit("blocky.service")
 nuc.wait_for_unit("blocky-tenant.service")
+# It waited for the LAN Blocky's log table and found it, rather than giving
+# up after a minute and starting regardless.
+nuc.fail("journalctl -u blocky-tenant.service --no-pager | grep -F 'still missing'")
 nuc.wait_for_unit("tenant-router-wan.service")
 nuc.wait_for_unit("stack-probe.service")
 nuc.wait_for_open_port(OPEN_PORT)
