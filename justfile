@@ -195,6 +195,22 @@ deploy:
 snapshot stack:
     ssh ops@nuc sudo stack-snapshot {{ stack }} manual
 
+# From inside each tenant VM, probe what it may and may not reach
+# (docs/runbooks/tenants.md). The VMs accept SSH from the nuc alone, so
+# through it. Exits non-zero if any probe went the wrong way.
+tenant-smoke:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    router=$(ssh ops@nuc ip -4 route show default | awk '{print $3; exit}')
+    tailnet=$(ssh ops@nuc tailscale ip -4)
+    wrong=0
+    for pair in "10.88.0.2 10.88.0.3" "10.88.0.3 10.88.0.2"; do
+      set -- $pair
+      ssh -o StrictHostKeyChecking=accept-new -J ops@nuc "ops@$1" \
+        bash -s -- "$router" "$tailnet" "$2" < modules/tenants/smoke.sh || wrong=$((wrong + $?))
+    done
+    exit "$wrong"
+
 # List a stack's snapshots, or roll its data back to one (docs/runbooks/data-layout.md).
 rollback stack *snapshot:
     ssh -t ops@nuc sudo stack-rollback {{ stack }} {{ snapshot }}

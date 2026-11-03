@@ -191,8 +191,10 @@ modules/dns/querylog.nix           the PostgreSQL query log: read-only roles, th
 modules/dns/watch.nix              the timer that turns the query log into alert metrics (watch.sql holds the queries)
 modules/base/router.nix            homeserver.network.router, the router's address that the DNS pieces share
 hosts/nuc/dns.nix                  the nuc's private DNS names and the NAS probe target, from sops
-hosts/nuc/tenants.nix              the tenant VMs (ADR 0013): their names and addresses
-modules/tenants/default.nix        homeserver.tenants.vms: one VM each, its name and index; imports microvm.nix's host module
+hosts/nuc/tenants.nix              the tenant VMs (ADR 0013): their names, addresses and sizes
+modules/tenants/default.nix        homeserver.tenants.vms: one microVM each, its size, its host-side limits; imports microvm.nix's host module
+modules/tenants/guest-base.nix     what every tenant VM is: qemu, tmpfs root, a /var volume, the read-only store, its tap, SSH from the host, credentials
+modules/tenants/smoke.sh           the probes `just tenant-smoke` runs inside each VM
 modules/tenants/dns.nix            the tenant VMs' own Blocky on 10.88.0.1: the LAN's lists and query log, none of its names
 modules/tenants/network.nix        the tenant VMs' routed taps, NAT (network address translation), and the tenant-isolation table (internet and their Blocky only), the router's public address kept closed
 modules/tenants/state.nix          /var/lib/microvms as a NOCOW (no copy-on-write) btrfs subvolume, checked before any VM starts; KSM (kernel samepage merging) off
