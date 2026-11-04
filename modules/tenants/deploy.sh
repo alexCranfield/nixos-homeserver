@@ -115,11 +115,13 @@ cd "$repo"
 TENANT_SECRETS=$env TENANT_JOB_METRICS=$state/job-metrics \
   docker compose --project-name tenant up --detach --build --remove-orphans \
   --wait --wait-timeout 600
+# Done before the bookkeeping, so a TERM between these lines can't record
+# (and post) a failure for a deploy that is up.
+finished=1
 printf '%s\n' "$current" >"$state/deployed"
 date +%s >"$state/last-success"
 write_metrics 1 1
 stage "done"
-finished=1
 echo "deployed $commit"
 # Housekeeping, not part of the deploy.
 docker image prune --force >/dev/null || echo "pruning images failed"

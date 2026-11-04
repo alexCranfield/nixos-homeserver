@@ -127,19 +127,19 @@ tests:
               summary: "microvm@tenant-run.service restarted 3 times in 30 minutes (threshold above 2)"
               description: "The VM keeps stopping and systemd keeps starting it again (Restart=always), so it never reaches the failed state the notifier watches."
 
-  # TenantDeployStale: no deploy run has ended for 15 minutes (the file's
-  # time is 0 here, so from 915 s), held for 15m.
+  # TenantDeployStale: no deploy run has ended for 40 minutes (the file's
+  # time is 0 here, so from 2415 s), held for 15m.
   - interval: 15s
     input_series:
       - series: 'tenant_deploy_last_run_timestamp_seconds{job="tenant-run",instance="10.88.0.3:9100"}'
-        values: "0x130"
+        values: "0x230"
       - series: 'up{job="tenant-run",instance="10.88.0.3:9100"}'
-        values: "1x130"
+        values: "1x230"
     alert_rule_test:
-      - eval_time: 1800s
+      - eval_time: 3300s
         alertname: TenantDeployStale
         exp_alerts: []
-      - eval_time: 1815s
+      - eval_time: 3315s
         alertname: TenantDeployStale
         exp_alerts:
           - exp_labels:
@@ -147,8 +147,8 @@ tests:
               job: tenant-run
               instance: 10.88.0.3:9100
             exp_annotations: &stale
-              summary: "tenant-run has not finished a deploy run for 15 minutes (for 15m)"
-              description: "The deploy timer runs every 5 minutes, and every run, good or bad, writes its time. None has: the timer is stopped, a run hangs, or the unit fails before its script (tenant-runner-keys, the repo-url credential). The tenant is not told; see docs/runbooks/tenants.md."
+              summary: "tenant-run has not finished a deploy run for 40 minutes (for 15m)"
+              description: "A deploy run starts 5 minutes after the last one ended and is stopped at 30, and every run, good or bad, writes its time. None has: the timer is stopped, a run hangs, or the unit fails before its script (tenant-runner-keys, the repo-url credential). The tenant is not told; see docs/runbooks/tenants.md."
 
   # A runner that answers scrapes but has never written the file.
   - interval: 15s

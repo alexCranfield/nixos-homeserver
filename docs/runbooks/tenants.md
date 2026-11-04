@@ -104,7 +104,7 @@ which the repo's `compose.yml` uses:
 - `--wait` needs every service to keep running (or turn healthy) within 10 minutes. A one-off container that exits fails the deploy.
 
 **When a deploy fails:**
-- **In the tenant's own stack** (a build or a container that won't start, or a run stopped at its 30-minute timeout): `tenant-deploy-failed.service` posts the run's last 30 log lines (at most 1500 characters) to `FAILURE_WEBHOOK`, once per commit. The last good commit keeps running, and the next run retries.
+- **In the tenant's own stack** (a build or a container that won't start, or a run stopped at its 30-minute timeout, or by hand with `systemctl stop`): `tenant-deploy-failed.service` posts the run's last 30 log lines (at most 1500 characters) to `FAILURE_WEBHOOK`, once per commit. The last good commit keeps running, and the next run retries.
 - **Fetching or decrypting:** this is the platform's fault, and the tenant isn't told. The cause is a deploy key or age recipient that hasn't been added, a wrong URL, GitHub being down, or a `prod.yaml` not encrypted to the runner. The metric `tenant_deploy_platform_ok` drops to 0, and after 30 minutes `TenantDeployFailing` posts to Alex's alerts channel.
 
 ```bash
@@ -123,7 +123,7 @@ curl -s localhost:9100/metrics | grep ^tenant_
   - the VM's filesystem sizes, renamed `tenant_filesystem_*` so the host's own disk alerts never read them.
 - Alex's alerts (`modules/observability/rules.nix`, group `homeserver-tenants`):
   - `TenantDeployFailing`: the fetch or decrypt has failed for 30 minutes;
-  - `TenantDeployStale`: no deploy run, good or bad, has ended for 15 minutes, held for 15 more. The timer has stopped, a run hangs, or the unit fails before its script (its keys, its `repo-url` credential). It also fires for a runner that answers scrapes but has never written its file;
+  - `TenantDeployStale`: no deploy run, good or bad, has ended for 40 minutes (longer than a run's 5-minute wait plus its 30-minute timeout), held for 15 more. The timer has stopped, a run hangs, or the unit fails before its script (its keys, its `repo-url` credential). It also fires for a runner that answers scrapes but has never written its file;
   - `TenantRunnerDown`: no scrape for 5 minutes, unless `microvm@tenant-run` has failed, which the notifier posts;
   - `TenantDiskFull`: `/var` is above 85% full for 10 minutes;
   - `TenantVmRestartLoop`: a tenant VM's `microvm@` unit has restarted more than twice in 30 minutes. It restarts forever and so never reaches the failed state.

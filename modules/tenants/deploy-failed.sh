@@ -25,6 +25,15 @@ case $stage in
     ;;
 esac
 
+id=$(systemctl show --property=InvocationID --value tenant-deploy.service)
+log=$(journalctl --output=cat --no-pager "_SYSTEMD_INVOCATION_ID=$id")
+# The stage is the last run that reached the script. If this one failed
+# before it (its credential), the stage is an earlier run's: not a post.
+if ! grep -q "^deploying $commit\$" <<<"$log"; then
+  echo "this run did not reach the deploy of $commit, a platform fault: not posted to the tenant"
+  exit 0
+fi
+
 key="$commit $stage"
 if [ "$(cat "$state/notified" 2>/dev/null)" = "$key" ]; then
   echo "already posted for $commit"
@@ -35,8 +44,7 @@ if [ ! -s "$run/webhook" ]; then
   exit 0
 fi
 
-id=$(systemctl show --property=InvocationID --value tenant-deploy.service)
-tail=$(journalctl --output=cat --lines=30 --no-pager "_SYSTEMD_INVOCATION_ID=$id" | tail -c 1500)
+tail=$(tail -n 30 <<<"$log" | tail -c 1500)
 # The backticks are Markdown's, for the webhook.
 # shellcheck disable=SC2016
 message=$(printf 'tenant-run: deploying %s failed.\n```\n%s\n```' "${commit:0:12}" "$tail")

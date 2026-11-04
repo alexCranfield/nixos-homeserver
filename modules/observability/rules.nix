@@ -67,7 +67,8 @@ let
     # The tenant VMs (#199). A deploy runs every 5 minutes; half an hour is
     # six failed fetches or decrypts, past a GitHub blip.
     TenantDeployFailing.for = "30m";
-    # A run every 5 minutes, so no run for 15 minutes, held for 15 more.
+    # A run starts 5 minutes after the last one ended and may take 30
+    # (TimeoutStartSec), so 40 minutes without a run's end, held for 15 more.
     TenantDeployStale.for = "15m";
     TenantRunnerDown.for = "5m";
 
@@ -368,13 +369,13 @@ let
                 # The second arm: a runner that answers but has never
                 # written the file (its keys failed on first boot).
                 expr = ''
-                  time() - tenant_deploy_last_run_timestamp_seconds > 900
+                  time() - tenant_deploy_last_run_timestamp_seconds > 2400
                 ''
                 + lib.concatMapStrings (vm: ''
                   or (absent(tenant_deploy_last_run_timestamp_seconds{job="${vm}"}) and on() up{job="${vm}"} == 1)
                 '') tenantRunners;
-                summary = "{{ $labels.job }} has not finished a deploy run for 15 minutes (for ${t.TenantDeployStale.for})";
-                description = "The deploy timer runs every 5 minutes, and every run, good or bad, writes its time. None has: the timer is stopped, a run hangs, or the unit fails before its script (tenant-runner-keys, the repo-url credential). The tenant is not told; see docs/runbooks/tenants.md.";
+                summary = "{{ $labels.job }} has not finished a deploy run for 40 minutes (for ${t.TenantDeployStale.for})";
+                description = "A deploy run starts 5 minutes after the last one ended and is stopped at 30, and every run, good or bad, writes its time. None has: the timer is stopped, a run hangs, or the unit fails before its script (tenant-runner-keys, the repo-url credential). The tenant is not told; see docs/runbooks/tenants.md.";
               })
               (event "TenantRunnerDown" {
                 rideOutGaps = false;
