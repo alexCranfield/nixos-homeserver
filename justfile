@@ -100,12 +100,14 @@ _eval:
     # added (#198). The outputs are listed from the flake itself, so a new
     # one is covered without a change here.
     sys=x86_64-linux
+    list=$(mktemp)
+    trap 'rm -f "$list"' EXIT
     {
       nix eval --json ".#checks.$sys" --apply builtins.attrNames | jq -r --arg s "$sys" '.[] | "checks.\($s).\(.)"'
       nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[] | "nixosConfigurations.\(.).config.system.build.toplevel"'
       nix eval --json ".#devShells.$sys" --apply builtins.attrNames | jq -r --arg s "$sys" '.[] | "devShells.\($s).\(.)"'
       echo "formatter.$sys"
-    } > "${TMPDIR:-/tmp}/flake-outputs"
+    } > "$list"
     # The flake's top-level outputs must be only these four kinds, so none
     # escapes the list above.
     kinds=$(nix eval --json --impure --expr 'builtins.attrNames (builtins.getFlake (toString ./.)).outputs' | jq -r 'join(" ")')
@@ -116,7 +118,7 @@ _eval:
     # --read-only, as `nix flake check --no-build` evaluated: nothing is
     # written to the store, so a test that copies a path into it fails here
     # rather than only on a cold runner (docs/runbooks/ci.md).
-    xargs -P 2 -I{} sh -c 'nix eval --read-only --raw ".#{}.drvPath" > /dev/null && echo "evaluated {}"' < "${TMPDIR:-/tmp}/flake-outputs"
+    xargs -P 2 -I{} sh -c 'nix eval --read-only --raw ".#{}.drvPath" > /dev/null && echo "evaluated {}"' < "$list"
     # A new `just` process starts from the defaults, so pass the file on.
     just shards_file='{{ shards_file }}' check-shards-complete
 

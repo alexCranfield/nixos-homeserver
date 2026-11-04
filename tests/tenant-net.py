@@ -233,7 +233,8 @@ with subtest("a test node has the tenants' network but declares no VMs"):
     assert out.strip() == "", out
     # microvm.nix's template is there; this repository's drop-in, with the
     # VM's memory ceiling, is not.
-    nuc.fail("systemctl cat microvm@tenant-dev.service | grep -F MemoryMax")
+    unit = nuc.succeed("systemctl cat microvm@tenant-dev.service")
+    assert "MemoryMax" not in unit, unit
 
 with subtest("negative control: tmpfiles' plain-directory fallback fails the check"):
     # tmpfiles `v` makes a subvolume only when / is one, as on the nuc

@@ -71,7 +71,7 @@ let
       fi
       ${pkgs.coreutils}/bin/sleep 1
     done
-    echo "the query log's table is still missing; starting anyway" >&2
+    echo "the query log's table and its indexes are still missing; starting anyway" >&2
   '';
 in
 {

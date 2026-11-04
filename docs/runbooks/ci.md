@@ -184,7 +184,7 @@ Decision Record) 0007.
 
 That step is also the first to evaluate `flake.nix`, so a syntax error in
 `flake.nix` itself fails there. Errors in `hosts/` or `modules/` fail inside
-`just check-shard`: in the `lint` shard with the `nix flake check` log, and
+`just check-shard`: in the `lint` shard with the `just _eval` log, and
 in any shard whose checks they reach.
 
 **Upstream Nix via `cachix/install-nix-action`, not Determinate's installer.**
@@ -365,8 +365,8 @@ with caching off (`nix flake check --no-build --no-eval-cache`):
   set `defaults.nixpkgs.pkgs = pkgs`, which took evaluation from 14.7 GB
   to 10.4 GB (70 s to 50 s). No check's derivation changed, so nothing was
   rebuilt and every test checks what it did before.
-- `just check` evaluates with `nix flake check --no-build`, whose process
-  exits, then reads the checks' derivations with a separate `nix eval`
+- `just check` evaluated with `nix flake check --no-build` (since #198 `just
+  _eval`, below), whose process exits, then reads the checks' derivations with a separate `nix eval`
   (9.6 GB, about 45 s, also gone before anything builds) and builds them with
   `nix build`, which evaluates nothing. Since #180 only the `lint` shard runs
   that evaluation (now `just _eval`, below); each shard's `nix eval` reads only its own
@@ -408,7 +408,7 @@ prints when a build starts but not when it ends. The shards in
 
 | Shard | Checks | Expected, all rebuilt |
 |---|---|---|
-| `lint` | `nix flake check --no-build`, the shard check, the host's closure, the checks with no VM, format and lint | about 10 minutes |
+| `lint` | `just _eval` (every output, each in its own `nix eval`), the shard check, the host's closure, the checks with no VM, format and lint | about 10 minutes |
 | `alerting` | `alerting-a`, with `dns` (#164), `base-ssh`, `reboot-window`, `game-access` and `network` in its second slot | about 20 minutes: `alerting-a` sets the floor |
 | `services` | `observability`, `docker`, `compose-stack`, `stack-data`, `announce` | about 20 minutes |
 | `system` | `alerting-b`, with `tailscale`, `comin`, `notify` and `disk-tpm` in its second slot | about 20 minutes |
