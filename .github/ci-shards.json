@@ -9,7 +9,8 @@
       "stack-watch",
       "alert-rules",
       "alert-relay",
-      "tenant-names"
+      "tenant-names",
+      "tenant-smoke"
     ]
   },
   "alerting": {

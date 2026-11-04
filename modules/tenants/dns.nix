@@ -57,19 +57,21 @@ let
   # unique constraint pg_type_typname_nsp_index"); Blocky retries three
   # times and then logs to its console instead. So this one starts after the
   # LAN's has made the table, up to a minute, and then starts regardless:
-  # the tenants' DNS doesn't wait on the log. It asks whether the table
-  # exists, not for a column: Blocky adds its `id` column only for the type
-  # "postgres", not the "postgresql" configured here.
+  # the tenants' DNS doesn't wait on the log. It waits for the table and its
+  # three indexes (on the request time, client name and response type), which
+  # Blocky creates one after another: two Blockys creating an index at once
+  # collide the same way. Not for a column: Blocky adds its `id` column only
+  # for the type "postgres", not the "postgresql" configured here.
   waitForTable = pkgs.writeShellScript "blocky-tenant-wait-for-log" ''
     for _ in $(${pkgs.coreutils}/bin/seq 60); do
       if ${config.services.postgresql.finalPackage}/bin/psql -h /run/postgresql -d blocky -Atc \
-        "SELECT to_regclass('public.log_entries') IS NOT NULL" \
+        "SELECT count(*) >= 3 FROM pg_indexes WHERE tablename = 'log_entries'" \
         2> /dev/null | ${pkgs.gnugrep}/bin/grep -qx t; then
         exit 0
       fi
       ${pkgs.coreutils}/bin/sleep 1
     done
-    echo "the query log's table is still missing; starting anyway" >&2
+    echo "the query log's table and its indexes are still missing; starting anyway" >&2
   '';
 in
 {

@@ -227,6 +227,15 @@ with subtest("negative control: without the table, the same probes get through")
         f"nft get element inet tenant-isolation router-wan '{{ {ROUTER_WAN_IP} }}'", timeout=30
     )
 
+with subtest("a test node has the tenants' network but declares no VMs"):
+    # A VM inside this one would have no KVM (modules/tenants/default.nix).
+    out = nuc.succeed("systemctl list-units --all --no-legend 'microvm@*' 'install-microvm-*'")
+    assert out.strip() == "", out
+    # microvm.nix's template is there; this repository's drop-in, with the
+    # VM's memory ceiling, is not.
+    unit = nuc.succeed("systemctl cat microvm@tenant-dev.service")
+    assert "MemoryMax" not in unit, unit
+
 with subtest("negative control: tmpfiles' plain-directory fallback fails the check"):
     # tmpfiles `v` makes a subvolume only when / is one, as on the nuc
     # (@root). This VM's root isn't, so tmpfiles fell back to a plain
@@ -237,8 +246,10 @@ with subtest("negative control: tmpfiles' plain-directory fallback fails the che
     assert nuc.succeed("systemctl show -P OnFailure microvm-state.service").strip()
 
 with subtest("a NOCOW subvolume, as tmpfiles makes it on the nuc, passes, and a VM needs it"):
+    # The host has made each VM's own directory inside it (install-microvm-*),
+    # so it isn't empty.
     nuc.succeed(
-        "rmdir /srv/microvms",
+        "rm -rf /srv/microvms",
         "btrfs subvolume create /srv/microvms",
         "chattr +C /srv/microvms",
     )

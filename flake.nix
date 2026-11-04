@@ -221,23 +221,36 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 6.8 (#198): the probes `just tenant-smoke` runs inside the
+        # tenant VMs, which no Nix package wraps, pass shellcheck.
+        tenant-smoke = pkgs.runCommand "tenant-smoke" { nativeBuildInputs = [ pkgs.shellcheck ]; } ''
+          shellcheck -s bash ${./modules/tenants/smoke.sh}
+          touch $out
+        '';
+
         # Ticket 6.7 (#197): a tenant VM name that the firewall rules would
         # not match (or that Docker's `br-*` rule would), one too long for a
         # tap, or a second VM on the same address fails evaluation; a good
         # one passes, so the check can tell them apart.
+        # The host's assertions only, not a build of it, which would evaluate
+        # every tenant VM's whole system four more times.
         tenant-names =
           let
             evaluates =
               vms:
-              (builtins.tryEval
-                (nixpkgs.lib.nixosSystem {
-                  specialArgs = { inherit inputs; };
-                  modules = [
-                    ./hosts/nuc
-                    { homeserver.tenants.vms = vms; }
-                  ];
-                }).config.system.build.toplevel.drvPath
-              ).success;
+              let
+                inherit
+                  (nixpkgs.lib.nixosSystem {
+                    specialArgs = { inherit inputs; };
+                    modules = [
+                      ./hosts/nuc
+                      { homeserver.tenants.vms = vms; }
+                    ];
+                  })
+                  config
+                  ;
+              in
+              builtins.all (a: a.assertion) config.assertions;
           in
           assert evaluates { tenant-ok.index = 9; };
           assert !evaluates { br-tenant.index = 9; };
