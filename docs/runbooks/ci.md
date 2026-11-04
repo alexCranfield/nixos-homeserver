@@ -36,8 +36,9 @@ flowchart LR
 
 `just check-shard <name>` evaluates that shard's checks, then builds them in a
 second process (see "Evaluation and builds apart" below). The `lint` shard
-also runs, first, `nix flake check --no-build` to evaluate every output and
-`just check-shards-complete`, and last `nix fmt -- --ci`, `actionlint` and
+also runs, first, `just _eval` to evaluate every output, each in its own
+`nix eval --read-only`, two at a time, and `just check-shards-complete`, and
+last `nix fmt -- --ci`, `actionlint` and
 `editorconfig-checker`, which
 holds every file git does not ignore to `.editorconfig` (line endings, final
 newline, trailing whitespace, tabs). That includes untracked files, so a stray
@@ -368,12 +369,23 @@ with caching off (`nix flake check --no-build --no-eval-cache`):
   exits, then reads the checks' derivations with a separate `nix eval`
   (9.6 GB, about 45 s, also gone before anything builds) and builds them with
   `nix build`, which evaluates nothing. Since #180 only the `lint` shard runs
-  `nix flake check --no-build`; each shard's `nix eval` reads only its own
+  that evaluation (now `just _eval`, below); each shard's `nix eval` reads only its own
   checks, so a VM shard evaluates less than this. The VM tests now have the runner's
   memory to themselves, at the cost of evaluating the checks twice. One
   difference: `nix flake check` skipped a check whose output could be
   downloaded, and `nix build` downloads it. Only
   `devshell-nix-matches-server`, an empty file, is affected.
+- **Lint's evaluation in pieces (#198, 2026-11-03).** On `main` the lint
+  shard's single `nix flake check --no-build` peaked at 15.07 GB (measured on
+  the workstation), against the runner's 16 GB. The tenant VMs, two more
+  NixOS systems inside the host's configuration, pushed it over: the runner
+  was shut down mid-evaluation ("The runner has received a shutdown
+  signal", exit 143) three times in a row. `just _eval` now evaluates each
+  output's derivation in its own `nix eval --read-only`, two at a time, from
+  a list it reads from the flake, and fails if the flake gains a kind of
+  output the list doesn't cover. The largest process peaks at 3.1 GB, and the
+  whole is faster than before (61 s against 110 s on the workstation). A check made to
+  throw fails it (exit 123), as before.
 - `--no-build` evaluates with a read-only store, so evaluation cannot add
   anything to it. A test that interpolated `"${pkgs.path}/…"` copied all of
   nixpkgs into the store and failed on a cold runner with `path … is not

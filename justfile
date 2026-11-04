@@ -90,9 +90,33 @@ check-shards-complete:
 
 # Evaluate every output and check the shards; part of `check` and the lint shard.
 _eval:
+    #!/usr/bin/env bash
+    set -euo pipefail
     # Evaluates every output, the checks included, without building, so an
     # error anywhere in the flake fails here (and only in the lint shard).
-    nix flake check --no-build
+    # One `nix eval` per output, two at a time, rather than one `nix flake
+    # check --no-build`: in one process the whole flake peaked at about
+    # 15 GB, and CI's 16 GB runner was shut down once the tenant VMs were
+    # added (#198). The outputs are listed from the flake itself, so a new
+    # one is covered without a change here.
+    sys=x86_64-linux
+    {
+      nix eval --json ".#checks.$sys" --apply builtins.attrNames | jq -r --arg s "$sys" '.[] | "checks.\($s).\(.)"'
+      nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[] | "nixosConfigurations.\(.).config.system.build.toplevel"'
+      nix eval --json ".#devShells.$sys" --apply builtins.attrNames | jq -r --arg s "$sys" '.[] | "devShells.\($s).\(.)"'
+      echo "formatter.$sys"
+    } > "${TMPDIR:-/tmp}/flake-outputs"
+    # The flake's top-level outputs must be only these four kinds, so none
+    # escapes the list above.
+    kinds=$(nix eval --json --impure --expr 'builtins.attrNames (builtins.getFlake (toString ./.)).outputs' | jq -r 'join(" ")')
+    if [ "$kinds" != "checks devShells formatter nixosConfigurations" ]; then
+      echo "flake outputs are '$kinds'; add the new kind to _eval in the justfile" >&2
+      exit 1
+    fi
+    # --read-only, as `nix flake check --no-build` evaluated: nothing is
+    # written to the store, so a test that copies a path into it fails here
+    # rather than only on a cold runner (docs/runbooks/ci.md).
+    xargs -P 2 -I{} sh -c 'nix eval --read-only --raw ".#{}.drvPath" > /dev/null && echo "evaluated {}"' < "${TMPDIR:-/tmp}/flake-outputs"
     # A new `just` process starts from the defaults, so pass the file on.
     just shards_file='{{ shards_file }}' check-shards-complete
 
