@@ -14,6 +14,13 @@ let
         thresholds = rules.defaults;
         nasProbed = true;
         dnsServed = true;
+        tenants = {
+          vms = [
+            "tenant-dev"
+            "tenant-run"
+          ];
+          runners = [ "tenant-run" ];
+        };
         watchedUnits = [
           "sshd"
           "tailscaled"
@@ -28,6 +35,6 @@ pkgs.runCommand "alert-rules" { nativeBuildInputs = [ pkgs.prometheus.cli ]; } '
   cp ${rendered} rules.yml
   cp ${./alert-rules}/*.yml .
   promtool check rules rules.yml
-  promtool test rules events.yml host.yml stacks.yml dns.yml
+  promtool test rules events.yml host.yml stacks.yml dns.yml tenants.yml
   touch $out
 ''

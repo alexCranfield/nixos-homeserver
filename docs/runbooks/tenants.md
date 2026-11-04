@@ -6,8 +6,8 @@ reach, is ADR (Architecture Decision Record) 0013. The code is in
 `modules/tenants/` and `hosts/nuc/tenants.nix`.
 
 This runbook grows with tickets 6.7 to 6.12 (#197 to #202). So far: the VMs
-(6.8), their network and the state directory (6.7). What runs in each comes
-in 6.9 (the runner) and 6.10 (the dev environment).
+(6.8), their network and the state directory (6.7), and the runner (6.9).
+The dev environment comes in 6.10.
 
 ## The VMs
 
@@ -47,7 +47,8 @@ are accepted, the nuc included.
 **Secrets** reach a VM as systemd credentials:
 - The host names a file per credential (`microvm.credentialFiles` in the VM's configuration), and qemu passes it in. qemu runs as the `microvm` user, so a host-side secret must be readable by that user.
 - Inside, the credential sits in `/run/credentials/@system`, readable by root. A unit that declares `LoadCredential=<name>` gets its own copy, readable by that unit alone.
-- Until 6.9 and 6.10 the only one is `probe`, which isn't a secret; `tenant-credential-check.service` reads it to show the path works.
+- `probe`, in both VMs, isn't a secret; `tenant-credential-check.service` reads it to show the path works.
+- `repo-url`, in `tenant-run`: the private repo's URL, from `repo_url` in `secrets/tenant.yaml` (below).
 
 **Smoke test.** From the workstation, after any change to the tenant
 network, firewall or DNS:
@@ -72,6 +73,59 @@ It must not reach:
 - the LAN by ping.
 
 The recipe exits non-zero if any probe goes the wrong way.
+
+## The runner
+
+`tenant-run` deploys the tenant's private repo (`modules/tenants/runner.nix`,
+6.9). Every 5 minutes `tenant-deploy.service` runs `modules/tenants/deploy.sh`:
+1. **Fetch:** fetch `main` with the VM's deploy key. If it's the commit already deployed, stop there.
+2. **Decrypt:** decrypt `secrets/prod.yaml` with the VM's age key into a dotenv file that only this run can read; systemd removes it when the run ends.
+3. **Compose:** `docker compose --project-name tenant up --detach --build --remove-orphans --wait` in the checkout, then prune unused images.
+
+**Keys.** The VM makes its own keys on first boot (`tenant-runner-keys.service`)
+and keeps them in `/var/lib/tenant-runner/keys`. They never leave the VM, so
+they aren't in sops. Only their public halves are readable:
+
+```bash
+ssh -J ops@nuc ops@10.88.0.3 cat /var/lib/tenant-runner/deploy_key.pub /var/lib/tenant-runner/age.pub
+```
+
+**Setting it up**, once (and again after the VM's `/var` is lost, which makes new keys):
+1. **The URL, in sops.** `sops secrets/tenant.yaml` on the workstation, with one key, `repo_url`, set to the repo's SSH clone URL (`git@github.com:<owner>/<repo>.git`). This repository is public, so the URL is only ever in that file.
+2. **Deploy and read the keys.** Once comin has deployed, read the two public keys with the command above.
+3. **Deploy key.** Add `deploy_key.pub` to the private repo as a deploy key (Settings → Deploy keys), with "Allow write access" left unticked.
+4. **age recipient.** Add the age recipient to the private repo's `.sops.yaml` rule for `secrets/prod.yaml`, beside the tenant's own key. Then run `sops updatekeys secrets/prod.yaml` there and merge it. Never add it to `secrets/dev.yaml`, so the dev VM and its agent can't read production secrets.
+
+**What the tenant's stack gets.** The deploy runs Compose with two variables,
+which the repo's `compose.yml` uses:
+- `TENANT_SECRETS` is the decrypted dotenv file, for `env_file: ${TENANT_SECRETS}`. Docker copies the values into each container's configuration on `/var`, as with any `env_file`.
+- `TENANT_JOB_METRICS` is a directory for a bind mount. A job writes `<job>.prom` there, holding `tenant_job_last_exit{job="<job>"}` and `tenant_job_last_run_timestamp_seconds{job="<job>"}`. Every minute `tenant-job-metrics.service` copies the lines that name a `tenant_job_*` series, one sample per line, to node-exporter; it drops everything else.
+- `FAILURE_WEBHOOK` in `secrets/prod.yaml` is where failed deploys are posted. It takes a Discord or Slack incoming-webhook URL.
+- `--wait` needs every service to keep running (or turn healthy). A one-off container that exits fails the deploy.
+
+**When a deploy fails:**
+- **In the tenant's own stack** (a build or a container that won't start): `tenant-deploy-failed.service` posts the run's last 30 log lines to `FAILURE_WEBHOOK`, once per commit. The last good commit keeps running, and the next run retries.
+- **Fetching or decrypting:** this is the platform's fault, and the tenant isn't told. The cause is a deploy key or age recipient that hasn't been added, a wrong URL, GitHub being down, or a `prod.yaml` not encrypted to the runner. The metric `tenant_deploy_platform_ok` drops to 0, and after 30 minutes `TenantDeployFailing` posts to Alex's alerts channel.
+
+```bash
+ssh -J ops@nuc ops@10.88.0.3
+sudo systemctl start tenant-deploy            # deploy now instead of within 5 minutes
+journalctl -u tenant-deploy -u tenant-deploy-failed
+sudo rm /var/lib/tenant-runner/deployed       # force a redeploy of the same commit
+sudo docker compose -p tenant ps              # the stack
+curl -s localhost:9100/metrics | grep ^tenant_
+```
+
+**Metrics and alerts.**
+- Prometheus on the host scrapes the VM's node-exporter at `10.88.0.3:9100`, as the job `tenant-run`. It keeps only:
+  - the `tenant_*` series: `tenant_deploy_success`, `tenant_deploy_platform_ok`, `tenant_deploy_last_success_timestamp_seconds`, `tenant_deploy_info{commit}`, and the jobs';
+  - the VM's filesystem sizes, renamed `tenant_filesystem_*` so the host's own disk alerts never read them.
+- Alex's alerts (`modules/observability/rules.nix`, group `homeserver-tenants`):
+  - `TenantDeployFailing`: the fetch or decrypt has failed for 30 minutes;
+  - `TenantRunnerDown`: no scrape for 5 minutes, unless `microvm@tenant-run` has failed, which the notifier posts;
+  - `TenantDiskFull`: `/var` is above 85% full for 10 minutes;
+  - `TenantVmRestartLoop`: a tenant VM's `microvm@` unit has restarted more than twice in 30 minutes. It restarts forever and so never reaches the failed state.
+- The tenant has root over their stack, and so over the VM, so they could write false metrics, which would hide a failed deploy from `TenantDeployFailing` too. The host's own view of the VM (`up`, `microvm@`) is out of their reach.
 
 ## The network
 

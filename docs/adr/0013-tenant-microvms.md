@@ -75,9 +75,14 @@ What mattered:
    with the tenant as a collaborator. A merge to `main` needs a pull request
    with passing CI (continuous integration), and the dev VM's token cannot
    push to `main`, so an experiment in dev does not reach production by
-   accident. The repository's URL, the deploy key and the tenant's SSH key
-   are in sops; nothing in this repository names the tenant or their
-   business.
+   accident. The repository's URL and the tenant's SSH key are in sops;
+   nothing in this repository names the tenant or their business.
+   *Amended 2026-11-04 (ticket 6.9, #199):* the runner's deploy key and age
+   key were to be in sops too. Instead the runner makes both on its first
+   boot and keeps them in its `/var`, so no private key leaves the VM or
+   passes through the workstation. If the VM's disk is lost, it makes new
+   ones, which are added to the repository again (no backups, decision 7).
+   Alex chose this.
 5. **Dev and production have separate secrets.** The tenant's app secrets are
    sops files in their own repository: the production file is encrypted to
    the runner's key and the tenant's own key, the dev file to the dev VM's

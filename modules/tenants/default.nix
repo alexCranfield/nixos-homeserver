@@ -33,6 +33,7 @@ let
   # True in a test node or `just vm`, which import qemu's VM module; the real
   # host doesn't.
   inVm = options.virtualisation ? qemu;
+  runners = lib.filterAttrs (_: vm: vm.runner) cfg.vms;
 in
 {
   imports = [
@@ -77,6 +78,16 @@ in
                 first made; changing it later doesn't resize an existing one.
               '';
             };
+            runner = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = ''
+                Whether this VM runs the tenant's jobs (./runner.nix): it
+                deploys the private repo whose URL is the sops secret
+                `repoUrlSecret` names, and the host scrapes its metrics as
+                the Prometheus job `<name>`.
+              '';
+            };
             modules = lib.mkOption {
               type = lib.types.listOf lib.types.deferredModule;
               default = [ ];
@@ -104,6 +115,16 @@ in
       '';
     };
 
+    repoUrlSecret = lib.mkOption {
+      type = lib.types.str;
+      default = "tenant-repo-url";
+      description = ''
+        The sops secret holding the private repo's URL, passed to a runner VM
+        as its credential `repo-url`. The URL is in sops, not here, since this
+        repository is public.
+      '';
+    };
+
     hostAddress = lib.mkOption {
       type = lib.types.str;
       default = "${cfg.subnet}.1";
@@ -118,7 +139,17 @@ in
       inherit pkgs;
       specialArgs = { inherit inputs; };
       config = {
-        imports = [ ./guest-base.nix ] ++ vm.modules;
+        imports = [
+          ./guest-base.nix
+        ]
+        ++ lib.optionals vm.runner [
+          ./runner.nix
+          {
+            microvm.credentialFiles.repo-url = config.sops.secrets.${cfg.repoUrlSecret}.path;
+            homeserver.tenantRunner.scrapeFrom = cfg.hostAddress;
+          }
+        ]
+        ++ vm.modules;
         homeserver.guest = {
           inherit name;
           inherit (vm) index varSize;
@@ -158,6 +189,42 @@ in
       }) cfg.vms
     )
   );
+
+  # qemu reads the credential, as the `microvm` user.
+  config.sops.secrets = lib.mkIf (!inVm && runners != { }) {
+    ${cfg.repoUrlSecret} = {
+      sopsFile = ../../secrets/tenant.yaml;
+      key = "repo_url";
+      owner = "microvm";
+    };
+  };
+
+  # The runners' node-exporter, kept apart from the host's own series: only
+  # the tenant's series and /var's size, renamed `tenant_filesystem_*`, so the
+  # host's rules on `node_*` never read a VM's.
+  config.services.prometheus.scrapeConfigs = lib.mkIf (!inVm) (
+    lib.mapAttrsToList (name: vm: {
+      job_name = name;
+      static_configs = [ { targets = [ "${cfg.subnet}.${toString vm.index}:9100" ]; } ];
+      metric_relabel_configs = [
+        {
+          source_labels = [ "__name__" ];
+          regex = "tenant_.+|node_filesystem_(avail|size)_bytes";
+          action = "keep";
+        }
+        {
+          source_labels = [ "__name__" ];
+          regex = "node_(filesystem_.+)";
+          target_label = "__name__";
+          replacement = "tenant_$1";
+        }
+      ];
+    }) runners
+  );
+  config.homeserver.alerting.tenants = lib.mkIf (!inVm) {
+    vms = lib.attrNames cfg.vms;
+    runners = lib.attrNames runners;
+  };
 
   config.homeserver.notify.units = lib.mkIf (!inVm) (
     lib.mapAttrsToList (name: _: "microvm@${name}") cfg.vms

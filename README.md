@@ -195,6 +195,9 @@ hosts/nuc/tenants.nix              the tenant VMs (ADR 0013): their names, addre
 modules/tenants/default.nix        homeserver.tenants.vms: one microVM each, its size, its host-side limits; imports microvm.nix's host module
 modules/tenants/guest-base.nix     what every tenant VM is: qemu, tmpfs root, a /var volume, the read-only store, its tap, SSH from the host, credentials
 modules/tenants/smoke.sh           the probes `just tenant-smoke` runs inside each VM
+modules/tenants/runner.nix         tenant-run's job runner: its own keys, the 5-minute deploy of the private repo, metrics, failure posts
+modules/tenants/deploy.sh          the deploy: fetch main, decrypt prod.yaml, docker compose up
+modules/tenants/deploy-failed.sh   a failed deploy's post to the tenant's webhook, once per commit
 modules/tenants/dns.nix            the tenant VMs' own Blocky on 10.88.0.1: the LAN's lists and query log, none of its names
 modules/tenants/network.nix        the tenant VMs' routed taps, NAT (network address translation), and the tenant-isolation table (internet and their Blocky only), the router's public address kept closed
 modules/tenants/state.nix          /var/lib/microvms as a NOCOW (no copy-on-write) btrfs subvolume, checked before any VM starts; KSM (kernel samepage merging) off
@@ -222,6 +225,8 @@ tests/compose-stack.nix            VM test: stacks as units, slices and limits, 
 tests/compose-stack.py             its test script
 tests/tenant-net.nix               VM test: stand-ins for the tenant VMs reach the internet and Blocky, nothing else; control without the table
 tests/tenant-net.py                its test script
+tests/tenant-runner.nix            VM test: the runner deploys a local repo, posts a broken commit once, keeps platform faults to Alex's metric
+tests/tenant-runner.py             its test script
 tests/compose-check.nix            flake check: compose files under stacks/ against ADR 0006, with a failing fixture per rule
 tests/compose-check/               one compose file per rule the check must reject, and one it must pass
 tests/stack-data.nix               VM test: data subvolumes and owners, nightly snapshots and hooks, retention, rollback; controls without each guard

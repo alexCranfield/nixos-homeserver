@@ -221,6 +221,14 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 6.9 (#199): the runner's guest module on a plain node
+        # deploys a local repo, posts a broken commit to a stub webhook, and
+        # keeps platform faults to Alex's metric.
+        tenant-runner = import ./tests/tenant-runner.nix {
+          inherit pkgs;
+          inherit (nixpkgs) lib;
+        };
+
         # Ticket 6.8 (#198): the probes `just tenant-smoke` runs inside the
         # tenant VMs, which no Nix package wraps, pass shellcheck.
         tenant-smoke = pkgs.runCommand "tenant-smoke" { nativeBuildInputs = [ pkgs.shellcheck ]; } ''
