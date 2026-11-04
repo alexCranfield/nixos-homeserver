@@ -78,9 +78,9 @@ The recipe exits non-zero if any probe goes the wrong way.
 
 `tenant-run` deploys the tenant's private repo (`modules/tenants/runner.nix`,
 6.9). Every 5 minutes `tenant-deploy.service` runs `modules/tenants/deploy.sh`:
-1. **Fetch:** fetch `main` with the VM's deploy key. If it's the commit already deployed, stop there.
+1. **Fetch:** fetch `main` with the VM's deploy key. If it's the commit already deployed in this boot, stop there. After a reboot the same commit is deployed again, so the stack comes back even where a container has no restart policy.
 2. **Decrypt:** decrypt `secrets/prod.yaml` with the VM's age key into a dotenv file that only this run can read; systemd removes it when the run ends.
-3. **Compose:** `docker compose --project-name tenant up --detach --build --remove-orphans --wait` in the checkout, then prune unused images.
+3. **Compose:** `docker compose --project-name tenant up --detach --build --remove-orphans --wait --wait-timeout 600` in the checkout, then prune unused images.
 
 **Keys.** The VM makes its own keys on first boot (`tenant-runner-keys.service`)
 and keeps them in `/var/lib/tenant-runner/keys`. They never leave the VM, so
@@ -101,10 +101,10 @@ which the repo's `compose.yml` uses:
 - `TENANT_SECRETS` is the decrypted dotenv file, for `env_file: ${TENANT_SECRETS}`. Docker copies the values into each container's configuration on `/var`, as with any `env_file`.
 - `TENANT_JOB_METRICS` is a directory for a bind mount. A job writes `<job>.prom` there, holding `tenant_job_last_exit{job="<job>"}` and `tenant_job_last_run_timestamp_seconds{job="<job>"}`. Every minute `tenant-job-metrics.service` copies the lines that name a `tenant_job_*` series, one sample per line, to node-exporter; it drops everything else.
 - `FAILURE_WEBHOOK` in `secrets/prod.yaml` is where failed deploys are posted. It takes a Discord or Slack incoming-webhook URL.
-- `--wait` needs every service to keep running (or turn healthy). A one-off container that exits fails the deploy.
+- `--wait` needs every service to keep running (or turn healthy) within 10 minutes. A one-off container that exits fails the deploy.
 
 **When a deploy fails:**
-- **In the tenant's own stack** (a build or a container that won't start): `tenant-deploy-failed.service` posts the run's last 30 log lines to `FAILURE_WEBHOOK`, once per commit. The last good commit keeps running, and the next run retries.
+- **In the tenant's own stack** (a build or a container that won't start, or a run stopped at its 30-minute timeout): `tenant-deploy-failed.service` posts the run's last 30 log lines (at most 1500 characters) to `FAILURE_WEBHOOK`, once per commit. The last good commit keeps running, and the next run retries.
 - **Fetching or decrypting:** this is the platform's fault, and the tenant isn't told. The cause is a deploy key or age recipient that hasn't been added, a wrong URL, GitHub being down, or a `prod.yaml` not encrypted to the runner. The metric `tenant_deploy_platform_ok` drops to 0, and after 30 minutes `TenantDeployFailing` posts to Alex's alerts channel.
 
 ```bash
@@ -112,16 +112,18 @@ ssh -J ops@nuc ops@10.88.0.3
 sudo systemctl start tenant-deploy            # deploy now instead of within 5 minutes
 journalctl -u tenant-deploy -u tenant-deploy-failed
 sudo rm /var/lib/tenant-runner/deployed       # force a redeploy of the same commit
+cat /run/tenant-runner/stage                  # where the last run got to: fetch, decrypt, compose, done
 sudo docker compose -p tenant ps              # the stack
 curl -s localhost:9100/metrics | grep ^tenant_
 ```
 
 **Metrics and alerts.**
 - Prometheus on the host scrapes the VM's node-exporter at `10.88.0.3:9100`, as the job `tenant-run`. It keeps only:
-  - the `tenant_*` series: `tenant_deploy_success`, `tenant_deploy_platform_ok`, `tenant_deploy_last_success_timestamp_seconds`, `tenant_deploy_info{commit}`, and the jobs';
+  - the `tenant_*` series: `tenant_deploy_success`, `tenant_deploy_platform_ok`, `tenant_deploy_last_run_timestamp_seconds`, `tenant_deploy_last_success_timestamp_seconds`, `tenant_deploy_info{commit}`, and the jobs'. A job's own `job` label becomes `exported_job` in Prometheus, since `job` is the scrape job's (`tenant-run`);
   - the VM's filesystem sizes, renamed `tenant_filesystem_*` so the host's own disk alerts never read them.
 - Alex's alerts (`modules/observability/rules.nix`, group `homeserver-tenants`):
   - `TenantDeployFailing`: the fetch or decrypt has failed for 30 minutes;
+  - `TenantDeployStale`: no deploy run, good or bad, has ended for 15 minutes, held for 15 more. The timer has stopped, a run hangs, or the unit fails before its script (its keys, its `repo-url` credential). It also fires for a runner that answers scrapes but has never written its file;
   - `TenantRunnerDown`: no scrape for 5 minutes, unless `microvm@tenant-run` has failed, which the notifier posts;
   - `TenantDiskFull`: `/var` is above 85% full for 10 minutes;
   - `TenantVmRestartLoop`: a tenant VM's `microvm@` unit has restarted more than twice in 30 minutes. It restarts forever and so never reaches the failed state.

@@ -136,6 +136,8 @@ in
           mv "$keys/deploy_key.new" "$keys/deploy_key"
         fi
         if [ ! -e "$keys/age.key" ]; then
+          # Left by an interrupted first boot; age-keygen won't overwrite it.
+          rm -f "$keys/age.key.new"
           age-keygen -o "$keys/age.key.new"
           mv "$keys/age.key.new" "$keys/age.key"
         fi

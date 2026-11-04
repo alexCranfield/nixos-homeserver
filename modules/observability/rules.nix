@@ -67,6 +67,8 @@ let
     # The tenant VMs (#199). A deploy runs every 5 minutes; half an hour is
     # six failed fetches or decrypts, past a GitHub blip.
     TenantDeployFailing.for = "30m";
+    # A run every 5 minutes, so no run for 15 minutes, held for 15 more.
+    TenantDeployStale.for = "15m";
     TenantRunnerDown.for = "5m";
 
     # Threshold alerts: long durations, to ignore normal busy spells.
@@ -361,6 +363,18 @@ let
                 expr = "tenant_deploy_platform_ok == 0";
                 summary = "{{ $labels.job }} cannot fetch or decrypt the tenant's repo (for ${t.TenantDeployFailing.for})";
                 description = "The deploy fails before the tenant's own stack: the deploy key or age key is not on the repo, the repo URL is wrong, GitHub is unreachable, or secrets/prod.yaml is not encrypted to the runner. The tenant is not told; see docs/runbooks/tenants.md.";
+              })
+              (event "TenantDeployStale" {
+                # The second arm: a runner that answers but has never
+                # written the file (its keys failed on first boot).
+                expr = ''
+                  time() - tenant_deploy_last_run_timestamp_seconds > 900
+                ''
+                + lib.concatMapStrings (vm: ''
+                  or (absent(tenant_deploy_last_run_timestamp_seconds{job="${vm}"}) and on() up{job="${vm}"} == 1)
+                '') tenantRunners;
+                summary = "{{ $labels.job }} has not finished a deploy run for 15 minutes (for ${t.TenantDeployStale.for})";
+                description = "The deploy timer runs every 5 minutes, and every run, good or bad, writes its time. None has: the timer is stopped, a run hangs, or the unit fails before its script (tenant-runner-keys, the repo-url credential). The tenant is not told; see docs/runbooks/tenants.md.";
               })
               (event "TenantRunnerDown" {
                 rideOutGaps = false;

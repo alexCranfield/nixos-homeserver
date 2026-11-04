@@ -11,10 +11,19 @@ run=/run/tenant-runner
 
 stage=$(cat "$run/stage" 2>/dev/null || echo unknown)
 commit=$(cat "$run/commit" 2>/dev/null || true)
-if [ "$stage" != compose ]; then
-  echo "the deploy failed at the $stage stage, a platform fault: not posted to the tenant"
-  exit 0
-fi
+case $stage in
+  compose) ;;
+  done)
+    # The last run succeeded, so this one failed before the script ran (its
+    # credential, its keys): the platform's.
+    echo "the unit failed before the deploy ran, a platform fault: not posted to the tenant"
+    exit 0
+    ;;
+  *)
+    echo "the deploy failed at the $stage stage, a platform fault: not posted to the tenant"
+    exit 0
+    ;;
+esac
 
 key="$commit $stage"
 if [ "$(cat "$state/notified" 2>/dev/null)" = "$key" ]; then
