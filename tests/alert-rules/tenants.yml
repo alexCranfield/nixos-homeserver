@@ -1,0 +1,178 @@
+# The tenant VMs' alerts (group homeserver-tenants, #199), rendered with
+# tenant-dev and tenant-run as VMs and tenant-run as the one runner. A
+# runner's series come from its own scrape job, named after it, with
+# node-exporter's filesystem series renamed tenant_filesystem_*
+# (modules/tenants/default.nix). Series step and evaluation are both 15 s.
+rule_files:
+  - rules.yml
+evaluation_interval: 15s
+
+tests:
+  # TenantDeployFailing: the platform's part of the deploy (fetch, decrypt)
+  # has failed for 30m. A failure in the tenant's own stack (success 0,
+  # platform_ok 1) is the tenant's to hear about, not Alex's.
+  - interval: 15s
+    input_series:
+      - series: 'tenant_deploy_platform_ok{job="tenant-run",instance="10.88.0.3:9100"}'
+        values: "0x130"
+      - series: 'tenant_deploy_platform_ok{job="tenant-other",instance="10.88.0.9:9100"}'
+        values: "1x130"
+      - series: 'tenant_deploy_success{job="tenant-other",instance="10.88.0.9:9100"}'
+        values: "0x130"
+    alert_rule_test:
+      - eval_time: 1785s
+        alertname: TenantDeployFailing
+        exp_alerts: []
+      - eval_time: 1800s
+        alertname: TenantDeployFailing
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: tenant-run
+              instance: 10.88.0.3:9100
+            exp_annotations:
+              summary: "tenant-run cannot fetch or decrypt the tenant's repo (for 30m)"
+              description: "The deploy fails before the tenant's own stack: the deploy key or age key is not on the repo, the repo URL is wrong, GitHub is unreachable, or secrets/prod.yaml is not encrypted to the runner. The tenant is not told; see docs/runbooks/tenants.md."
+
+  # TenantRunnerDown, for 5m, in place of TargetDown, which stays quiet for
+  # a tenant job.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="tenant-run",instance="10.88.0.3:9100"}'
+        values: "0x40"
+    alert_rule_test:
+      - eval_time: 120s
+        alertname: TargetDown
+        exp_alerts: []
+      - eval_time: 285s
+        alertname: TenantRunnerDown
+        exp_alerts: []
+      - eval_time: 300s
+        alertname: TenantRunnerDown
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: tenant-run
+              instance: 10.88.0.3:9100
+            exp_annotations:
+              summary: "Tenant VM tenant-run does not answer scrapes (for 5m)"
+              description: "Prometheus cannot reach the VM's node-exporter at 10.88.0.3:9100: the VM is down or hung, or its exporter is."
+
+  # Not while its microvm@ unit has failed: the notifier posts that.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="tenant-run",instance="10.88.0.3:9100"}'
+        values: "0x40"
+      - series: 'node_systemd_unit_state{job="node",instance="127.0.0.1:9100",name="microvm@tenant-run.service",state="failed",type="simple"}'
+        values: "1x40"
+    alert_rule_test:
+      - eval_time: 300s
+        alertname: TenantRunnerDown
+        exp_alerts: []
+
+  # TenantDiskFull: the VM's /var above 85% used for 10m. Its tmpfs root,
+  # nearly full by design of its size, is not watched.
+  - interval: 15s
+    input_series:
+      - series: 'tenant_filesystem_size_bytes{job="tenant-run",instance="10.88.0.3:9100",mountpoint="/var"}'
+        values: "100x60"
+      - series: 'tenant_filesystem_avail_bytes{job="tenant-run",instance="10.88.0.3:9100",mountpoint="/var"}'
+        values: "13x60"
+      - series: 'tenant_filesystem_size_bytes{job="tenant-run",instance="10.88.0.3:9100",mountpoint="/"}'
+        values: "100x60"
+      - series: 'tenant_filesystem_avail_bytes{job="tenant-run",instance="10.88.0.3:9100",mountpoint="/"}'
+        values: "1x60"
+    alert_rule_test:
+      - eval_time: 585s
+        alertname: TenantDiskFull
+        exp_alerts: []
+      - eval_time: 600s
+        alertname: TenantDiskFull
+        exp_alerts:
+          - exp_labels:
+              severity: threshold
+              job: tenant-run
+              instance: 10.88.0.3:9100
+              mountpoint: /var
+            exp_annotations:
+              summary: "tenant-run's /var is 87% full (threshold 85% for 10m)"
+              description: "The VM's one persistent volume, holding Docker's images and the tenant's data, is filling up. Old images, or a job writing too much."
+      # The host's own disk alert reads only the host's series.
+      - eval_time: 600s
+        alertname: DiskFilling
+        exp_alerts: []
+
+  # TenantVmRestartLoop: more than 2 restarts of a tenant VM's unit in 30
+  # minutes. The third restart fires it at once. Another unit's restarts
+  # don't.
+  - interval: 15s
+    input_series:
+      - series: 'node_systemd_service_restart_total{name="microvm@tenant-run.service"}'
+        values: "0x10 1 2 3x20"
+      - series: 'node_systemd_service_restart_total{name="microvm@tenant-dev.service"}'
+        values: "0x32"
+      - series: 'node_systemd_service_restart_total{name="sshd.service"}'
+        values: "0x10 1 2 3x20"
+    alert_rule_test:
+      - eval_time: 180s
+        alertname: TenantVmRestartLoop
+        exp_alerts: []
+      - eval_time: 195s
+        alertname: TenantVmRestartLoop
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              name: microvm@tenant-run.service
+            exp_annotations:
+              summary: "microvm@tenant-run.service restarted 3 times in 30 minutes (threshold above 2)"
+              description: "The VM keeps stopping and systemd keeps starting it again (Restart=always), so it never reaches the failed state the notifier watches."
+
+  # TenantDeployStale: no deploy run has ended for 40 minutes (the file's
+  # time is 0 here, so from 2415 s), held for 15m.
+  - interval: 15s
+    input_series:
+      - series: 'tenant_deploy_last_run_timestamp_seconds{job="tenant-run",instance="10.88.0.3:9100"}'
+        values: "0x230"
+      - series: 'up{job="tenant-run",instance="10.88.0.3:9100"}'
+        values: "1x230"
+    alert_rule_test:
+      - eval_time: 3300s
+        alertname: TenantDeployStale
+        exp_alerts: []
+      - eval_time: 3315s
+        alertname: TenantDeployStale
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: tenant-run
+              instance: 10.88.0.3:9100
+            exp_annotations: &stale
+              summary: "tenant-run has not finished a deploy run for 40 minutes (for 15m)"
+              description: "A deploy run starts 5 minutes after the last one ended and is stopped at 30, and every run, good or bad, writes its time. None has: the timer is stopped, a run hangs, or the unit fails before its script (tenant-runner-keys, the repo-url credential). The tenant is not told; see docs/runbooks/tenants.md."
+
+  # A runner that answers scrapes but has never written the file.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="tenant-run",instance="10.88.0.3:9100"}'
+        values: "1x80"
+    alert_rule_test:
+      - eval_time: 885s
+        alertname: TenantDeployStale
+        exp_alerts: []
+      - eval_time: 900s
+        alertname: TenantDeployStale
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: tenant-run
+            exp_annotations: *stale
+
+  # Not while the runner is down: that is TenantRunnerDown's.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="tenant-run",instance="10.88.0.3:9100"}'
+        values: "0x80"
+    alert_rule_test:
+      - eval_time: 900s
+        alertname: TenantDeployStale
+        exp_alerts: []

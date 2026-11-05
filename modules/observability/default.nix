@@ -149,6 +149,9 @@ in
       port = ports.node;
       # On top of the default collectors.
       enabledCollectors = [ "systemd" ];
+      # Each service's restart count, for a unit with `Restart=always` that
+      # never reaches the failed state: the tenant VMs' (#199).
+      extraFlags = [ "--collector.systemd.enable-restarts-metrics" ];
     };
 
     services.cadvisor = {

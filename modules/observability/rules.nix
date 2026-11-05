@@ -14,7 +14,7 @@
 #   gapGrace  The default grace for scrape gaps, "2m": how long a firing
 #             alert stays firing after its series stops matching (see
 #             `rule` below). `homeserver.alerting.gapGrace` defaults to this.
-#   mkRules   `{ lib, thresholds, gapGrace, watchedUnits, nasProbed, dnsServed }: { groups = [ ... ]; }`.
+#   mkRules   `{ lib, thresholds, gapGrace, watchedUnits, nasProbed, dnsServed, tenants }: { groups = [ ... ]; }`.
 #             `thresholds` is merged over `defaults`, so a caller may give only
 #             the alerts it changes. `gapGrace` is a Prometheus duration and
 #             defaults to the one above. `watchedUnits` lists unit names
@@ -27,6 +27,9 @@
 #             (`homeserver.dns.listenAddresses` is not empty): only then are
 #             the alerts that read Blocky's metrics and the query-log watch
 #             included.
+#             `tenants` is `{ vms; runners; }`, lists of tenant VM names
+#             (`homeserver.alerting.tenants`): the `homeserver-tenants`
+#             group's alerts are included for those VMs only.
 #             The result is rendered to YAML by the caller.
 #
 # Every alert carries the label `severity` (`event` or `threshold`) and the
@@ -61,6 +64,13 @@ let
     # The timer runs every minute; ten missed minutes is a real fault.
     DnsWatchFailing.for = "10m";
     OomKill.for = "0s";
+    # The tenant VMs (#199). A deploy runs every 5 minutes; half an hour is
+    # six failed fetches or decrypts, past a GitHub blip.
+    TenantDeployFailing.for = "30m";
+    # A run starts 5 minutes after the last one ended and may take 30
+    # (TimeoutStartSec), so 40 minutes without a run's end, held for 15 more.
+    TenantDeployStale.for = "15m";
+    TenantRunnerDown.for = "5m";
 
     # Threshold alerts: long durations, to ignore normal busy spells.
     DiskFilling = {
@@ -105,6 +115,14 @@ let
       value = 2000000000; # bytes, the log table with its indexes
       for = "15m";
     };
+    TenantDiskFull = {
+      value = 85; # percent of the VM's /var used
+      for = "10m";
+    };
+    TenantVmRestartLoop = {
+      value = 2; # restarts of its microvm@ unit in 30 minutes
+      for = "0s";
+    };
   };
 
   mkRules =
@@ -115,6 +133,7 @@ let
       watchedUnits,
       nasProbed ? false,
       dnsServed ? false,
+      tenants ? { },
     }:
     let
       t = lib.recursiveUpdate defaults thresholds;
@@ -169,6 +188,10 @@ let
       stack = ''id=~"/stack.slice/stack-.+\\.slice"'';
       pct = ''{{ $value | printf "%.0f" }}'';
       thr = name: "${toString t.${name}.value}% for ${t.${name}.for}";
+
+      tenantVms = tenants.vms or [ ];
+      tenantRunners = tenants.runners or [ ];
+      anyOf = names: lib.concatMapStringsSep "|" lib.escapeRegex names;
     in
     {
       # A group left with no rules (homeserver-dns without DNS) is dropped.
@@ -179,7 +202,7 @@ let
             (event "TargetDown" {
               rideOutGaps = false;
               expr = ''
-                (up{job!~"cadvisor|comin|blackbox_.+|dns_.+"} == 0)
+                (up{job!~"cadvisor|comin|blackbox_.+|dns_.+|tenant-.+"} == 0)
                 or (up{job=~"blackbox_.+|dns_.+"} == 0 unless on() (${failed "prometheus-blackbox-exporter"}))
                 or (up{job="cadvisor"} == 0 unless on() (${failed "cadvisor"}))
                 or (up{job="comin"} == 0 unless on() (${failed "comin"}))
@@ -327,6 +350,60 @@ let
               description = "Blocky's query log table in PostgreSQL is growing past what 14 days of use should need. The hard cap (homeserver.dns.queryLogMaxBytes) will delete the oldest rows, so look for a client that floods the server.";
             })
           ];
+        }
+        {
+          # A tenant runner's own scrape job (modules/tenants) carries its
+          # deploy's and its /var's series; the host's node-exporter its
+          # microvm@ unit. A runner that is down is TenantRunnerDown, not
+          # TargetDown, and not that either while its unit has failed, which
+          # the notifier posts.
+          name = "homeserver-tenants";
+          rules =
+            lib.optionals (tenantRunners != [ ]) [
+              (event "TenantDeployFailing" {
+                expr = "tenant_deploy_platform_ok == 0";
+                summary = "{{ $labels.job }} cannot fetch or decrypt the tenant's repo (for ${t.TenantDeployFailing.for})";
+                description = "The deploy fails before the tenant's own stack: the deploy key or age key is not on the repo, the repo URL is wrong, GitHub is unreachable, or secrets/prod.yaml is not encrypted to the runner. The tenant is not told; see docs/runbooks/tenants.md.";
+              })
+              (event "TenantDeployStale" {
+                # The second arm: a runner that answers but has never
+                # written the file (its keys failed on first boot).
+                expr = ''
+                  time() - tenant_deploy_last_run_timestamp_seconds > 2400
+                ''
+                + lib.concatMapStrings (vm: ''
+                  or (absent(tenant_deploy_last_run_timestamp_seconds{job="${vm}"}) and on() up{job="${vm}"} == 1)
+                '') tenantRunners;
+                summary = "{{ $labels.job }} has not finished a deploy run for 40 minutes (for ${t.TenantDeployStale.for})";
+                description = "A deploy run starts 5 minutes after the last one ended and is stopped at 30, and every run, good or bad, writes its time. None has: the timer is stopped, a run hangs, or the unit fails before its script (tenant-runner-keys, the repo-url credential). The tenant is not told; see docs/runbooks/tenants.md.";
+              })
+              (event "TenantRunnerDown" {
+                rideOutGaps = false;
+                expr = lib.concatMapStringsSep " or " (
+                  vm: ''(up{job="${vm}"} == 0 unless on() (${failed "microvm@${vm}"}))''
+                ) tenantRunners;
+                summary = "Tenant VM {{ $labels.job }} does not answer scrapes (for ${t.TenantRunnerDown.for})";
+                description = "Prometheus cannot reach the VM's node-exporter at {{ $labels.instance }}: the VM is down or hung, or its exporter is.";
+              })
+              (threshold "TenantDiskFull" {
+                expr = ''
+                  100 * (1 - tenant_filesystem_avail_bytes{mountpoint="/var"} / tenant_filesystem_size_bytes{mountpoint="/var"})
+                    > ${toString t.TenantDiskFull.value}
+                '';
+                summary = "{{ $labels.job }}'s /var is ${pct}% full (threshold ${thr "TenantDiskFull"})";
+                description = "The VM's one persistent volume, holding Docker's images and the tenant's data, is filling up. Old images, or a job writing too much.";
+              })
+            ]
+            ++ lib.optionals (tenantVms != [ ]) [
+              (event "TenantVmRestartLoop" {
+                expr = ''
+                  increase(node_systemd_service_restart_total{name=~"microvm@(${anyOf tenantVms})\\.service"}[30m])
+                    > ${toString t.TenantVmRestartLoop.value}
+                '';
+                summary = "{{ $labels.name }} restarted ${pct} times in 30 minutes (threshold above ${toString t.TenantVmRestartLoop.value})";
+                description = "The VM keeps stopping and systemd keeps starting it again (Restart=always), so it never reaches the failed state the notifier watches.";
+              })
+            ];
         }
         {
           name = "homeserver-host";

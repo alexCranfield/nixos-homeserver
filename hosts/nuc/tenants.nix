@@ -1,7 +1,8 @@
 # The tenant VMs (virtual machines) on the nuc, ADR (Architecture Decision
 # Record) 0013: `tenant-dev`, where the tenant develops over a Tailscale share,
 # and `tenant-run`, which runs their scheduled jobs. Their network is declared
-# here from ticket 6.7 (#197), the VMs themselves from 6.8 (#198).
+# here from ticket 6.7 (#197), the VMs themselves from 6.8 (#198), the
+# runner from 6.9 (#199).
 {
   imports = [ ../../modules/tenants ];
 
@@ -18,6 +19,9 @@
       vcpu = 2;
       memory = 4 * 1024;
       varSize = 30 * 1024;
+      # Deploys the tenant's private repo, whose URL is the sops secret
+      # `repo_url` in secrets/tenant.yaml (6.9, #199).
+      runner = true;
     };
   };
 }

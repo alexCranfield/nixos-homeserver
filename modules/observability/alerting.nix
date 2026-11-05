@@ -43,6 +43,7 @@ let
         watchedUnits = notify.units;
         nasProbed = cfg.dnsServers.secondaryTargetsFile != null;
         dnsServed = config.homeserver.dns.listenAddresses != [ ];
+        inherit (cfg) tenants;
       }
     )
   );
@@ -66,6 +67,19 @@ in
       alert, so an entry need list only what it changes, and an alert left
       out keeps its default.
     '';
+  };
+
+  options.homeserver.alerting.tenants = {
+    vms = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "The tenant VMs (modules/tenants), whose `microvm@` restart loops alert.";
+    };
+    runners = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "The tenant VMs that run jobs, each scraped as a Prometheus job of its name.";
+    };
   };
 
   options.homeserver.alerting.gapGrace = lib.mkOption {
