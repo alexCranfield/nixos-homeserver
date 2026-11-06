@@ -110,6 +110,15 @@ let
                 self.send_response(500)
                 self.end_headers()
                 return
+            if (runs / "moved").exists():
+                self.send_response(301)
+                self.send_header("Location", "/repos/test/renamed/actions/runs")
+                self.end_headers()
+                return
+            if (runs / "empty").exists():
+                self.send_response(200)
+                self.end_headers()
+                return
             # Only the question the runner must ask: this repo's runs of
             # one commit, from pushes to main.
             url = urllib.parse.urlparse(self.path)

@@ -113,8 +113,9 @@ printf 'Authorization: Bearer %s\n' "$(cat "$CREDENTIALS_DIRECTORY/ci-token")" >
 runs=$(curl --fail --silent --show-error --max-time 20 --location --max-redirs 0 \
   --header @"$RUNTIME_DIRECTORY/auth" --header 'Accept: application/vnd.github+json' \
   "$TENANT_CI_API/repos/$slug/actions/runs?head_sha=$commit&event=push&branch=main&per_page=50")
-# An answer without the list is an error too, never "no runs yet".
-ci=$(jq -r '(.workflow_runs // error("no workflow_runs in the answer"))
+# An answer without the list is an error too, never "no runs yet"; so is an
+# empty one, for which -e makes jq fail rather than print nothing.
+ci=$(jq -e -r '(.workflow_runs // error("no workflow_runs in the answer"))
   | if length == 0 or any(.[]; .status != "completed") then "pending"
     elif all(.[]; .conclusion == "success" or .conclusion == "skipped") then "success"
     else "failure" end' <<<"$runs")
@@ -147,8 +148,14 @@ case $ci in
     jq -r '.workflow_runs[] | "  \(.name): \(.conclusion) \(.html_url)"' <<<"$runs"
     exit 1
     ;;
+  success) ;;
+  *)
+    echo "unexpected CI verdict '$ci' for $commit" >&2
+    exit 1
+    ;;
 esac
 echo "CI passed on $commit"
+rm -f "$state/pending"
 
 git -C "$repo" checkout --quiet --force --detach "$commit"
 git -C "$repo" clean --quiet -ffdx

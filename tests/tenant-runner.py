@@ -273,8 +273,28 @@ with subtest("an API that can't be asked is the platform's: Alex's metric, no po
 with subtest("an answer without the runs list is the platform's too"):
     ci(red, raw='{"workflow_runs": null}')
     run.fail("systemctl start tenant-deploy.service")
+    run.succeed(
+        "journalctl -u tenant-deploy.service -o cat | grep -F 'no workflow_runs in the answer'"
+    )
     assert "tenant_deploy_platform_ok 0" in metrics()
     assert posts() == 3
+
+with subtest("an empty answer or a redirect is the platform's, never a pass"):
+    run.succeed("echo '# gate' >> /work/Dockerfile")
+    gate = commit("passes, but the API does not say so")
+    for marker in ["empty", "moved"]:
+        run.succeed(f"touch /tmp/ci/{marker}")
+        run.fail("systemctl start tenant-deploy.service")
+        run.succeed(f"rm /tmp/ci/{marker}")
+        m = metrics()
+        assert "tenant_deploy_platform_ok 0" in m, (marker, m)
+        assert f'tenant_deploy_info{{commit="{gate}"}}' not in m, (marker, m)
+    assert posts() == 3
+    # Once the API answers, the passing commit deploys.
+    run.succeed("systemctl start tenant-deploy.service")
+    waiting = gate
+    assert f'tenant_deploy_info{{commit="{gate}"}} 1' in metrics()
+    run.fail(f"test -e {STATE}/pending")
 
 with subtest("a cancelled run is a failure, not a pass"):
     run.succeed("echo '# cancelled' >> /work/Dockerfile")
@@ -282,6 +302,9 @@ with subtest("a cancelled run is a failure, not a pass"):
     ci(cancelled, ("completed", "success"), ("completed", "cancelled"))
     run.fail("systemctl start tenant-deploy.service")
     run.wait_until_succeeds("test -e /tmp/webhook/003.json", timeout=60)
+    body = json.loads(run.succeed("cat /tmp/webhook/003.json"))
+    assert f"CI failed on {cancelled}: not deployed" in body["content"], body
+    assert "CI: cancelled" in body["content"], body
     assert f'tenant_deploy_info{{commit="{waiting}"}} 1' in metrics()
 
 with subtest("a commit whose CI never runs fails after 6 hours, and the tenant hears"):
