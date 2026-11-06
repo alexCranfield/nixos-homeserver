@@ -164,6 +164,9 @@ pkgs.testers.runNixOSTest {
       serviceConfig.ExecStart = ciStub;
     };
     systemd.timers.tenant-deploy.wantedBy = lib.mkForce [ ];
+    # The test starts the deploy back to back, many times failing on purpose;
+    # under KVM that is more than systemd's default 5 starts in 10 s.
+    systemd.services.tenant-deploy.startLimitIntervalSec = 0;
 
     systemd.services.webhook = {
       wantedBy = [ "multi-user.target" ];
