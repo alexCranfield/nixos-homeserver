@@ -8,7 +8,10 @@
 # node, `run`. In place of GitHub, a bare repository in the node at a
 # `file://` URL; in place of a registry, an image built by Nix and loaded,
 # which the fixture's Dockerfile builds on. In place of the tenant's webhook,
-# a receiver on the node that keeps each post. The node's own deploy timer is
+# a receiver on the node that keeps each post. In place of GitHub's Actions
+# API, a stub answering each commit's CI runs from /tmp/ci/<commit>.json,
+# which the test writes, refusing any request without the test's token, and
+# noting any process whose command line holds the token. The node's own deploy timer is
 # off: the test starts each deploy.
 {
   pkgs,
@@ -78,6 +81,48 @@ let
 
     http.server.HTTPServer(("127.0.0.1", ${toString port}), Handler).serve_forever()
   '';
+  ciPort = 8098;
+  ciStub = pkgs.writers.writePython3 "ci-stub" { } ''
+    import http.server
+    import pathlib
+    import urllib.parse
+
+    runs = pathlib.Path("/tmp/ci")
+    runs.mkdir(exist_ok=True)
+
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            # While the deploy's curl waits for this answer, no process may
+            # carry the token in its command line, where `ps` shows it.
+            for cmdline in pathlib.Path("/proc").glob("[0-9]*/cmdline"):
+                try:
+                    if b"test-token" in cmdline.read_bytes():
+                        (runs / "leaked").write_text(str(cmdline))
+                except OSError:
+                    pass
+            (runs / "asked").touch()
+            if self.headers.get("Authorization") != "Bearer test-token":
+                self.send_response(401)
+                self.end_headers()
+                return
+            if (runs / "down").exists():
+                self.send_response(500)
+                self.end_headers()
+                return
+            query = urllib.parse.urlparse(self.path).query
+            sha = urllib.parse.parse_qs(query)["head_sha"][0]
+            found = runs / f"{sha}.json"
+            none = b'{"workflow_runs": []}'
+            body = found.read_bytes() if found.exists() else none
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+
+    http.server.HTTPServer(("127.0.0.1", ${toString ciPort}), Handler).serve_forever()
+  '';
 in
 pkgs.testers.runNixOSTest {
   name = "tenant-runner";
@@ -89,6 +134,13 @@ pkgs.testers.runNixOSTest {
 
     homeserver.tenantRunner.repoUrlFile = "/etc/tenant-repo-url";
     environment.etc."tenant-repo-url".text = "file:///srv/repo.git\n";
+    homeserver.tenantRunner.ciTokenFile = "/etc/tenant-ci-token";
+    environment.etc."tenant-ci-token".text = "test-token\n";
+    homeserver.tenantRunner.ciApi = "http://127.0.0.1:${toString ciPort}";
+    systemd.services.ci-stub = {
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig.ExecStart = ciStub;
+    };
     systemd.timers.tenant-deploy.wantedBy = lib.mkForce [ ];
 
     systemd.services.webhook = {

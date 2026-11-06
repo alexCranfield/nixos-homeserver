@@ -7,13 +7,27 @@ def metrics():
     return run.succeed("curl -sf http://127.0.0.1:9100/metrics")
 
 
-def commit(message):
+def ci(sha, *runs):
+    """Set the stub's CI runs for a commit: (status, conclusion) pairs."""
+    body = {
+        "workflow_runs": [
+            {"name": "CI", "status": s, "conclusion": c, "html_url": f"https://ci.test/{sha}"}
+            for s, c in runs
+        ]
+    }
+    run.succeed(f"echo '{json.dumps(body)}' > /tmp/ci/{sha}.json")
+
+
+def commit(message, passed=True):
     run.succeed(
         "cd /work && git add -A && "
         f"git -c user.name=tenant -c user.email=tenant@example.com commit -q -m '{message}' && "
         "git push -q origin main"
     )
-    return run.succeed("git -C /work rev-parse HEAD").strip()
+    sha = run.succeed("git -C /work rev-parse HEAD").strip()
+    if passed:
+        ci(sha, ("completed", "success"))
+    return sha
 
 
 def posts():
@@ -40,6 +54,7 @@ with subtest("the keys survive a restart of their unit"):
 
 run.wait_for_unit("docker.service")
 run.wait_for_unit("webhook.service")
+run.wait_for_unit("ci-stub.service")
 run.succeed(f"docker load < {IMAGE}")
 run.succeed(
     "git init -q --bare --initial-branch=main /srv/repo.git && "
@@ -199,3 +214,61 @@ with subtest("fixing the commit deploys again"):
     assert "tenant_deploy_success 1" in m, m
     assert "tenant_deploy_platform_ok 1" in m, m
     assert f'tenant_deploy_info{{commit="{fixed}"}} 1' in m, m
+
+with subtest("a commit whose CI is still running waits, then deploys once it passes"):
+    run.succeed("echo '# waiting' >> /work/Dockerfile")
+    waiting = commit("waiting for CI", passed=False)
+    run.succeed("systemctl start tenant-deploy.service")
+    run.succeed(
+        "journalctl -u tenant-deploy.service -o cat | "
+        f"grep -F 'CI has not finished on {waiting}: deploying it once it passes'"
+    )
+    m = metrics()
+    assert f'tenant_deploy_info{{commit="{fixed}"}} 1' in m, m
+    assert "tenant_deploy_success 1" in m, m
+    ci(waiting, ("completed", "success"), ("in_progress", None))
+    run.succeed("systemctl start tenant-deploy.service")
+    assert f'tenant_deploy_info{{commit="{fixed}"}} 1' in metrics()
+    ci(waiting, ("completed", "success"), ("completed", "skipped"))
+    run.succeed("systemctl start tenant-deploy.service")
+    m = metrics()
+    assert f'tenant_deploy_info{{commit="{waiting}"}} 1' in m, m
+    assert "tenant_deploy_success 1" in m, m
+
+with subtest("a commit whose CI failed is not deployed, and the tenant hears once"):
+    run.succeed("echo '# red' >> /work/Dockerfile")
+    red = commit("CI fails", passed=False)
+    ci(red, ("completed", "success"), ("completed", "failure"))
+    run.fail("systemctl start tenant-deploy.service")
+    run.wait_until_succeeds("test -e /tmp/webhook/002.json", timeout=60)
+    body = json.loads(run.succeed("cat /tmp/webhook/002.json"))
+    assert f"CI failed on {red}: not deployed" in body["content"], body
+    m = metrics()
+    assert f'tenant_deploy_info{{commit="{waiting}"}} 1' in m, m
+    assert "tenant_deploy_success 0" in m, m
+    assert "tenant_deploy_platform_ok 1" in m, m
+    run.fail("systemctl start tenant-deploy.service")
+    run.wait_until_succeeds(
+        "journalctl -u tenant-deploy-failed.service -o cat | "
+        f"grep -c 'already posted for {red}' | grep -x 1",
+        timeout=60,
+    )
+    assert posts() == 3
+
+with subtest("an API that can't be asked is the platform's: Alex's metric, no post"):
+    run.succeed("touch /tmp/ci/down")
+    run.fail("systemctl start tenant-deploy.service")
+    run.wait_until_succeeds(
+        "journalctl -u tenant-deploy-failed.service -o cat | "
+        "grep -F 'failed at the checks stage, a platform fault'",
+        timeout=60,
+    )
+    assert "tenant_deploy_platform_ok 0" in metrics()
+    assert posts() == 3
+    run.succeed("rm /tmp/ci/down")
+
+with subtest("the token reaches the API from a file, not curl's arguments"):
+    # The stub refuses a request without it, so the deploys above sent it;
+    # it looked at every command line while each request was open.
+    run.succeed("test -e /tmp/ci/asked")
+    run.fail("cat /tmp/ci/leaked")

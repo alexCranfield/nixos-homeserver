@@ -79,8 +79,12 @@ The recipe exits non-zero if any probe goes the wrong way.
 `tenant-run` deploys the tenant's private repo (`modules/tenants/runner.nix`,
 6.9). Every 5 minutes `tenant-deploy.service` runs `modules/tenants/deploy.sh`:
 1. **Fetch:** fetch `main` with the VM's deploy key. If it's the commit already deployed in this boot, stop there. After a reboot the same commit is deployed again, so the stack comes back even where a container has no restart policy.
-2. **Decrypt:** decrypt `secrets/prod.yaml` with the VM's age key into a dotenv file that only this run can read; systemd removes it when the run ends.
-3. **Compose:** `docker compose --project-name tenant up --detach --build --remove-orphans --wait --wait-timeout 600` in the checkout, then prune unused images.
+2. **CI (continuous integration):** ask GitHub's Actions API for the commit's workflow runs from its push to `main`. This is the production gate, since the private repo's plan can't enforce a ruleset (ADR 0013).
+   - **Wait:** no run yet, or one still running. Nothing changes; the next run asks again.
+   - **Pass:** every run succeeded or was skipped. Go on.
+   - **Fail:** anything else. The tenant hears, and the commit is never deployed.
+3. **Decrypt:** decrypt `secrets/prod.yaml` with the VM's age key into a dotenv file that only this run can read; systemd removes it when the run ends.
+4. **Compose:** `docker compose --project-name tenant up --detach --build --remove-orphans --wait --wait-timeout 600` in the checkout, then prune unused images.
 
 **Keys.** The VM makes its own keys on first boot (`tenant-runner-keys.service`)
 and keeps them in `/var/lib/tenant-runner/keys`. They never leave the VM, so
@@ -91,7 +95,9 @@ ssh -J ops@nuc ops@10.88.0.3 cat /var/lib/tenant-runner/deploy_key.pub /var/lib/
 ```
 
 **Setting it up**, once (and again after the VM's `/var` is lost, which makes new keys):
-1. **The URL, in sops.** `sops secrets/tenant.yaml` on the workstation, with one key, `repo_url`, set to the repo's SSH clone URL (`git@github.com:<owner>/<repo>.git`). This repository is public, so the URL is only ever in that file.
+1. **In sops.** Run `sops secrets/tenant.yaml` on the workstation, with two keys:
+   - `repo_url`: the repo's SSH clone URL (`git@github.com:<owner>/<repo>.git`). This repository is public, so the URL is only ever in that file.
+   - `ci_token`: a fine-grained GitHub token for that repo alone, with **Actions: Read-only** and nothing else, expiring in a year. The runner asks with it whether a commit's CI passed.
 2. **Deploy and read the keys.** Once comin has deployed, read the two public keys with the command above.
 3. **Deploy key.** Add `deploy_key.pub` to the private repo as a deploy key (Settings → Deploy keys), with "Allow write access" left unticked.
 4. **age recipient.** Add the age recipient to the private repo's `.sops.yaml` rule for `secrets/prod.yaml`, beside the tenant's own key. Then run `sops updatekeys secrets/prod.yaml` there and merge it. Never add it to `secrets/dev.yaml`, so the dev VM and its agent can't read production secrets.
@@ -104,15 +110,15 @@ which the repo's `compose.yml` uses:
 - `--wait` needs every service to keep running (or turn healthy) within 10 minutes. A one-off container that exits fails the deploy.
 
 **When a deploy fails:**
-- **In the tenant's own stack** (a build or a container that won't start, or a run stopped at its 30-minute timeout, or by hand with `systemctl stop`): `tenant-deploy-failed.service` posts the run's last 30 log lines (at most 1500 characters) to `FAILURE_WEBHOOK`, once per commit. The last good commit keeps running, and the next run retries.
-- **Fetching or decrypting:** this is the platform's fault, and the tenant isn't told. The cause is a deploy key or age recipient that hasn't been added, a wrong URL, GitHub being down, or a `prod.yaml` not encrypted to the runner. The metric `tenant_deploy_platform_ok` drops to 0, and after 30 minutes `TenantDeployFailing` posts to Alex's alerts channel.
+- **In the tenant's own code** (CI failed on the commit, a build or a container that won't start, or a run stopped at its 30-minute timeout, or by hand with `systemctl stop`): `tenant-deploy-failed.service` posts the run's last 30 log lines (at most 1500 characters) to `FAILURE_WEBHOOK`, once per commit. The last good commit keeps running, and the next run retries. A CI failure is posted with the webhook from the last decrypt, so it can't be posted after a reboot of the VM until a commit has got as far as decrypting.
+- **Fetching, asking about CI, or decrypting:** this is the platform's fault, and the tenant isn't told. The cause is a deploy key or age recipient that hasn't been added, a wrong URL, an expired or revoked `ci_token`, GitHub being down, or a `prod.yaml` not encrypted to the runner. The metric `tenant_deploy_platform_ok` drops to 0, and after 30 minutes `TenantDeployFailing` posts to Alex's alerts channel.
 
 ```bash
 ssh -J ops@nuc ops@10.88.0.3
 sudo systemctl start tenant-deploy            # deploy now instead of within 5 minutes
 journalctl -u tenant-deploy -u tenant-deploy-failed
 sudo rm /var/lib/tenant-runner/deployed       # force a redeploy of the same commit
-cat /run/tenant-runner/stage                  # where the last run got to: fetch, decrypt, compose, done
+sudo cat /run/tenant-runner/stage             # where the last run got to: fetch, checks, ci, decrypt, compose, done
 sudo docker compose -p tenant ps              # the stack
 curl -s localhost:9100/metrics | grep ^tenant_
 ```
@@ -128,6 +134,48 @@ curl -s localhost:9100/metrics | grep ^tenant_
   - `TenantDiskFull`: `/var` is above 85% full for 10 minutes;
   - `TenantVmRestartLoop`: a tenant VM's `microvm@` unit has restarted more than twice in 30 minutes. It restarts forever and so never reaches the failed state.
 - The tenant has root over their stack, and so over the VM, so they could write false metrics, which would hide a failed deploy from `TenantDeployFailing` too. The host's own view of the VM (`up`, `microvm@`) is out of their reach.
+
+## The tenant's lifecycle
+
+The tenant's side, a template of scheduled jobs, lives in their private repo
+with its own README. This section is the platform's side.
+
+**Onboarding.**
+1. **Repo.** Create the private repo under Alex's account, and add the tenant as a collaborator.
+2. **Runner.** Set it up as in "Setting it up" above: `repo_url` and `ci_token` in sops, then the deploy key and the age recipient on the repo.
+3. **Secrets.** Encrypt the repo's `secrets/prod.yaml` to the runner and to the tenant's own age key, and `secrets/dev.yaml` to the dev VM's key and theirs.
+   - Until the tenant has a key, Alex's workstation key stands in for theirs, so Alex can enter `FAILURE_WEBHOOK`.
+   - Swap it with `sops updatekeys` when they take over.
+4. **Dev VM.** Share it with the tenant over Tailscale (6.10, #200).
+
+**Rotating a key or token.**
+- **The deploy key or the runner's age key:** delete the key and its public copy, and restart `tenant-runner-keys`, which makes new ones. For the deploy key:
+
+  ```bash
+  ssh -J ops@nuc ops@10.88.0.3 'sudo rm /var/lib/tenant-runner/keys/deploy_key{,.pub} /var/lib/tenant-runner/deploy_key.pub'
+  ssh -J ops@nuc ops@10.88.0.3 'sudo systemctl restart tenant-runner-keys'
+  ```
+
+  Then replace the deploy key on the repo. For the age key (`keys/age.key` and `age.pub`), replace the recipient in the repo's `.sops.yaml` and run `sops updatekeys secrets/prod.yaml` there.
+- **`ci_token`:** make a new token as in "Setting it up", put it in `secrets/tenant.yaml`, and revoke the old one once comin has deployed. An expired token stops every deploy, and `TenantDeployFailing` says so after 30 minutes.
+- **The dev VM's Tailscale auth key:** see 6.10 (#200).
+
+**Reading the platform's alerts.** A tenant alert in Discord names the VM
+(`job="tenant-run"`). Check the runner's journal (the commands above) and
+`stage`:
+- **`fetch`:** the deploy key or the URL.
+- **`checks`:** `ci_token`, or GitHub's API.
+- **`decrypt`:** the age recipient.
+
+`TenantDeployStale` with no stage change means the timer or the keys unit;
+look at `systemctl status tenant-deploy.timer tenant-runner-keys`.
+
+**Offboarding.**
+1. Revoke the dev VM's Tailscale share and its device.
+2. Remove the VMs from `hosts/nuc/tenants.nix` and their secrets from `secrets/tenant.yaml`, and merge.
+3. Delete their images on the nuc: `sudo rm -r /var/lib/microvms/tenant-*`.
+4. Delete the deploy key from the repo and revoke `ci_token`.
+5. Archive the private repo, or transfer it to the tenant.
 
 ## The network
 

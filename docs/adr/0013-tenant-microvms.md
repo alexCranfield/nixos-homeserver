@@ -83,6 +83,13 @@ What mattered:
    passes through the workstation. If the VM's disk is lost, it makes new
    ones, which are added to the repository again (no backups, decision 7).
    Alex chose this.
+   *Amended 2026-11-06 (ticket 6.11, #201):* GitHub enforces rulesets and
+   branch protection on a private repository only with a paid plan, so
+   nothing stops a push to `main`. The gate is the runner instead: it
+   deploys a commit only once that commit's CI on `main` has passed, asking
+   GitHub's Actions API with a read-only token (`ci_token` in sops). A push
+   to `main` skips review but still can't reach production untested. Alex
+   chose this over paying for the plan.
 5. **Dev and production have separate secrets.** The tenant's app secrets are
    sops files in their own repository: the production file is encrypted to
    the runner's key and the tenant's own key, the dev file to the dev VM's

@@ -1,6 +1,7 @@
 # tenant-deploy-failed.service, tenant-deploy's OnFailure (./runner.nix):
-# tells the tenant that their commit failed to deploy, by posting the run's
-# log tail to their FAILURE_WEBHOOK, once per commit and stage.
+# tells the tenant that their commit failed to deploy, because its CI failed
+# or its stack wouldn't come up, by posting the run's log tail to their
+# FAILURE_WEBHOOK, once per commit and stage.
 #
 # A failure while fetching or decrypting is the platform's, not the tenant's
 # (a deploy key not yet added, GitHub down, prod.yaml not encrypted to the
@@ -12,7 +13,7 @@ run=/run/tenant-runner
 stage=$(cat "$run/stage" 2>/dev/null || echo unknown)
 commit=$(cat "$run/commit" 2>/dev/null || true)
 case $stage in
-  compose) ;;
+  ci | compose) ;;
   done)
     # The last run succeeded, so this one failed before the script ran (its
     # credential, its keys): the platform's.
