@@ -110,8 +110,20 @@ let
                 self.send_response(500)
                 self.end_headers()
                 return
-            query = urllib.parse.urlparse(self.path).query
-            sha = urllib.parse.parse_qs(query)["head_sha"][0]
+            # Only the question the runner must ask: this repo's runs of
+            # one commit, from pushes to main.
+            url = urllib.parse.urlparse(self.path)
+            query = urllib.parse.parse_qs(url.query)
+            if (
+                url.path != "/repos/test/runner/actions/runs"
+                or query.get("event") != ["push"]
+                or query.get("branch") != ["main"]
+            ):
+                (runs / "wrong-question").write_text(self.path)
+                self.send_response(404)
+                self.end_headers()
+                return
+            sha = query["head_sha"][0]
             found = runs / f"{sha}.json"
             none = b'{"workflow_runs": []}'
             body = found.read_bytes() if found.exists() else none
@@ -137,6 +149,7 @@ pkgs.testers.runNixOSTest {
     homeserver.tenantRunner.ciTokenFile = "/etc/tenant-ci-token";
     environment.etc."tenant-ci-token".text = "test-token\n";
     homeserver.tenantRunner.ciApi = "http://127.0.0.1:${toString ciPort}";
+    homeserver.tenantRunner.ciRepo = "test/runner";
     systemd.services.ci-stub = {
       wantedBy = [ "multi-user.target" ];
       serviceConfig.ExecStart = ciStub;

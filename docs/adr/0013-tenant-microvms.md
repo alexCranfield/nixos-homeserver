@@ -89,7 +89,9 @@ What mattered:
    deploys a commit only once that commit's CI on `main` has passed, asking
    GitHub's Actions API with a read-only token (`ci_token` in sops). A push
    to `main` skips review but still can't reach production untested. Alex
-   chose this over paying for the plan.
+   chose this over paying for the plan. The gate is only as strict as the
+   workflow in the commit it gates, which the tenant writes: it stops an
+   untested or broken commit, not a tenant who weakens their own CI.
 5. **Dev and production have separate secrets.** The tenant's app secrets are
    sops files in their own repository: the production file is encrypted to
    the runner's key and the tenant's own key, the dev file to the dev VM's

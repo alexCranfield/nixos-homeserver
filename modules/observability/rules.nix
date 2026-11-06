@@ -362,8 +362,8 @@ let
             lib.optionals (tenantRunners != [ ]) [
               (event "TenantDeployFailing" {
                 expr = "tenant_deploy_platform_ok == 0";
-                summary = "{{ $labels.job }} cannot fetch or decrypt the tenant's repo (for ${t.TenantDeployFailing.for})";
-                description = "The deploy fails before the tenant's own stack: the deploy key or age key is not on the repo, the repo URL is wrong, GitHub is unreachable, or secrets/prod.yaml is not encrypted to the runner. The tenant is not told; see docs/runbooks/tenants.md.";
+                summary = "{{ $labels.job }} cannot fetch, check or decrypt the tenant's repo (for ${t.TenantDeployFailing.for})";
+                description = "The deploy fails before the tenant's own stack: the deploy key or age key is not on the repo, the repo URL is wrong, the CI token has expired or been revoked, GitHub is unreachable, or secrets/prod.yaml is not encrypted to the runner. The tenant is not told; see docs/runbooks/tenants.md.";
               })
               (event "TenantDeployStale" {
                 # The second arm: a runner that answers but has never

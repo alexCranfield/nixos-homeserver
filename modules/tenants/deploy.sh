@@ -104,21 +104,36 @@ fi
 echo "deploying $commit"
 
 stage checks
-# owner/repo, from either form of GitHub's URLs.
-slug=$(sed -E 's#^(ssh://)?git@github\.com[:/]##; s#^https://github\.com/##; s#\.git$##' <<<"$url")
+# owner/repo: $TENANT_CI_REPO if set, else from either form of GitHub's URLs.
+slug=${TENANT_CI_REPO:-$(sed -E 's#^(ssh://)?git@github\.com[:/]##; s#^https://github\.com/##; s#\.git$##' <<<"$url")}
 # In a file, not in curl's arguments, where `ps` would show it.
 printf 'Authorization: Bearer %s\n' "$(cat "$CREDENTIALS_DIRECTORY/ci-token")" >"$RUNTIME_DIRECTORY/auth"
-runs=$(curl --fail --silent --show-error --max-time 20 \
+# A redirect (the repo renamed or moved) is an error, not an empty answer:
+# `--location` with no redirects allowed makes curl fail on one.
+runs=$(curl --fail --silent --show-error --max-time 20 --location --max-redirs 0 \
   --header @"$RUNTIME_DIRECTORY/auth" --header 'Accept: application/vnd.github+json' \
-  "$TENANT_CI_API/repos/$slug/actions/runs?head_sha=$commit&event=push&per_page=50")
-ci=$(jq -r '.workflow_runs
+  "$TENANT_CI_API/repos/$slug/actions/runs?head_sha=$commit&event=push&branch=main&per_page=50")
+# An answer without the list is an error too, never "no runs yet".
+ci=$(jq -r '(.workflow_runs // error("no workflow_runs in the answer"))
   | if length == 0 or any(.[]; .status != "completed") then "pending"
     elif all(.[]; .conclusion == "success" or .conclusion == "skipped") then "success"
     else "failure" end' <<<"$runs")
 case $ci in
   pending)
     # Not a failure: the stack keeps running what it runs, and the metrics
-    # keep the last run's verdict.
+    # keep the last run's verdict. Unless it never ends: a commit whose CI
+    # hasn't passed in 6 hours (`[skip ci]`, a workflow that no longer runs
+    # on push) is the tenant's to fix, so it fails as CI.
+    since=$(sed -n "s/^$commit //p" "$state/pending" 2>/dev/null || true)
+    if [ -z "$since" ]; then
+      since=$(date +%s)
+      printf '%s %s\n' "$commit" "$since" >"$state/pending"
+    fi
+    if [ $(($(date +%s) - since)) -gt 21600 ]; then
+      stage ci
+      echo "CI has not passed on $commit in 6 hours: not deployed"
+      exit 1
+    fi
     echo "CI has not finished on $commit: deploying it once it passes"
     previous=$(sed -n 's/^tenant_deploy_success //p' "$metrics/tenant_deploy.prom" 2>/dev/null || true)
     write_metrics "${previous:-1}" 1

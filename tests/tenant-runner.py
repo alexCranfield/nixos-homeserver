@@ -7,8 +7,11 @@ def metrics():
     return run.succeed("curl -sf http://127.0.0.1:9100/metrics")
 
 
-def ci(sha, *runs):
+def ci(sha, *runs, raw=None):
     """Set the stub's CI runs for a commit: (status, conclusion) pairs."""
+    if raw is not None:
+        run.succeed(f"echo '{raw}' > /tmp/ci/{sha}.json")
+        return
     body = {
         "workflow_runs": [
             {"name": "CI", "status": s, "conclusion": c, "html_url": f"https://ci.test/{sha}"}
@@ -266,6 +269,36 @@ with subtest("an API that can't be asked is the platform's: Alex's metric, no po
     assert "tenant_deploy_platform_ok 0" in metrics()
     assert posts() == 3
     run.succeed("rm /tmp/ci/down")
+
+with subtest("an answer without the runs list is the platform's too"):
+    ci(red, raw='{"workflow_runs": null}')
+    run.fail("systemctl start tenant-deploy.service")
+    assert "tenant_deploy_platform_ok 0" in metrics()
+    assert posts() == 3
+
+with subtest("a cancelled run is a failure, not a pass"):
+    run.succeed("echo '# cancelled' >> /work/Dockerfile")
+    cancelled = commit("cancelled", passed=False)
+    ci(cancelled, ("completed", "success"), ("completed", "cancelled"))
+    run.fail("systemctl start tenant-deploy.service")
+    run.wait_until_succeeds("test -e /tmp/webhook/003.json", timeout=60)
+    assert f'tenant_deploy_info{{commit="{waiting}"}} 1' in metrics()
+
+with subtest("a commit whose CI never runs fails after 6 hours, and the tenant hears"):
+    run.succeed("echo '# skip ci' >> /work/Dockerfile")
+    skipped = commit("[skip ci]", passed=False)
+    run.succeed("systemctl start tenant-deploy.service")
+    run.succeed(f"grep -q '^{skipped} ' {STATE}/pending")
+    # As if the first wait were 6 hours and a minute ago.
+    run.succeed(f"echo {skipped} $(($(date +%s) - 21660)) > {STATE}/pending")
+    run.fail("systemctl start tenant-deploy.service")
+    run.wait_until_succeeds("test -e /tmp/webhook/004.json", timeout=60)
+    body = json.loads(run.succeed("cat /tmp/webhook/004.json"))
+    assert f"CI has not passed on {skipped} in 6 hours" in body["content"], body
+    assert f'tenant_deploy_info{{commit="{waiting}"}} 1' in metrics()
+
+with subtest("the runner asked only for its repo's runs from pushes to main"):
+    run.fail("cat /tmp/ci/wrong-question")
 
 with subtest("the token reaches the API from a file, not curl's arguments"):
     # The stub refuses a request without it, so the deploys above sent it;

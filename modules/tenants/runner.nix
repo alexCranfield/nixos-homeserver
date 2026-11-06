@@ -104,6 +104,11 @@ in
       default = "https://api.github.com";
       description = "GitHub's API, asked whether a commit's CI (continuous integration) passed.";
     };
+    ciRepo = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "The repository's `owner/name` on GitHub. Null: taken from its URL.";
+    };
     scrapeFrom = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -193,7 +198,10 @@ in
           ("repo-url" + lib.optionalString (cfg.repoUrlFile != null) ":${cfg.repoUrlFile}")
           ("ci-token" + lib.optionalString (cfg.ciTokenFile != null) ":${cfg.ciTokenFile}")
         ];
-        Environment = "TENANT_CI_API=${cfg.ciApi}";
+        Environment = [
+          "TENANT_CI_API=${cfg.ciApi}"
+        ]
+        ++ lib.optional (cfg.ciRepo != null) "TENANT_CI_REPO=${cfg.ciRepo}";
         RuntimeDirectory = "tenant-deploy";
         RuntimeDirectoryMode = "0700";
         UMask = "0077";

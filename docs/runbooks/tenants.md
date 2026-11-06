@@ -79,10 +79,11 @@ The recipe exits non-zero if any probe goes the wrong way.
 `tenant-run` deploys the tenant's private repo (`modules/tenants/runner.nix`,
 6.9). Every 5 minutes `tenant-deploy.service` runs `modules/tenants/deploy.sh`:
 1. **Fetch:** fetch `main` with the VM's deploy key. If it's the commit already deployed in this boot, stop there. After a reboot the same commit is deployed again, so the stack comes back even where a container has no restart policy.
-2. **CI (continuous integration):** ask GitHub's Actions API for the commit's workflow runs from its push to `main`. This is the production gate, since the private repo's plan can't enforce a ruleset (ADR 0013).
-   - **Wait:** no run yet, or one still running. Nothing changes; the next run asks again.
+2. **CI (continuous integration):** ask GitHub's Actions API for the commit's workflow runs from its push to `main` (`event=push&branch=main`). This is the production gate, since the private repo's plan can't enforce a ruleset (ADR 0013).
+   - **Wait:** no run yet, or one still running. Nothing changes; the next run asks again. After 6 hours of waiting (`[skip ci]`, a workflow that no longer runs on push) the commit counts as failed.
    - **Pass:** every run succeeded or was skipped. Go on.
-   - **Fail:** anything else. The tenant hears, and the commit is never deployed.
+   - **Fail:** anything else, a cancelled run included. The tenant hears, and the commit is never deployed.
+   - An answer that isn't a list of runs (a redirect from a renamed repo, an error body) is the platform's fault, not a wait.
 3. **Decrypt:** decrypt `secrets/prod.yaml` with the VM's age key into a dotenv file that only this run can read; systemd removes it when the run ends.
 4. **Compose:** `docker compose --project-name tenant up --detach --build --remove-orphans --wait --wait-timeout 600` in the checkout, then prune unused images.
 
