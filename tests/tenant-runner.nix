@@ -8,7 +8,10 @@
 # node, `run`. In place of GitHub, a bare repository in the node at a
 # `file://` URL; in place of a registry, an image built by Nix and loaded,
 # which the fixture's Dockerfile builds on. In place of the tenant's webhook,
-# a receiver on the node that keeps each post. The node's own deploy timer is
+# a receiver on the node that keeps each post. In place of GitHub's Actions
+# API, a stub answering each commit's CI runs from /tmp/ci/<commit>.json,
+# which the test writes, refusing any request without the test's token, and
+# noting any process whose command line holds the token. The node's own deploy timer is
 # off: the test starts each deploy.
 {
   pkgs,
@@ -78,6 +81,69 @@ let
 
     http.server.HTTPServer(("127.0.0.1", ${toString port}), Handler).serve_forever()
   '';
+  ciPort = 8098;
+  ciStub = pkgs.writers.writePython3 "ci-stub" { } ''
+    import http.server
+    import pathlib
+    import urllib.parse
+
+    runs = pathlib.Path("/tmp/ci")
+    runs.mkdir(exist_ok=True)
+
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            # While the deploy's curl waits for this answer, no process may
+            # carry the token in its command line, where `ps` shows it.
+            for cmdline in pathlib.Path("/proc").glob("[0-9]*/cmdline"):
+                try:
+                    if b"test-token" in cmdline.read_bytes():
+                        (runs / "leaked").write_text(str(cmdline))
+                except OSError:
+                    pass
+            (runs / "asked").touch()
+            if self.headers.get("Authorization") != "Bearer test-token":
+                self.send_response(401)
+                self.end_headers()
+                return
+            if (runs / "down").exists():
+                self.send_response(500)
+                self.end_headers()
+                return
+            if (runs / "moved").exists():
+                self.send_response(301)
+                self.send_header("Location", "/repos/test/renamed/actions/runs")
+                self.end_headers()
+                return
+            if (runs / "empty").exists():
+                self.send_response(200)
+                self.end_headers()
+                return
+            # Only the question the runner must ask: this repo's runs of
+            # one commit, from pushes to main.
+            url = urllib.parse.urlparse(self.path)
+            query = urllib.parse.parse_qs(url.query)
+            if (
+                url.path != "/repos/test/runner/actions/runs"
+                or query.get("event") != ["push"]
+                or query.get("branch") != ["main"]
+            ):
+                (runs / "wrong-question").write_text(self.path)
+                self.send_response(404)
+                self.end_headers()
+                return
+            sha = query["head_sha"][0]
+            found = runs / f"{sha}.json"
+            none = b'{"workflow_runs": []}'
+            body = found.read_bytes() if found.exists() else none
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+
+    http.server.HTTPServer(("127.0.0.1", ${toString ciPort}), Handler).serve_forever()
+  '';
 in
 pkgs.testers.runNixOSTest {
   name = "tenant-runner";
@@ -89,7 +155,20 @@ pkgs.testers.runNixOSTest {
 
     homeserver.tenantRunner.repoUrlFile = "/etc/tenant-repo-url";
     environment.etc."tenant-repo-url".text = "file:///srv/repo.git\n";
+    homeserver.tenantRunner.ciTokenFile = "/etc/tenant-ci-token";
+    environment.etc."tenant-ci-token".text = "test-token\n";
+    homeserver.tenantRunner.ciApi = "http://127.0.0.1:${toString ciPort}";
+    homeserver.tenantRunner.ciRepo = "test/runner";
+    systemd.services.ci-stub = {
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig.ExecStart = ciStub;
+    };
     systemd.timers.tenant-deploy.wantedBy = lib.mkForce [ ];
+    # The test starts the deploy back to back, many times failing on purpose,
+    # and each failure starts the handler; under KVM that is more than
+    # systemd's default 5 starts in 10 s for either unit.
+    systemd.services.tenant-deploy.startLimitIntervalSec = 0;
+    systemd.services.tenant-deploy-failed.startLimitIntervalSec = 0;
 
     systemd.services.webhook = {
       wantedBy = [ "multi-user.target" ];

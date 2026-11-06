@@ -125,6 +125,16 @@ in
       '';
     };
 
+    ciTokenSecret = lib.mkOption {
+      type = lib.types.str;
+      default = "tenant-ci-token";
+      description = ''
+        The sops secret holding a read-only GitHub token for the private
+        repo's Actions runs (`ci_token` in secrets/tenant.yaml), passed to a
+        runner VM as its credential `ci-token`.
+      '';
+    };
+
     hostAddress = lib.mkOption {
       type = lib.types.str;
       default = "${cfg.subnet}.1";
@@ -145,7 +155,10 @@ in
         ++ lib.optionals vm.runner [
           ./runner.nix
           {
-            microvm.credentialFiles.repo-url = config.sops.secrets.${cfg.repoUrlSecret}.path;
+            microvm.credentialFiles = {
+              repo-url = config.sops.secrets.${cfg.repoUrlSecret}.path;
+              ci-token = config.sops.secrets.${cfg.ciTokenSecret}.path;
+            };
             homeserver.tenantRunner.scrapeFrom = cfg.hostAddress;
           }
         ]
@@ -195,6 +208,11 @@ in
     ${cfg.repoUrlSecret} = {
       sopsFile = ../../secrets/tenant.yaml;
       key = "repo_url";
+      owner = "microvm";
+    };
+    ${cfg.ciTokenSecret} = {
+      sopsFile = ../../secrets/tenant.yaml;
+      key = "ci_token";
       owner = "microvm";
     };
   };

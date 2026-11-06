@@ -31,8 +31,8 @@ tests:
               job: tenant-run
               instance: 10.88.0.3:9100
             exp_annotations:
-              summary: "tenant-run cannot fetch or decrypt the tenant's repo (for 30m)"
-              description: "The deploy fails before the tenant's own stack: the deploy key or age key is not on the repo, the repo URL is wrong, GitHub is unreachable, or secrets/prod.yaml is not encrypted to the runner. The tenant is not told; see docs/runbooks/tenants.md."
+              summary: "tenant-run cannot fetch, check or decrypt the tenant's repo (for 30m)"
+              description: "The deploy fails before the tenant's own stack: the deploy key or age key is not on the repo, the repo URL is wrong, the CI token has expired or been revoked, GitHub is unreachable, or secrets/prod.yaml is not encrypted to the runner. The tenant is not told; see docs/runbooks/tenants.md."
 
   # TenantRunnerDown, for 5m, in place of TargetDown, which stays quiet for
   # a tenant job.

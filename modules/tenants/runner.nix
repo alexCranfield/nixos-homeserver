@@ -8,9 +8,10 @@
 #    which decrypts its secrets/prod.yaml. Neither leaves the VM; their public
 #    halves are in /var/lib/tenant-runner/{deploy_key,age}.pub for Alex to add
 #    to the repo (docs/runbooks/tenants.md). Losing /var makes new ones.
-#  - tenant-deploy, every 5 minutes (./deploy.sh): fetch `main`, decrypt the
-#    secrets into a file only the run can read, `docker compose up` the
-#    tenant's stack. Nothing happens while `main` is unchanged and deployed.
+#  - tenant-deploy, every 5 minutes (./deploy.sh): fetch `main`, check that
+#    its CI passed on GitHub (the production gate), decrypt the secrets into
+#    a file only the run can read, `docker compose up` the tenant's stack.
+#    Nothing happens while `main` is unchanged and deployed.
 #  - A failed deploy posts its log tail to the tenant's webhook
 #    (./deploy-failed.sh), once per commit. A failure to fetch or decrypt is
 #    the platform's and alerts Alex through the metrics instead.
@@ -42,6 +43,8 @@ let
       pkgs.git
       pkgs.openssh
       pkgs.sops
+      pkgs.curl
+      pkgs.jq
       config.virtualisation.docker.package
     ];
     text = builtins.readFile ./deploy.sh;
@@ -85,6 +88,26 @@ in
         A file holding the URL of the repository to deploy. Null: the system
         credential `repo-url`, which the host passes into the VM from sops.
       '';
+    };
+    ciTokenFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        A file holding a read-only GitHub token for the repository's Actions
+        runs, which the deploy checks before deploying a commit. Null: the
+        system credential `ci-token`, which the host passes into the VM from
+        sops.
+      '';
+    };
+    ciApi = lib.mkOption {
+      type = lib.types.str;
+      default = "https://api.github.com";
+      description = "GitHub's API, asked whether a commit's CI (continuous integration) passed.";
+    };
+    ciRepo = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "The repository's `owner/name` on GitHub. Null: taken from its URL.";
     };
     scrapeFrom = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
@@ -171,7 +194,14 @@ in
       serviceConfig = {
         Type = "oneshot";
         ExecStart = lib.getExe deploy;
-        LoadCredential = "repo-url" + lib.optionalString (cfg.repoUrlFile != null) ":${cfg.repoUrlFile}";
+        LoadCredential = [
+          ("repo-url" + lib.optionalString (cfg.repoUrlFile != null) ":${cfg.repoUrlFile}")
+          ("ci-token" + lib.optionalString (cfg.ciTokenFile != null) ":${cfg.ciTokenFile}")
+        ];
+        Environment = [
+          "TENANT_CI_API=${cfg.ciApi}"
+        ]
+        ++ lib.optional (cfg.ciRepo != null) "TENANT_CI_REPO=${cfg.ciRepo}";
         RuntimeDirectory = "tenant-deploy";
         RuntimeDirectoryMode = "0700";
         UMask = "0077";
