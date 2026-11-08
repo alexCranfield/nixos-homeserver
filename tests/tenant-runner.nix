@@ -46,6 +46,9 @@ let
     cat >$out/Dockerfile <<'EOF'
     FROM probe:test
     COPY hello /hello
+    # As the template's image does: the job is not root, so it reads its
+    # code only if the checkout left the files readable.
+    USER 10001
     CMD ["sh", "/hello"]
     EOF
     cat >$out/hello <<'EOF'
