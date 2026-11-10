@@ -86,10 +86,18 @@ let
 
       out=${state}/metrics/tenant_containers.prom
       running=() code=() restarts=()
-      ids=$(docker ps --all --quiet --filter label=com.docker.compose.project=tenant)
+      # Docker down: no file rather than the last one, which would say the
+      # stack still runs.
+      if ! ids=$(docker ps --all --quiet --filter label=com.docker.compose.project=tenant \
+        --filter label=com.docker.compose.oneoff=False); then
+        rm -f "$out"
+        exit 1
+      fi
       if [ -n "$ids" ]; then
+        # A container a deploy removes between the two calls is left out.
         # shellcheck disable=SC2086 # one id a word
-        list=$(docker inspect --format '{{.Name}} {{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}' $ids)
+        list=$(docker inspect --format '{{.Name}} {{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}' \
+          $ids 2>/dev/null || true)
         while read -r name status exit count; do
           name=''${name#/}
           # Docker's own rule for names; a label value needs no escaping then.

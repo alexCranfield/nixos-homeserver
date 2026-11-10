@@ -34,12 +34,17 @@ metrics=$state/metrics
 stage() { printf '%s\n' "$1" >"$run/stage"; }
 
 # The stack's containers, one a line: id, /name, state, exit code, restarts.
+# Not `docker compose run`'s one-offs, which `up` neither starts nor removes.
+# A container removed between the two calls is left out: inspect fails on it
+# but still prints the rest.
 containers() {
   local ids
-  ids=$(docker ps --all --quiet --filter label=com.docker.compose.project=tenant)
+  ids=$(docker ps --all --quiet --filter label=com.docker.compose.project=tenant \
+    --filter label=com.docker.compose.oneoff=False)
   [ -n "$ids" ] || return 0
   # shellcheck disable=SC2086 # one id a word
-  docker inspect --format '{{.Id}} {{.Name}} {{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}' $ids
+  docker inspect --format '{{.Id}} {{.Name}} {{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}' \
+    $ids 2>/dev/null || true
 }
 
 # Metrics: whether the last run deployed, whether the platform's part of it
@@ -216,14 +221,17 @@ while read -r id name status code restarts; do
   [ -n "$id" ] || continue
   name=${name#/}
   restarted=$((restarts - ${before[$id]:-0}))
-  if [ "$restarted" -gt 0 ] || [ "$status" = restarting ]; then
-    unsettled+=("$name restarted $restarted times in ${TENANT_SETTLE_SECONDS}s")
+  if [ "$restarted" -gt 0 ]; then
+    unsettled+=("$name restarted $restarted times since compose up")
+  elif [ "$status" = restarting ]; then
+    unsettled+=("$name is restarting, after exiting with status $code")
   elif [ "$status" != running ] && [ "$code" != 0 ]; then
     unsettled+=("$name exited with status $code")
   else
     continue
   fi
-  docker logs --tail 10 "$name" 2>&1 | sed "s/^/  $name: /" || true
+  # Short, so the post's last 30 lines (1500 characters) keep the summary.
+  docker logs --tail 5 "$name" 2>&1 | cut -c1-160 | sed "s/^/  $name: /" || true
 done <<<"$list"
 if [ ${#unsettled[@]} -gt 0 ]; then
   echo "the stack did not stay up:"

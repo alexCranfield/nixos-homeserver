@@ -207,7 +207,7 @@ tests:
               description: "A container of the tenant's stack keeps crashing and Docker keeps restarting it, so its jobs are not running. Usually the tenant's code: its log is `docker logs` in the VM; see docs/runbooks/tenants.md."
 
   # TenantStackDown: a container stopped with a failure, for 15m. One that
-  # exited 0 (a one-off, done) and one that runs are not down.
+  # exited 0, one that runs, and one that Docker keeps restarting are not.
   - interval: 15s
     input_series:
       - series: 'tenant_container_running{job="tenant-run",instance="10.88.0.3:9100",container="tenant-cron-1"}'
@@ -222,6 +222,14 @@ tests:
         values: "1x80"
       - series: 'tenant_container_exit_code{job="tenant-run",instance="10.88.0.3:9100",container="tenant-web-1"}'
         values: "137x80"
+      # In a crash loop: restarting, so not running, most of the time. That
+      # is TenantStackRestarting's, not this.
+      - series: 'tenant_container_running{job="tenant-run",instance="10.88.0.3:9100",container="tenant-loop-1"}'
+        values: "0x80"
+      - series: 'tenant_container_exit_code{job="tenant-run",instance="10.88.0.3:9100",container="tenant-loop-1"}'
+        values: "1x80"
+      - series: 'tenant_container_restarts_total{job="tenant-run",instance="10.88.0.3:9100",container="tenant-loop-1"}'
+        values: "0+0.25x80"
     alert_rule_test:
       - eval_time: 885s
         alertname: TenantStackDown

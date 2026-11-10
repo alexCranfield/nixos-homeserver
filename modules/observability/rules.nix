@@ -408,7 +408,12 @@ let
                 description = "A container of the tenant's stack keeps crashing and Docker keeps restarting it, so its jobs are not running. Usually the tenant's code: its log is `docker logs` in the VM; see docs/runbooks/tenants.md.";
               })
               (event "TenantStackDown" {
-                expr = "tenant_container_running == 0 and tenant_container_exit_code != 0";
+                # Not one in a crash loop, which is restarting (and so not
+                # running) most of the time: TenantStackRestarting's.
+                expr = ''
+                  (tenant_container_running == 0 and tenant_container_exit_code != 0)
+                    unless on(job, instance, container) increase(tenant_container_restarts_total[15m]) > 0
+                '';
                 summary = "{{ $labels.job }}'s container {{ $labels.container }} stopped with a failure (for ${t.TenantStackDown.for})";
                 description = "A container of the tenant's stack exited with a non-zero status and is not being restarted (its restart policy is `no`, or `on-failure` gave up), so its jobs are not running. See docs/runbooks/tenants.md.";
               })

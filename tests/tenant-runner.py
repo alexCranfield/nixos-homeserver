@@ -352,7 +352,7 @@ with subtest("a stack that crashes once it is up fails the deploy; the tenant he
     content = json.loads(run.succeed("cat /tmp/webhook/005.json"))["content"]
     assert f"deploying {crash[:12]} failed" in content, content
     assert "the stack did not stay up:" in content, content
-    assert "tenant-cron-1 restarted" in content, content
+    assert "tenant-cron-1 restarted" in content or "tenant-cron-1 is restarting" in content, content
     # The container's own log, for the tenant to read.
     assert "tenant-cron-1: crashing" in content, content
     m = metrics()
@@ -385,9 +385,10 @@ with subtest("negative control: a stack that stays up deploys, after the same wa
     run.succeed("cp /tmp/Dockerfile.good /work/Dockerfile")
     steady = commit("stays up")
     run.succeed("systemctl start tenant-deploy.service")
+    # This run's journal alone: earlier deploys waited too.
     run.succeed(
-        "journalctl -u tenant-deploy.service -o cat | "
-        "grep -c '^waiting 20s for the stack to settle$' | grep -qv '^0$'"
+        "journalctl -o cat _SYSTEMD_INVOCATION_ID=$(systemctl show -p InvocationID --value "
+        "tenant-deploy.service) | grep -x 'waiting 20s for the stack to settle'"
     )
     m = metrics()
     assert f'tenant_deploy_info{{commit="{steady}"}} 1' in m, m
