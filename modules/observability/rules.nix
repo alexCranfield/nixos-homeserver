@@ -71,6 +71,9 @@ let
     # (TimeoutStartSec), so 40 minutes without a run's end, held for 15 more.
     TenantDeployStale.for = "15m";
     TenantRunnerDown.for = "5m";
+    # A container of the tenant's stack stopped with a failure and Docker
+    # isn't restarting it (#210). Longer than a deploy's rebuild.
+    TenantStackDown.for = "15m";
 
     # Threshold alerts: long durations, to ignore normal busy spells.
     DiskFilling = {
@@ -117,6 +120,10 @@ let
     };
     TenantDiskFull = {
       value = 85; # percent of the VM's /var used
+      for = "10m";
+    };
+    TenantStackRestarting = {
+      value = 2; # restarts of one container in 15 minutes
       for = "10m";
     };
     TenantVmRestartLoop = {
@@ -392,6 +399,18 @@ let
                 '';
                 summary = "{{ $labels.job }}'s /var is ${pct}% full (threshold ${thr "TenantDiskFull"})";
                 description = "The VM's one persistent volume, holding Docker's images and the tenant's data, is filling up. Old images, or a job writing too much.";
+              })
+              (threshold "TenantStackRestarting" {
+                expr = ''
+                  increase(tenant_container_restarts_total[15m]) > ${toString t.TenantStackRestarting.value}
+                '';
+                summary = "{{ $labels.job }}'s container {{ $labels.container }} restarted ${pct} times in 15 minutes (threshold above ${toString t.TenantStackRestarting.value} for ${t.TenantStackRestarting.for})";
+                description = "A container of the tenant's stack keeps crashing and Docker keeps restarting it, so its jobs are not running. Usually the tenant's code: its log is `docker logs` in the VM; see docs/runbooks/tenants.md.";
+              })
+              (event "TenantStackDown" {
+                expr = "tenant_container_running == 0 and tenant_container_exit_code != 0";
+                summary = "{{ $labels.job }}'s container {{ $labels.container }} stopped with a failure (for ${t.TenantStackDown.for})";
+                description = "A container of the tenant's stack exited with a non-zero status and is not being restarted (its restart policy is `no`, or `on-failure` gave up), so its jobs are not running. See docs/runbooks/tenants.md.";
               })
             ]
             ++ lib.optionals (tenantVms != [ ]) [

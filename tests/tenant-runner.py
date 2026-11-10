@@ -328,3 +328,71 @@ with subtest("the token reaches the API from a file, not curl's arguments"):
     # it looked at every command line while each request was open.
     run.succeed("test -e /tmp/ci/asked")
     run.fail("cat /tmp/ci/leaked")
+
+
+def restarts(name):
+    """The container's restart count, from the runner's metrics."""
+    run.succeed("systemctl start tenant-job-metrics.service")
+    m = metrics()
+    prefix = f'tenant_container_restarts_total{{container="{name}"}} '
+    lines = [line for line in m.splitlines() if line.startswith(prefix)]
+    assert len(lines) == 1, m
+    return int(lines[0].removeprefix(prefix))
+
+
+with subtest("a stack that crashes once it is up fails the deploy; the tenant hears once"):
+    # Up long enough for `compose up --wait` to pass it (#210), then down.
+    run.succeed("cp /work/Dockerfile /tmp/Dockerfile.good")
+    run.succeed(
+        "echo 'CMD [\"sh\", \"-c\", \"echo crashing; sleep 8; exit 1\"]' >> /work/Dockerfile"
+    )
+    crash = commit("crashes 8 s after it starts")
+    run.fail("systemctl start tenant-deploy.service")
+    run.wait_until_succeeds("test -e /tmp/webhook/005.json", timeout=60)
+    content = json.loads(run.succeed("cat /tmp/webhook/005.json"))["content"]
+    assert f"deploying {crash[:12]} failed" in content, content
+    assert "the stack did not stay up:" in content, content
+    assert "tenant-cron-1 restarted" in content, content
+    # The container's own log, for the tenant to read.
+    assert "tenant-cron-1: crashing" in content, content
+    m = metrics()
+    assert "tenant_deploy_success 0" in m, m
+    assert "tenant_deploy_platform_ok 1" in m, m
+    run.fail(f"grep -q '^{crash} ' {STATE}/deployed")
+
+with subtest("the crash loop shows in the container metrics, rising"):
+    first = restarts("tenant-cron-1")
+    assert first >= 1, first
+    assert 'tenant_container_running{container="tenant-cron-1"}' in metrics()
+    run.wait_until_succeeds(
+        "systemctl start tenant-job-metrics.service && "
+        "curl -sf http://127.0.0.1:9100/metrics | "
+        "awk -v p='tenant_container_restarts_total{container=\"tenant-cron-1\"}' "
+        f"'$1 == p {{ n = $2 }} END {{ exit !(n > {first}) }}'",
+        timeout=120,
+    )
+
+with subtest("retried, it fails the same way and is not posted again"):
+    run.fail("systemctl start tenant-deploy.service")
+    run.wait_until_succeeds(
+        "journalctl -u tenant-deploy-failed.service -o cat | "
+        f"grep -c 'already posted for {crash}' | grep -x 1",
+        timeout=60,
+    )
+    assert posts() == 6
+
+with subtest("negative control: a stack that stays up deploys, after the same wait"):
+    run.succeed("cp /tmp/Dockerfile.good /work/Dockerfile")
+    steady = commit("stays up")
+    run.succeed("systemctl start tenant-deploy.service")
+    run.succeed(
+        "journalctl -u tenant-deploy.service -o cat | "
+        "grep -c '^waiting 20s for the stack to settle$' | grep -qv '^0$'"
+    )
+    m = metrics()
+    assert f'tenant_deploy_info{{commit="{steady}"}} 1' in m, m
+    assert "tenant_deploy_success 1" in m, m
+    # A new container, so its count started again.
+    assert restarts("tenant-cron-1") == 0
+    assert 'tenant_container_running{container="tenant-cron-1"} 1' in metrics()
+    assert posts() == 6

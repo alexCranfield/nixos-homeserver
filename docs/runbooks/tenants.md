@@ -85,7 +85,8 @@ The recipe exits non-zero if any probe goes the wrong way.
    - **Fail:** anything else, a cancelled run included. The tenant hears, and the commit is never deployed.
    - An answer that isn't a list of runs (a redirect from a renamed repo, an error body) is the platform's fault, not a wait.
 3. **Decrypt:** decrypt `secrets/prod.yaml` with the VM's age key into a dotenv file that only this run can read; systemd removes it when the run ends.
-4. **Compose:** `docker compose --project-name tenant up --detach --build --remove-orphans --wait --wait-timeout 600` in the checkout, then prune unused images.
+4. **Compose:** `docker compose --project-name tenant up --detach --build --remove-orphans --wait --wait-timeout 600` in the checkout.
+5. **Settle:** `--wait` returns as soon as each container runs, so one that crashes a second later would pass it (#210). The deploy waits 30 seconds (`homeserver.tenantRunner.settleSeconds`), then fails if any of the stack's containers has restarted since `compose up`, is restarting, or has stopped with a non-zero status. A container that crashed before this deploy and that the deploy left alone counts only if it restarts again during the wait. Once it passes, the commit counts as deployed and unused images are pruned.
 
 **Keys.** The VM makes its own keys on first boot (`tenant-runner-keys.service`)
 and keeps them in `/var/lib/tenant-runner/keys`. They never leave the VM, so
@@ -108,10 +109,10 @@ which the repo's `compose.yml` uses:
 - `TENANT_SECRETS` is the decrypted dotenv file, for `env_file: ${TENANT_SECRETS}`. Docker copies the values into each container's configuration on `/var`, as with any `env_file`.
 - `TENANT_JOB_METRICS` is a directory for a bind mount. A job writes `<job>.prom` there, holding `tenant_job_last_exit{job="<job>"}` and `tenant_job_last_run_timestamp_seconds{job="<job>"}`. Every minute `tenant-job-metrics.service` copies the lines that name a `tenant_job_*` series, one sample per line, to node-exporter; it drops everything else.
 - `FAILURE_WEBHOOK` in `secrets/prod.yaml` is where failed deploys are posted. It takes a Discord or Slack incoming-webhook URL.
-- `--wait` needs every service to keep running (or turn healthy) within 10 minutes. A one-off container that exits fails the deploy.
+- `--wait` needs every service to keep running (or turn healthy) within 10 minutes. A one-off container that exits fails the deploy, even with status 0 (Compose's `container … exited (0)`, seen while testing #210).
 
 **When a deploy fails:**
-- **In the tenant's own code** (CI failed on the commit, a build or a container that won't start, or a run stopped at its 30-minute timeout, or by hand with `systemctl stop`): `tenant-deploy-failed.service` posts the run's last 30 log lines (at most 1500 characters) to `FAILURE_WEBHOOK`, once per commit. The last good commit keeps running, and the next run retries. A CI failure is posted with the webhook from the last decrypt, so it can't be posted after a reboot of the VM until a commit has got as far as decrypting.
+- **In the tenant's own code** (CI failed on the commit, a build or a container that won't start or won't stay up, or a run stopped at its 30-minute timeout, or by hand with `systemctl stop`): `tenant-deploy-failed.service` posts the run's last 30 log lines (at most 1500 characters) to `FAILURE_WEBHOOK`, once per commit. The next run retries. Where the failure came before `compose up` replaced the containers (CI, the build), the last good commit keeps running. Where a container didn't stay up, the containers already run the new commit; the post ends with each failing container's last 10 log lines and a line saying so. A CI failure is posted with the webhook from the last decrypt, so it can't be posted after a reboot of the VM until a commit has got as far as decrypting.
 - **Fetching, asking about CI, or decrypting:** this is the platform's fault, and the tenant isn't told. The cause is a deploy key or age recipient that hasn't been added, a wrong URL, an expired or revoked `ci_token`, GitHub being down, or a `prod.yaml` not encrypted to the runner. The metric `tenant_deploy_platform_ok` drops to 0, and after 30 minutes `TenantDeployFailing` posts to Alex's alerts channel.
 
 ```bash
@@ -126,7 +127,7 @@ curl -s localhost:9100/metrics | grep ^tenant_
 
 **Metrics and alerts.**
 - Prometheus on the host scrapes the VM's node-exporter at `10.88.0.3:9100`, as the job `tenant-run`. It keeps only:
-  - the `tenant_*` series: `tenant_deploy_success`, `tenant_deploy_platform_ok`, `tenant_deploy_last_run_timestamp_seconds`, `tenant_deploy_last_success_timestamp_seconds`, `tenant_deploy_info{commit}`, and the jobs'. A job's own `job` label becomes `exported_job` in Prometheus, since `job` is the scrape job's (`tenant-run`);
+  - the `tenant_*` series: `tenant_deploy_success`, `tenant_deploy_platform_ok`, `tenant_deploy_last_run_timestamp_seconds`, `tenant_deploy_last_success_timestamp_seconds`, `tenant_deploy_info{commit}`, the jobs', and for each of the stack's containers `tenant_container_running{container}`, `tenant_container_exit_code{container}` and `tenant_container_restarts_total{container}` (Docker's restart count). `tenant-job-metrics.service` reads the containers' from Docker every minute and writes them in a file of its own, so no job's file can set them. A job's own `job` label becomes `exported_job` in Prometheus, since `job` is the scrape job's (`tenant-run`);
   - the VM's filesystem sizes, renamed `tenant_filesystem_*` so the host's own disk alerts never read them.
 - Alex's alerts (`modules/observability/rules.nix`, group `homeserver-tenants`):
   - `TenantDeployFailing`: the fetch or decrypt has failed for 30 minutes;
@@ -134,6 +135,8 @@ curl -s localhost:9100/metrics | grep ^tenant_
   - `TenantRunnerDown`: no scrape for 5 minutes, unless `microvm@tenant-run` has failed, which the notifier posts;
   - `TenantDiskFull`: `/var` is above 85% full for 10 minutes;
   - `TenantVmRestartLoop`: a tenant VM's `microvm@` unit has restarted more than twice in 30 minutes. It restarts forever and so never reaches the failed state.
+  - `TenantStackRestarting`: one of the stack's containers has restarted more than twice in 15 minutes, held for 10. It crashes and its restart policy brings it back, so its jobs don't run. This catches a crash loop that starts long after a good deploy, which the deploy's settle check can't see; after a failed settle the tenant has had a post and Alex gets this one too.
+  - `TenantStackDown`: a container has stopped with a non-zero status and isn't restarted (restart policy `no`, or `on-failure` that gave up), for 15 minutes. A container that exited 0 isn't down.
 - The tenant has root over their stack, and so over the VM, so they could write false metrics, which would hide a failed deploy from `TenantDeployFailing` too. The host's own view of the VM (`up`, `microvm@`) is out of their reach.
 
 ## The tenant's lifecycle
@@ -170,6 +173,13 @@ with its own README. This section is the platform's side.
 
 `TenantDeployStale` with no stage change means the timer or the keys unit;
 look at `systemctl status tenant-deploy.timer tenant-runner-keys`.
+
+`TenantStackRestarting` and `TenantStackDown` name the container. The
+cause is nearly always the tenant's code: read its log with
+`sudo docker logs --tail 50 <container>` in the VM, and pass it on to the
+tenant. A deploy of a fixed commit replaces the container and resets its
+count. The platform's causes are a full `/var` (`TenantDiskFull`) and the
+VM's memory (`dmesg | grep -i oom`).
 
 **Offboarding.**
 1. Revoke the dev VM's Tailscale share and its device.

@@ -10,14 +10,15 @@
 #    to the repo (docs/runbooks/tenants.md). Losing /var makes new ones.
 #  - tenant-deploy, every 5 minutes (./deploy.sh): fetch `main`, check that
 #    its CI passed on GitHub (the production gate), decrypt the secrets into
-#    a file only the run can read, `docker compose up` the tenant's stack.
+#    a file only the run can read, `docker compose up` the tenant's stack,
+#    and fail if the stack doesn't stay up for `settleSeconds` after.
 #    Nothing happens while `main` is unchanged and deployed.
 #  - A failed deploy posts its log tail to the tenant's webhook
 #    (./deploy-failed.sh), once per commit. A failure to fetch or decrypt is
 #    the platform's and alerts Alex through the metrics instead.
-#  - node-exporter serves the deploy's metrics and the jobs' (from the
-#    repo's `run-job` wrapper) to the host's Prometheus, and the size of
-#    /var, and nothing else about the VM.
+#  - node-exporter serves the deploy's metrics, the jobs' (from the repo's
+#    `run-job` wrapper) and the stack's containers' (from Docker) to the
+#    host's Prometheus, and the size of /var, and nothing else about the VM.
 #
 # The stack gets two variables for its compose file: TENANT_SECRETS, the
 # decrypted dotenv file (for `env_file:`), and TENANT_JOB_METRICS, the
@@ -63,17 +64,52 @@ let
   # deploy series, and a malformed line can't break the collector's other
   # files. The tenant controls the stack, so this keeps out mistakes, not
   # intent (ADR 0013).
+  #
+  # Then the stack's containers, from Docker, in a file of the unit's own:
+  # whether each runs, how it last exited and how often Docker restarted it
+  # (#210). A crash loop that starts hours after a good deploy shows only
+  # here, in Alex's TenantStackRestarting and TenantStackDown.
   jobMetrics = pkgs.writeShellApplication {
     name = "tenant-job-metrics";
     runtimeInputs = [
       pkgs.coreutils
       pkgs.gnugrep
+      config.virtualisation.docker.package
     ];
     text = ''
       out=${state}/metrics/tenant_jobs.prom
       find ${state}/job-metrics -maxdepth 1 -name '*.prom' -type f -exec cat {} + |
         { grep -E '^tenant_job_[a-z_]+\{job="[A-Za-z0-9_.-]+"\} [0-9.eE+-]+$' || true; } |
         sort -u >"$out.tmp"
+      chmod 0644 "$out.tmp"
+      mv "$out.tmp" "$out"
+
+      out=${state}/metrics/tenant_containers.prom
+      running=() code=() restarts=()
+      ids=$(docker ps --all --quiet --filter label=com.docker.compose.project=tenant)
+      if [ -n "$ids" ]; then
+        # shellcheck disable=SC2086 # one id a word
+        list=$(docker inspect --format '{{.Name}} {{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}' $ids)
+        while read -r name status exit count; do
+          name=''${name#/}
+          # Docker's own rule for names; a label value needs no escaping then.
+          [[ $name =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || continue
+          running+=("tenant_container_running{container=\"$name\"} $([ "$status" = running ] && echo 1 || echo 0)")
+          code+=("tenant_container_exit_code{container=\"$name\"} $exit")
+          restarts+=("tenant_container_restarts_total{container=\"$name\"} $count")
+        done <<<"$list"
+      fi
+      {
+        echo '# HELP tenant_container_running Whether the container of the tenant stack is running.'
+        echo '# TYPE tenant_container_running gauge'
+        printf '%s\n' "''${running[@]}"
+        echo '# HELP tenant_container_exit_code The status the container last exited with.'
+        echo '# TYPE tenant_container_exit_code gauge'
+        printf '%s\n' "''${code[@]}"
+        echo '# HELP tenant_container_restarts_total How often Docker restarted the container under its restart policy.'
+        echo '# TYPE tenant_container_restarts_total counter'
+        printf '%s\n' "''${restarts[@]}"
+      } | grep -v '^$' >"$out.tmp"
       chmod 0644 "$out.tmp"
       mv "$out.tmp" "$out"
     '';
@@ -108,6 +144,14 @@ in
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = "The repository's `owner/name` on GitHub. Null: taken from its URL.";
+    };
+    settleSeconds = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 30;
+      description = ''
+        How long a newly brought-up stack must keep its containers up, with
+        no restarts, before the deploy counts as done.
+      '';
     };
     scrapeFrom = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
@@ -200,6 +244,7 @@ in
         ];
         Environment = [
           "TENANT_CI_API=${cfg.ciApi}"
+          "TENANT_SETTLE_SECONDS=${toString cfg.settleSeconds}"
         ]
         ++ lib.optional (cfg.ciRepo != null) "TENANT_CI_REPO=${cfg.ciRepo}";
         RuntimeDirectory = "tenant-deploy";
@@ -226,7 +271,8 @@ in
     };
 
     systemd.services.tenant-job-metrics = {
-      description = "Copy the tenant's job metrics to node-exporter";
+      description = "Copy the tenant's job metrics, and its containers' state, to node-exporter";
+      after = [ "docker.service" ];
       serviceConfig = {
         Type = "oneshot";
         ExecStart = lib.getExe jobMetrics;

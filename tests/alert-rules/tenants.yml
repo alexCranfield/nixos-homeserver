@@ -176,3 +176,64 @@ tests:
       - eval_time: 900s
         alertname: TenantDeployStale
         exp_alerts: []
+
+  # TenantStackRestarting: one of the tenant's containers restarted more
+  # than 2 times in 15 minutes, held for 10m (#210). Here tenant-cron-1
+  # starts crash-looping at 915 s, once a minute; tenant-steady-1 restarted
+  # 3 times long ago and no more, and tenant-new-1 was recreated (its count
+  # back to 0) by a deploy: neither is a loop.
+  - interval: 15s
+    input_series:
+      - series: 'tenant_container_restarts_total{job="tenant-run",instance="10.88.0.3:9100",container="tenant-cron-1"}'
+        values: "0x60 0+0.25x120"
+      - series: 'tenant_container_restarts_total{job="tenant-run",instance="10.88.0.3:9100",container="tenant-steady-1"}'
+        values: "3x180"
+      - series: 'tenant_container_restarts_total{job="tenant-run",instance="10.88.0.3:9100",container="tenant-new-1"}'
+        values: "5x90 0x90"
+    alert_rule_test:
+      - eval_time: 1500s
+        alertname: TenantStackRestarting
+        exp_alerts: []
+      - eval_time: 2700s
+        alertname: TenantStackRestarting
+        exp_alerts:
+          - exp_labels:
+              severity: threshold
+              job: tenant-run
+              instance: 10.88.0.3:9100
+              container: tenant-cron-1
+            exp_annotations:
+              summary: "tenant-run's container tenant-cron-1 restarted 15 times in 15 minutes (threshold above 2 for 10m)"
+              description: "A container of the tenant's stack keeps crashing and Docker keeps restarting it, so its jobs are not running. Usually the tenant's code: its log is `docker logs` in the VM; see docs/runbooks/tenants.md."
+
+  # TenantStackDown: a container stopped with a failure, for 15m. One that
+  # exited 0 (a one-off, done) and one that runs are not down.
+  - interval: 15s
+    input_series:
+      - series: 'tenant_container_running{job="tenant-run",instance="10.88.0.3:9100",container="tenant-cron-1"}'
+        values: "0x80"
+      - series: 'tenant_container_exit_code{job="tenant-run",instance="10.88.0.3:9100",container="tenant-cron-1"}'
+        values: "1x80"
+      - series: 'tenant_container_running{job="tenant-run",instance="10.88.0.3:9100",container="tenant-migrate-1"}'
+        values: "0x80"
+      - series: 'tenant_container_exit_code{job="tenant-run",instance="10.88.0.3:9100",container="tenant-migrate-1"}'
+        values: "0x80"
+      - series: 'tenant_container_running{job="tenant-run",instance="10.88.0.3:9100",container="tenant-web-1"}'
+        values: "1x80"
+      - series: 'tenant_container_exit_code{job="tenant-run",instance="10.88.0.3:9100",container="tenant-web-1"}'
+        values: "137x80"
+    alert_rule_test:
+      - eval_time: 885s
+        alertname: TenantStackDown
+        exp_alerts: []
+      - eval_time: 900s
+        alertname: TenantStackDown
+        exp_alerts:
+          - exp_labels:
+              severity: event
+              job: tenant-run
+              instance: 10.88.0.3:9100
+              container: tenant-cron-1
+            exp_annotations:
+              summary: "tenant-run's container tenant-cron-1 stopped with a failure (for 15m)"
+              description: "A container of the tenant's stack exited with a non-zero status and is not being restarted (its restart policy is `no`, or `on-failure` gave up), so its jobs are not running. See docs/runbooks/tenants.md."

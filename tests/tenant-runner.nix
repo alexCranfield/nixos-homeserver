@@ -11,8 +11,8 @@
 # a receiver on the node that keeps each post. In place of GitHub's Actions
 # API, a stub answering each commit's CI runs from /tmp/ci/<commit>.json,
 # which the test writes, refusing any request without the test's token, and
-# noting any process whose command line holds the token. The node's own deploy timer is
-# off: the test starts each deploy.
+# noting any process whose command line holds the token. The node's own
+# deploy timer is off: the test starts each deploy.
 {
   pkgs,
   lib,
@@ -162,6 +162,9 @@ pkgs.testers.runNixOSTest {
     environment.etc."tenant-ci-token".text = "test-token\n";
     homeserver.tenantRunner.ciApi = "http://127.0.0.1:${toString ciPort}";
     homeserver.tenantRunner.ciRepo = "test/runner";
+    # Shorter than production's 30 s, which would add up over the test's
+    # many deploys; longer than the crashing fixture below takes to crash.
+    homeserver.tenantRunner.settleSeconds = 20;
     systemd.services.ci-stub = {
       wantedBy = [ "multi-user.target" ];
       serviceConfig.ExecStart = ciStub;
