@@ -159,6 +159,11 @@ rm -f "$state/pending"
 
 git -C "$repo" checkout --quiet --force --detach "$commit"
 git -C "$repo" clean --quiet -ffdx
+# The unit's umask (077, for the decrypted secrets) leaves the checkout
+# readable by root only, and the image copies those modes, so a job running
+# as a user of its own couldn't read its code. Give it the modes any other
+# checkout has, CI's included; inside the VM the code is no secret.
+chmod -R a+rX "$repo"
 
 stage decrypt
 env=$RUNTIME_DIRECTORY/prod.env
