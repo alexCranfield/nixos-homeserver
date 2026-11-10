@@ -384,12 +384,14 @@ with subtest("retried, it fails the same way and is not posted again"):
 with subtest("negative control: a stack that stays up deploys, after the same wait"):
     run.succeed("cp /tmp/Dockerfile.good /work/Dockerfile")
     steady = commit("stays up")
-    run.succeed("systemctl start tenant-deploy.service")
-    # This run's journal alone: earlier deploys waited too.
-    run.succeed(
-        "journalctl -o cat _SYSTEMD_INVOCATION_ID=$(systemctl show -p InvocationID --value "
-        "tenant-deploy.service) | grep -x 'waiting 20s for the stack to settle'"
+    # Earlier deploys waited too, so count this run's line alone.
+    waits = (
+        "journalctl -u tenant-deploy.service -o cat | "
+        "grep -cx 'waiting 20s for the stack to settle' || true"
     )
+    before = int(run.succeed(waits))
+    run.succeed("systemctl start tenant-deploy.service")
+    assert int(run.succeed(waits)) == before + 1
     m = metrics()
     assert f'tenant_deploy_info{{commit="{steady}"}} 1' in m, m
     assert "tenant_deploy_success 1" in m, m
