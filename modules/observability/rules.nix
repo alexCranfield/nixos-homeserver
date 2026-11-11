@@ -71,6 +71,9 @@ let
     # (TimeoutStartSec), so 40 minutes without a run's end, held for 15 more.
     TenantDeployStale.for = "15m";
     TenantRunnerDown.for = "5m";
+    # Docker in a runner doesn't answer (#215). Five listings, past a
+    # daemon restart.
+    TenantDockerDown.for = "5m";
     # A container of the tenant's stack stopped with a failure and Docker
     # isn't restarting it (#210). Longer than a deploy's rebuild.
     TenantStackDown.for = "15m";
@@ -369,8 +372,8 @@ let
             lib.optionals (tenantRunners != [ ]) [
               (event "TenantDeployFailing" {
                 expr = "tenant_deploy_platform_ok == 0";
-                summary = "{{ $labels.job }} cannot fetch, check or decrypt the tenant's repo (for ${t.TenantDeployFailing.for})";
-                description = "The deploy fails before the tenant's own stack: the deploy key or age key is not on the repo, the repo URL is wrong, the CI token has expired or been revoked, GitHub is unreachable, or secrets/prod.yaml is not encrypted to the runner. The tenant is not told; see docs/runbooks/tenants.md.";
+                summary = "{{ $labels.job }} cannot fetch, check or decrypt the tenant's repo, or reach Docker (for ${t.TenantDeployFailing.for})";
+                description = "The deploy fails before the tenant's own stack: the deploy key or age key is not on the repo, the repo URL is wrong, the CI token has expired or been revoked, GitHub is unreachable, secrets/prod.yaml is not encrypted to the runner, or Docker in the VM does not answer. The tenant is not told; see docs/runbooks/tenants.md.";
               })
               (event "TenantDeployStale" {
                 # The second arm: a runner that answers but has never
@@ -383,6 +386,18 @@ let
                 '') tenantRunners;
                 summary = "{{ $labels.job }} has not finished a deploy run for 40 minutes (for ${t.TenantDeployStale.for})";
                 description = "A deploy run starts 5 minutes after the last one ended and is stopped at 30, and every run, good or bad, writes its time. None has: the timer is stopped, a run hangs, or the unit fails before its script (tenant-runner-keys, the repo-url credential). The tenant is not told; see docs/runbooks/tenants.md.";
+              })
+              (event "TenantDockerDown" {
+                # The second arm: a runner that answers but has never
+                # written the file (its metrics timer never ran).
+                expr = ''
+                  tenant_docker_up == 0
+                ''
+                + lib.concatMapStrings (vm: ''
+                  or (absent(tenant_docker_up{job="${vm}"}) and on() up{job="${vm}"} == 1)
+                '') tenantRunners;
+                summary = "Docker in {{ $labels.job }} does not answer (for ${t.TenantDockerDown.for})";
+                description = "`docker ps` in the VM fails or hangs, or the VM has never said whether it answers. The tenant's jobs may not be running and no commit is deployed; the tenant is not told. See docs/runbooks/tenants.md.";
               })
               (event "TenantRunnerDown" {
                 rideOutGaps = false;

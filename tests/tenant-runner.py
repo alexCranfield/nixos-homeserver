@@ -399,3 +399,55 @@ with subtest("negative control: a stack that stays up deploys, after the same wa
     assert restarts("tenant-cron-1") == 0
     assert 'tenant_container_running{container="tenant-cron-1"} 1' in metrics()
     assert posts() == 6
+
+
+def docker_up():
+    """The runner's tenant_docker_up, or None if it isn't there."""
+    for line in metrics().splitlines():
+        if line.startswith("tenant_docker_up "):
+            return line.split()[1]
+    return None
+
+
+with subtest("with Docker answering, its gauge is 1"):
+    run.succeed("systemctl start tenant-job-metrics.service")
+    assert docker_up() == "1", metrics()
+
+with subtest("Docker hung is the platform's: the gauge drops, no post to the tenant"):
+    # Hung, not stopped: a stopped Docker starts again from its socket, or
+    # from the deploy, which wants it. The containers' shims keep running.
+    run.succeed("systemctl kill --kill-whom=main --signal=SIGSTOP docker.service")
+    # Left to the timer, which runs every minute: within 2 minutes.
+    run.wait_until_succeeds(
+        "curl -sf http://127.0.0.1:9100/metrics | grep -x 'tenant_docker_up 0'", timeout=120
+    )
+    m = metrics()
+    # The containers' file is gone rather than stale.
+    assert "tenant_container_running" not in m, m
+    run.succeed("echo '# docker down' >> /work/Dockerfile")
+    down = commit("deployed while Docker is down")
+    run.fail("systemctl start tenant-deploy.service")
+    run.succeed("journalctl -u tenant-deploy.service -o cat | grep -Fx 'Docker does not answer: not deployed'")
+    run.wait_until_succeeds(
+        "journalctl -u tenant-deploy-failed.service -o cat | "
+        "grep -F 'failed at the docker stage, a platform fault'",
+        timeout=60,
+    )
+    m = metrics()
+    assert "tenant_deploy_platform_ok 0" in m, m
+    assert f'tenant_deploy_info{{commit="{down}"}}' not in m, m
+    # Still hung: nothing started it again behind the test's back.
+    run.succeed("ps -o stat= -p $(systemctl show -p MainPID --value docker.service) | grep -q T")
+    assert posts() == 6
+
+with subtest("negative control: Docker back, the gauge is 1 and the commit deploys"):
+    run.succeed("systemctl kill --kill-whom=main --signal=SIGCONT docker.service")
+    run.succeed("systemctl start tenant-job-metrics.service")
+    assert docker_up() == "1", metrics()
+    run.succeed("systemctl start tenant-deploy.service")
+    run.succeed("systemctl start tenant-job-metrics.service")
+    m = metrics()
+    assert f'tenant_deploy_info{{commit="{down}"}} 1' in m, m
+    assert "tenant_deploy_platform_ok 1" in m, m
+    assert 'tenant_container_running{container="tenant-cron-1"} 1' in m, m
+    assert posts() == 6
