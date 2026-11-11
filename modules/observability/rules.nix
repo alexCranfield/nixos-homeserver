@@ -397,7 +397,7 @@ let
                   or (absent(tenant_docker_up{job="${vm}"}) and on() up{job="${vm}"} == 1)
                 '') tenantRunners;
                 summary = "Docker in {{ $labels.job }} does not answer (for ${t.TenantDockerDown.for})";
-                description = "`docker ps` in the VM fails or hangs, or the VM has never said whether it answers. The tenant's jobs are not running and no commit is deployed; the tenant is not told. See docs/runbooks/tenants.md.";
+                description = "`docker ps` in the VM fails or hangs, or the VM has never said whether it answers. The tenant's jobs may not be running and no commit is deployed; the tenant is not told. See docs/runbooks/tenants.md.";
               })
               (event "TenantRunnerDown" {
                 rideOutGaps = false;

@@ -413,9 +413,10 @@ with subtest("with Docker answering, its gauge is 1"):
     run.succeed("systemctl start tenant-job-metrics.service")
     assert docker_up() == "1", metrics()
 
-with subtest("Docker down is the platform's: the gauge drops, no post to the tenant"):
-    # Both, or the next `docker` command would start it again from the socket.
-    run.succeed("systemctl stop docker.socket docker.service")
+with subtest("Docker hung is the platform's: the gauge drops, no post to the tenant"):
+    # Hung, not stopped: a stopped Docker starts again from its socket, or
+    # from the deploy, which wants it. The containers' shims keep running.
+    run.succeed("systemctl kill --kill-whom=main --signal=SIGSTOP docker.service")
     # Left to the timer, which runs every minute: within 2 minutes.
     run.wait_until_succeeds(
         "curl -sf http://127.0.0.1:9100/metrics | grep -x 'tenant_docker_up 0'", timeout=120
@@ -435,14 +436,16 @@ with subtest("Docker down is the platform's: the gauge drops, no post to the ten
     m = metrics()
     assert "tenant_deploy_platform_ok 0" in m, m
     assert f'tenant_deploy_info{{commit="{down}"}}' not in m, m
-    run.fail("systemctl is-active docker.service")
+    # Still hung: nothing started it again behind the test's back.
+    run.succeed("ps -o stat= -p $(systemctl show -p MainPID --value docker.service) | grep -q T")
     assert posts() == 6
 
 with subtest("negative control: Docker back, the gauge is 1 and the commit deploys"):
-    run.succeed("systemctl start docker.socket docker.service")
+    run.succeed("systemctl kill --kill-whom=main --signal=SIGCONT docker.service")
     run.succeed("systemctl start tenant-job-metrics.service")
     assert docker_up() == "1", metrics()
     run.succeed("systemctl start tenant-deploy.service")
+    run.succeed("systemctl start tenant-job-metrics.service")
     m = metrics()
     assert f'tenant_deploy_info{{commit="{down}"}} 1' in m, m
     assert "tenant_deploy_platform_ok 1" in m, m

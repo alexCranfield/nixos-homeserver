@@ -48,7 +48,7 @@ containers() {
 }
 
 # Metrics: whether the last run deployed, whether the platform's part of it
-# (fetching and decrypting) worked, when a run last ended (Alex's alert on a
+# (fetching, asking about CI, decrypting, reaching Docker) worked, when a run last ended (Alex's alert on a
 # runner that stopped deploying at all), when it last deployed and which
 # commit.
 write_metrics() {
@@ -59,7 +59,7 @@ write_metrics() {
 # HELP tenant_deploy_success Whether the last deploy run succeeded.
 # TYPE tenant_deploy_success gauge
 tenant_deploy_success $success
-# HELP tenant_deploy_platform_ok Whether the last run fetched and decrypted, the platform's part.
+# HELP tenant_deploy_platform_ok Whether the last run got past the platform's part: fetch, CI check, decrypt, Docker.
 # TYPE tenant_deploy_platform_ok gauge
 tenant_deploy_platform_ok $platform_ok
 # HELP tenant_deploy_last_run_timestamp_seconds When a deploy run last ended, either way.

@@ -14,8 +14,9 @@
 #    and fail if the stack doesn't stay up for `settleSeconds` after.
 #    Nothing happens while `main` is unchanged and deployed.
 #  - A failed deploy posts its log tail to the tenant's webhook
-#    (./deploy-failed.sh), once per commit. A failure to fetch or decrypt is
-#    the platform's and alerts Alex through the metrics instead.
+#    (./deploy-failed.sh), once per commit. A failure to fetch, ask about
+#    CI, decrypt or reach Docker is the platform's and alerts Alex through
+#    the metrics instead.
 #  - node-exporter serves the deploy's metrics, the jobs' (from the repo's
 #    `run-job` wrapper) and the stack's containers' (from Docker) to the
 #    host's Prometheus, and the size of /var, and nothing else about the VM.
@@ -111,6 +112,8 @@ let
       fi
       if [ -n "$ids" ]; then
         # A container a deploy removes between the two calls is left out.
+        # One that hangs here, after `ps` answered, leaves the file empty
+        # but tenant_docker_up 1: rare, and the next run tries again.
         # shellcheck disable=SC2086 # one id a word
         list=$(timeout 20 docker inspect --format '{{.Name}} {{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}' \
           $ids 2>/dev/null || true)

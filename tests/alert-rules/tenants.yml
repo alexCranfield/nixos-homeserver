@@ -270,7 +270,7 @@ tests:
               instance: 10.88.0.3:9100
             exp_annotations: &dockerdown
               summary: "Docker in tenant-run does not answer (for 5m)"
-              description: "`docker ps` in the VM fails or hangs, or the VM has never said whether it answers. The tenant's jobs are not running and no commit is deployed; the tenant is not told. See docs/runbooks/tenants.md."
+              description: "`docker ps` in the VM fails or hangs, or the VM has never said whether it answers. The tenant's jobs may not be running and no commit is deployed; the tenant is not told. See docs/runbooks/tenants.md."
 
   # A runner that answers scrapes but has never written the series.
   - interval: 15s
@@ -289,8 +289,8 @@ tests:
               job: tenant-run
             exp_annotations: *dockerdown
 
-  # Not while the runner itself is down (TenantRunnerDown's), nor while
-  # Docker answers.
+  # Not while the runner itself is down: TenantRunnerDown's. (Docker
+  # answering is the first test's 585 s check.)
   - interval: 15s
     input_series:
       - series: 'up{job="tenant-run",instance="10.88.0.3:9100"}'
