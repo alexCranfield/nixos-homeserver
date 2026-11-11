@@ -7,7 +7,7 @@
 #    keeps their home in /var, the VM's one persistent volume; the rest of
 #    the root is rebuilt at every boot.
 #  - Their tools: git, gh, sops, age, Node.js and Claude Code. Claude Code is
-#    unfree, allowed by name alone (./unfree.nix, set by the host). It comes from nixpkgs, so
+#    unfree, allowed by name alone (./unfree.nix, applied by the host). It comes from nixpkgs, so
 #    it updates with this repository's nixpkgs, not by itself.
 #  - Its own tailscaled, joined once with a single-use auth key tagged
 #    `tag:tenant-dev` (the credential `tailscale-auth-key`). Alex shares the

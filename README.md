@@ -196,7 +196,7 @@ modules/tenants/default.nix        homeserver.tenants.vms: one microVM each, its
 modules/tenants/guest-base.nix     what every tenant VM is: qemu, tmpfs root, a /var volume, the read-only store, its tap, SSH from the host, credentials
 modules/tenants/smoke.sh           the probes `just tenant-smoke` runs inside each VM
 modules/tenants/dev.nix            tenant-dev: the tenant's login and home in /var, sudo, Docker, tools and Claude Code, its own tailscaled, its deploy and age keys
-modules/tenants/unfree.nix         the one unfree package allowed: Claude Code, for tenant-dev
+modules/tenants/unfree.nix         the one unfree package allowed (a predicate): Claude Code, for tenant-dev
 modules/tenants/runner.nix         tenant-run's job runner: its own keys, the 5-minute deploy of the private repo, metrics, failure posts
 modules/tenants/deploy.sh          the deploy: fetch main, decrypt prod.yaml, docker compose up
 modules/tenants/deploy-failed.sh   a failed deploy's post to the tenant's webhook, once per commit

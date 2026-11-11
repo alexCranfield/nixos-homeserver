@@ -21,7 +21,7 @@ let
 in
 pkgs.testers.runNixOSTest {
   name = "tenant-dev";
-  # Each node gets its own nixpkgs, which unfree.nix configures, rather than
+  # Each node gets its own nixpkgs, which allows Claude Code, rather than
   # the test's read-only one.
   node.pkgsReadOnly = false;
 
@@ -29,8 +29,8 @@ pkgs.testers.runNixOSTest {
     imports = [
       ../modules/base/ssh.nix
       ../modules/tenants/dev.nix
-      ../modules/tenants/unfree.nix
     ];
+    nixpkgs.config.allowUnfreePredicate = import ../modules/tenants/unfree.nix lib;
     virtualisation.memorySize = 2048;
     virtualisation.diskSize = 4096;
     # nftables, as ./guest-base.nix gives the real VM.

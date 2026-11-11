@@ -43,7 +43,6 @@ in
     ./dns.nix
     ./network.nix
     ./state.nix
-    ./unfree.nix
   ];
 
   options.homeserver.tenants = {
@@ -302,6 +301,11 @@ in
   config.homeserver.alerting.tenants = lib.mkIf (!inVm) {
     vms = lib.attrNames cfg.vms;
     runners = lib.attrNames runners;
+  };
+
+  # Claude Code, for the dev VM, which is built from these packages.
+  config.nixpkgs.config = lib.mkIf (!inVm && devs != { }) {
+    allowUnfreePredicate = import ./unfree.nix lib;
   };
 
   config.homeserver.notify.units = lib.mkIf (!inVm) (
