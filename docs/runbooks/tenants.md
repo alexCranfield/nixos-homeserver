@@ -6,8 +6,8 @@ reach, is ADR (Architecture Decision Record) 0013. The code is in
 `modules/tenants/` and `hosts/nuc/tenants.nix`.
 
 This runbook grows with tickets 6.7 to 6.12 (#197 to #202). So far: the VMs
-(6.8), their network and the state directory (6.7), and the runner (6.9).
-The dev environment comes in 6.10.
+(6.8), their network and the state directory (6.7), the runner (6.9) and the
+dev VM (6.10).
 
 ## The VMs
 
@@ -49,6 +49,7 @@ are accepted, the nuc included.
 - Inside, the credential sits in `/run/credentials/@system`, readable by root. A unit that declares `LoadCredential=<name>` gets its own copy, readable by that unit alone.
 - `probe`, in both VMs, isn't a secret; `tenant-credential-check.service` reads it to show the path works.
 - `repo-url`, in `tenant-run`: the private repo's URL, from `repo_url` in `secrets/tenant.yaml` (below).
+- `tenant-ssh-key` and `tailscale-auth-key`, in `tenant-dev`: the tenant's SSH public key and the VM's Tailscale auth key, from `dev_ssh_key` and `dev_tailscale_auth_key` (below).
 
 **Smoke test.** From the workstation, after any change to the tenant
 network, firewall or DNS:
@@ -141,6 +142,42 @@ curl -s localhost:9100/metrics | grep ^tenant_
   - `TenantStackDown`: a container has stopped with a non-zero status and hasn't been restarted for 15 minutes (restart policy `no`, or `on-failure` that gave up), held for 15. A container that exited 0 isn't down, and one in a crash loop is `TenantStackRestarting`'s.
 - The tenant has root over their stack, and so over the VM, so they could write false metrics, which would hide a failed deploy from `TenantDeployFailing` too. The host's own view of the VM (`up`, `microvm@`) is out of their reach.
 
+## The dev VM
+
+`tenant-dev` is where the tenant works (`modules/tenants/dev.nix`, 6.10):
+- **Login:** user `tenant`, over a Tailscale share (`ssh tenant@tenant-dev.<tailnet name>.ts.net` from their own device), with the public key `dev_ssh_key` from `secrets/tenant.yaml`. The VM reads it into `/run/tenant-ssh/tenant`, a file the tenant can't edit; a key they add to `~/.ssh/authorized_keys` works as well, since they are root there anyway.
+- **Home:** `/var/home/tenant`, on the persistent `/var`, so it survives restarts and deploys. So does Docker's data. Everything else outside the store is lost at each boot: install tools in the home, or ask Alex to add them to `dev.nix`.
+- **Rights:** passwordless sudo, and Docker.
+- **Tools:** git, gh, sops, age, Node.js, jq and Claude Code. They come from this repo's nixpkgs, so Claude Code updates when the flake is bumped, not by itself. The tenant logs Claude Code in with their own account.
+- **Tailscale:** its own `tailscaled`, tagged `tag:tenant-dev`, with only port 22 open on `tailscale0`. Its lookups stay on the tenants' Blocky (`--accept-dns=false`), not MagicDNS. The tag is never a source in the policy, so the VM can't start a connection to any device on the tailnet; the host's rules keep it off the LAN whatever its Tailscale flags say.
+- **GitHub:** `~/.ssh/id_ed25519` is a deploy key with write access on the private repo and nothing else. `git push` works with it; pull requests are opened in the browser, or with `gh` if the tenant logs it in with their own account, which would give anything in the VM their whole GitHub account.
+- **Secrets:** `~/.config/sops/age/keys.txt`, where sops looks by default, is the VM's age key. It is a recipient of `secrets/dev.yaml` in the private repo and never of `prod.yaml`, so nothing in dev decrypts production. The tenant's own age key is never copied in.
+
+`tenant-dev-keys.service` makes both keys on first boot, as the tenant, and
+leaves existing ones alone. Their public halves are copied to where Alex can
+read them:
+
+```bash
+ssh -J ops@nuc ops@10.88.0.2 cat /var/lib/tenant-dev/deploy_key.pub /var/lib/tenant-dev/age.pub
+```
+
+**Setting it up**, once (and again after the VM's `/var` is lost, which makes new keys and a new tailnet device):
+1. **The tailnet.** Add `tag:tenant-dev` and its grant to the access policy, and generate its auth key, as in [tailscale.md](tailscale.md).
+2. **In sops.** Run `sops secrets/tenant.yaml` on the workstation and add:
+   - `dev_tailscale_auth_key`: that auth key;
+   - `dev_ssh_key`: the tenant's SSH public key, one line (`ssh-ed25519 AAAA… comment`). `tenant-ssh-key.service` fails on anything else.
+   Both must be there before the change that adds them is deployed: the host's sops-nix refuses to activate with a key missing.
+3. **Deploy and read the keys** with the command above.
+4. **Deploy key.** Add `deploy_key.pub` to the private repo (Settings → Deploy keys) with "Allow write access" ticked. It reaches that repo alone.
+5. **age recipient.** Add `age.pub` to the private repo's `.sops.yaml` rule for `secrets/dev.yaml` only, then `sops updatekeys secrets/dev.yaml` there and merge.
+6. **Share** the device with the tenant ([tailscale.md](tailscale.md)).
+
+**Checking it**, after setup:
+- From the tenant's device: `ssh tenant@tenant-dev.<tailnet name>.ts.net`, then `claude --version`.
+- From inside the VM: `tailscale status` lists the VM and the tenant's devices only. A connection to the nuc's tailnet address, or any other device's, is refused: `nc -zv -w 5 <100.x address> 22` times out.
+- `just tenant-smoke` still passes: the LAN, the router and the nuc stay closed.
+- A push to `main` from the VM is deployed only once its CI passes on GitHub (the runner's gate, above).
+
 ## The tenant's lifecycle
 
 The tenant's side, a template of scheduled jobs, lives in their private repo
@@ -152,7 +189,7 @@ with its own README. This section is the platform's side.
 3. **Secrets.** Encrypt the repo's `secrets/prod.yaml` to the runner and to the tenant's own age key, and `secrets/dev.yaml` to the dev VM's key and theirs.
    - Until the tenant has a key, Alex's workstation key stands in for theirs, so Alex can enter `FAILURE_WEBHOOK`.
    - Swap it with `sops updatekeys` when they take over.
-4. **Dev VM.** Share it with the tenant over Tailscale (6.10, #200).
+4. **Dev VM.** Set it up and share it with the tenant, as in "The dev VM" above.
 
 **Rotating a key or token.**
 - **The deploy key or the runner's age key:** delete the key and its public copy, and restart `tenant-runner-keys`, which makes new ones. For the deploy key:
@@ -164,7 +201,9 @@ with its own README. This section is the platform's side.
 
   Then replace the deploy key on the repo. For the age key (`keys/age.key` and `age.pub`), replace the recipient in the repo's `.sops.yaml` and run `sops updatekeys secrets/prod.yaml` there.
 - **`ci_token`:** make a new token as in "Setting it up", put it in `secrets/tenant.yaml`, and revoke the old one once comin has deployed. An expired token stops every deploy, and `TenantDeployFailing` says so after 30 minutes.
-- **The dev VM's Tailscale auth key:** see 6.10 (#200).
+- **The dev VM's keys:** as the runner's, in the tenant's home: `~/.ssh/id_ed25519{,.pub}` and `~/.config/sops/age/keys.txt`, then `sudo systemctl restart tenant-dev-keys` and replace them on the repo. The tenant can do this themselves.
+- **The dev VM's Tailscale auth key** is used once, at the VM's first join, and its state is then in `/var`. A new one is needed only if `/var` is lost: generate it and replace `dev_tailscale_auth_key` in sops.
+- **The tenant's SSH key:** replace `dev_ssh_key` in sops; the VM picks it up when comin's deploy restarts it.
 
 **Reading the platform's alerts.** A tenant alert in Discord names the VM
 (`job="tenant-run"`). Check the runner's journal (the commands above) and
@@ -193,10 +232,10 @@ count. The platform's causes are a full `/var` (`TenantDiskFull`) and the
 VM's memory (`dmesg | grep -i oom`).
 
 **Offboarding.**
-1. Revoke the dev VM's Tailscale share and its device.
+1. Revoke the dev VM's Tailscale share, and remove the device from the Machines page.
 2. Remove the VMs from `hosts/nuc/tenants.nix` and their secrets from `secrets/tenant.yaml`, and merge.
 3. Delete their images on the nuc: `sudo rm -r /var/lib/microvms/tenant-*`.
-4. Delete the deploy key from the repo and revoke `ci_token`.
+4. Delete both deploy keys (the runner's and the dev VM's) from the repo, and revoke `ci_token`.
 5. Archive the private repo, or transfer it to the tenant.
 
 ## The network
