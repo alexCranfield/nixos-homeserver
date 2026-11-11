@@ -265,6 +265,9 @@ in
         sopsFile = ../../secrets/tenant.yaml;
         key = "dev_ssh_key";
         owner = "microvm";
+        # The VM reads its credentials at boot only, and a new key changes
+        # no configuration, so nothing else would restart it.
+        restartUnits = lib.mapAttrsToList (name: _: "microvm@${name}.service") devs;
       };
       ${cfg.devAuthKeySecret} = {
         sopsFile = ../../secrets/tenant.yaml;

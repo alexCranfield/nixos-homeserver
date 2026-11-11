@@ -180,7 +180,7 @@ the tenant isn't shared the nuc. Nothing names `tag:tenant-dev` as a
 source, so the VM can't start a connection to any device, the nuc and your
 own included; your own devices don't reach it either (use `ssh -J ops@nuc
 ops@10.88.0.2`). Add a check to the policy's `"tests"` section if you keep
-one, for example `{"src": "<email>", "deny": ["tag:tenant-dev:22"]}`.
+one, for example `{"src": "<your email>", "deny": ["tag:tenant-dev:22"]}`: your own login, a member the device isn't shared with.
 
 **The auth key.** Under Settings, then Keys, generate one as for the nuc,
 but **tagged `tag:tenant-dev`**: not reusable, pre-approved, not ephemeral.

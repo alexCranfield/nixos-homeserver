@@ -145,7 +145,7 @@ curl -s localhost:9100/metrics | grep ^tenant_
 ## The dev VM
 
 `tenant-dev` is where the tenant works (`modules/tenants/dev.nix`, 6.10):
-- **Login:** user `tenant`, over a Tailscale share (`ssh tenant@tenant-dev.<tailnet name>.ts.net` from their own device), with the public key `dev_ssh_key` from `secrets/tenant.yaml`. The VM reads it into `/run/tenant-ssh/tenant`, a file the tenant can't edit; a key they add to `~/.ssh/authorized_keys` works as well, since they are root there anyway.
+- **Login:** user `tenant`, over a Tailscale share (`ssh tenant@tenant-dev.<tailnet name>.ts.net` from their own device), with the public key `dev_ssh_key` from `secrets/tenant.yaml`. The VM reads it into `/run/tenant-ssh/tenant`, a file the tenant can't edit, and reads no `~/.ssh/authorized_keys`, so replacing the key in sops cuts the old one off. `dev_ssh_key` holds exactly one key, so the tenant uses the same key from each of their devices. They are root in the VM, so they could still let another key in until it restarts; the Tailscale share is what decides who reaches it at all.
 - **Home:** `/var/home/tenant`, on the persistent `/var`, so it survives restarts and deploys. So does Docker's data. Everything else outside the store is lost at each boot: install tools in the home, or ask Alex to add them to `dev.nix`.
 - **Rights:** passwordless sudo, and Docker.
 - **Tools:** git, gh, sops, age, Node.js, jq and Claude Code. They come from this repo's nixpkgs, so Claude Code updates when the flake is bumped, not by itself. The tenant logs Claude Code in with their own account.
@@ -203,7 +203,7 @@ with its own README. This section is the platform's side.
 - **`ci_token`:** make a new token as in "Setting it up", put it in `secrets/tenant.yaml`, and revoke the old one once comin has deployed. An expired token stops every deploy, and `TenantDeployFailing` says so after 30 minutes.
 - **The dev VM's keys:** as the runner's, in the tenant's home: `~/.ssh/id_ed25519{,.pub}` and `~/.config/sops/age/keys.txt`, then `sudo systemctl restart tenant-dev-keys` and replace them on the repo. The tenant can do this themselves.
 - **The dev VM's Tailscale auth key** is used once, at the VM's first join, and its state is then in `/var`. A new one is needed only if `/var` is lost: generate it and replace `dev_tailscale_auth_key` in sops.
-- **The tenant's SSH key:** replace `dev_ssh_key` in sops; the VM picks it up when comin's deploy restarts it.
+- **The tenant's SSH key:** replace `dev_ssh_key` in sops. When comin deploys it, sops-nix restarts `microvm@tenant-dev` (the VM reads its credentials at boot only), which ends any session in it. For a key that may be stolen, revoke the Tailscale share first: that cuts the tenant's devices off at once.
 
 **Reading the platform's alerts.** A tenant alert in Discord names the VM
 (`job="tenant-run"`). Check the runner's journal (the commands above) and

@@ -29,9 +29,13 @@ with subtest("first boot makes the keys in the tenant's home, and publishes thei
     assert AGE_PUB.startswith("age1"), AGE_PUB
     dev.succeed(f"journalctl -u tenant-dev-keys -o cat | grep -F '{AGE_PUB}'")
 
-with subtest("the keys survive a restart of their unit"):
+with subtest("the keys survive a restart of their unit, and a lost public half is made again"):
     before = dev.succeed(f"cat {STATE}/deploy_key.pub {STATE}/age.pub {HOME}/.ssh/id_ed25519")
     dev.succeed("systemctl restart tenant-dev-keys.service")
+    assert dev.succeed(f"cat {STATE}/deploy_key.pub {STATE}/age.pub {HOME}/.ssh/id_ed25519") == before
+    dev.succeed(f"rm {HOME}/.ssh/id_ed25519.pub")
+    dev.succeed("systemctl restart tenant-dev-keys.service")
+    # The same key; ssh-keygen -y keeps its comment.
     assert dev.succeed(f"cat {STATE}/deploy_key.pub {STATE}/age.pub {HOME}/.ssh/id_ed25519") == before
 
 with subtest("the tenant logs in with their key, and has Claude Code, sudo and Docker"):
@@ -47,6 +51,11 @@ with subtest("the tenant logs in with their key, and has Claude Code, sudo and D
 with subtest("negative control: another key is refused, for the tenant and for ops"):
     client.fail(f"{SSH} -i /root/stranger tenant@dev true")
     client.fail(f"{SSH} -i /root/tenant ops@dev true")
+
+with subtest("a key added to ~/.ssh/authorized_keys doesn't log in: sops is the only source"):
+    dev.succeed(f"install -o tenant -m 0600 {KEYS}/stranger.pub {HOME}/.ssh/authorized_keys")
+    client.fail(f"{SSH} -i /root/stranger tenant@dev true")
+    dev.succeed(f"rm {HOME}/.ssh/authorized_keys")
 
 with subtest("a key credential that isn't one public key fails its unit"):
     dev.succeed(f"cp {KEYS}/tenant.pub /tmp/good.pub")

@@ -3,7 +3,7 @@
 # ./guest-base.nix:
 #
 #  - The user `tenant`, who logs in over SSH with the key the host passes in
-#    from sops (the credential `tenant-ssh-key`), has sudo and Docker, and
+#    from sops (the credential `tenant-ssh-key`) and no other, has sudo and Docker, and
 #    keeps their home in /var, the VM's one persistent volume; the rest of
 #    the root is rebuilt at every boot.
 #  - Their tools: git, gh, sops, age, Node.js and Claude Code. Claude Code is
@@ -79,9 +79,11 @@ in
       ${state}.d.mode = "0755";
     };
 
-    # The key comes from a file in /run that the tenant can't edit, rather
-    # than one in their home; the ops key stays in /etc.
+    # The tenant's key comes from sops alone, through a file in /run they
+    # can't edit, and no ~/.ssh/authorized_keys is read: a key added there
+    # would outlive a key replaced in sops. The ops key stays in /etc.
     services.openssh.authorizedKeysFiles = [ "/run/tenant-ssh/%u" ];
+    services.openssh.authorizedKeysInHomedir = false;
     systemd.services.tenant-ssh-key = {
       description = "Install the tenant's SSH public key from its credential";
       wantedBy = [ "multi-user.target" ];
@@ -145,6 +147,10 @@ in
           ssh-keygen -q -t ed25519 -N "" -C "tenant-dev deploy key" -f ${deployKey}.new
           mv ${deployKey}.new.pub ${deployKey}.pub
           mv ${deployKey}.new ${deployKey}
+        fi
+        # A public half deleted on its own is made again from the key.
+        if [ ! -e ${deployKey}.pub ]; then
+          ssh-keygen -y -f ${deployKey} >${deployKey}.pub
         fi
         if [ ! -e ${ageKey} ]; then
           mkdir -p "$(dirname ${ageKey})"
