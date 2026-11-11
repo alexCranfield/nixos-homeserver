@@ -23,14 +23,29 @@
 #
 # The repository's URL is the credential `repo-url`, and a read-only GitHub
 # token for its Actions runs the credential `ci-token`; $TENANT_CI_API is the
-# API's address. The decrypted secrets and the token's header exist only in
-# $RUNTIME_DIRECTORY, which systemd removes when the run ends.
+# API's address, and $TENANT_SETTLE_SECONDS how long a new stack must stay up
+# before the deploy counts. The decrypted secrets and the token's header exist
+# only in $RUNTIME_DIRECTORY, which systemd removes when the run ends.
 state=/var/lib/tenant-runner
 repo=$state/repo
 run=/run/tenant-runner
 metrics=$state/metrics
 
 stage() { printf '%s\n' "$1" >"$run/stage"; }
+
+# The stack's containers, one a line: id, /name, state, exit code, restarts.
+# Not `docker compose run`'s one-offs, which `up` neither starts nor removes.
+# A container removed between the two calls is left out: inspect fails on it
+# but still prints the rest.
+containers() {
+  local ids
+  ids=$(docker ps --all --quiet --filter label=com.docker.compose.project=tenant \
+    --filter label=com.docker.compose.oneoff=False)
+  [ -n "$ids" ] || return 0
+  # shellcheck disable=SC2086 # one id a word
+  docker inspect --format '{{.Id}} {{.Name}} {{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}' \
+    $ids 2>/dev/null || true
+}
 
 # Metrics: whether the last run deployed, whether the platform's part of it
 # (fetching and decrypting) worked, when a run last ended (Alex's alert on a
@@ -183,9 +198,47 @@ fi
 
 stage compose
 cd "$repo"
+# The restarts each container already had, so one that crashed long before
+# this deploy, and that this deploy leaves alone, doesn't fail it.
+declare -A before=()
+list=$(containers)
+while read -r id _ _ _ restarts; do
+  [ -n "$id" ] && before[$id]=$restarts
+done <<<"$list"
 TENANT_SECRETS=$env TENANT_JOB_METRICS=$state/job-metrics \
   docker compose --project-name tenant up --detach --build --remove-orphans \
   --wait --wait-timeout 600
+# `--wait` returns once each container is running, so a container that
+# crashes a second later passes it (#210). Give the stack time to crash,
+# then fail if any container restarted since, is restarting, or stopped with
+# a failure. (One that exits 0 has already failed `--wait`, as Compose's
+# "exited (0)".)
+echo "waiting ${TENANT_SETTLE_SECONDS}s for the stack to settle"
+sleep "$TENANT_SETTLE_SECONDS"
+list=$(containers)
+unsettled=()
+while read -r id name status code restarts; do
+  [ -n "$id" ] || continue
+  name=${name#/}
+  restarted=$((restarts - ${before[$id]:-0}))
+  if [ "$restarted" -gt 0 ]; then
+    unsettled+=("$name restarted $restarted times since compose up")
+  elif [ "$status" = restarting ]; then
+    unsettled+=("$name is restarting, after exiting with status $code")
+  elif [ "$status" != running ] && [ "$code" != 0 ]; then
+    unsettled+=("$name exited with status $code")
+  else
+    continue
+  fi
+  # Short, so the post's last 30 lines (1500 characters) keep the summary.
+  docker logs --tail 5 "$name" 2>&1 | cut -c1-160 | sed "s/^/  $name: /" || true
+done <<<"$list"
+if [ ${#unsettled[@]} -gt 0 ]; then
+  echo "the stack did not stay up:"
+  printf '  %s\n' "${unsettled[@]}"
+  echo "its containers were already replaced, so they run $commit, not the last good commit"
+  exit 1
+fi
 # Done before the bookkeeping, so a TERM between these lines can't record
 # (and post) a failure for a deploy that is up.
 finished=1
