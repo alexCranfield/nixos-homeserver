@@ -69,6 +69,10 @@ let
   # whether each runs, how it last exited and how often Docker restarted it
   # (#210). A crash loop that starts hours after a good deploy shows only
   # here, in Alex's TenantStackRestarting and TenantStackDown.
+  #
+  # And whether Docker answers at all (#215), in a third file: Alex's
+  # TenantDockerDown. Docker starts on demand from docker.socket, so this is
+  # a daemon that won't start or has hung, not one merely stopped.
   jobMetrics = pkgs.writeShellApplication {
     name = "tenant-job-metrics";
     runtimeInputs = [
@@ -86,17 +90,29 @@ let
 
       out=${state}/metrics/tenant_containers.prom
       running=() code=() restarts=()
-      # Docker down: no file rather than the last one, which would say the
-      # stack still runs.
-      if ! ids=$(docker ps --all --quiet --filter label=com.docker.compose.project=tenant \
-        --filter label=com.docker.compose.oneoff=False); then
+      # A hung daemon is down too, and without the timeout would also stop
+      # the timer, which waits for this run to end.
+      up=1
+      ids=$(timeout 20 docker ps --all --quiet --filter label=com.docker.compose.project=tenant \
+        --filter label=com.docker.compose.oneoff=False) || up=0
+      {
+        echo '# HELP tenant_docker_up Whether Docker in the VM answered the last listing of the stack.'
+        echo '# TYPE tenant_docker_up gauge'
+        echo "tenant_docker_up $up"
+      } >${state}/metrics/tenant_docker.prom.tmp
+      chmod 0644 ${state}/metrics/tenant_docker.prom.tmp
+      mv ${state}/metrics/tenant_docker.prom.tmp ${state}/metrics/tenant_docker.prom
+      # Docker down: no containers' file rather than the last one, which
+      # would say the stack still runs.
+      if [ "$up" = 0 ]; then
+        echo "Docker does not answer" >&2
         rm -f "$out"
         exit 1
       fi
       if [ -n "$ids" ]; then
         # A container a deploy removes between the two calls is left out.
         # shellcheck disable=SC2086 # one id a word
-        list=$(docker inspect --format '{{.Name}} {{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}' \
+        list=$(timeout 20 docker inspect --format '{{.Name}} {{.State.Status}} {{.State.ExitCode}} {{.RestartCount}}' \
           $ids 2>/dev/null || true)
         while read -r name status exit count; do
           name=''${name#/}

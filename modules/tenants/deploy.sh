@@ -17,8 +17,8 @@
 #   $state/metrics/     node-exporter's textfile directory
 # and in /run/tenant-runner (tmpfs, kept between runs until a reboot):
 #   stage, commit       where this run got to (fetch, checks, ci, decrypt,
-#                       compose; `done` once it succeeded or is waiting for
-#                       CI), for tenant-deploy-failed
+#                       docker, compose; `done` once it succeeded or is
+#                       waiting for CI), for tenant-deploy-failed
 #   webhook             the tenant's FAILURE_WEBHOOK, from the last decrypt
 #
 # The repository's URL is the credential `repo-url`, and a read-only GitHub
@@ -194,6 +194,14 @@ if [ -n "$webhook" ]; then
   printf '%s\n' "$webhook" >"$run/webhook"
 else
   rm -f "$run/webhook"
+fi
+
+# Docker not answering is the platform's, not the tenant's (#215): without
+# this the compose stage would fail on it and post to the tenant.
+stage docker
+if ! timeout 60 docker info >/dev/null; then
+  echo "Docker does not answer: not deployed"
+  exit 1
 fi
 
 stage compose

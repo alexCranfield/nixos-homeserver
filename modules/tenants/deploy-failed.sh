@@ -3,9 +3,9 @@
 # or its stack wouldn't come up, by posting the run's log tail to their
 # FAILURE_WEBHOOK, once per commit and stage.
 #
-# A failure while fetching or decrypting is the platform's, not the tenant's
-# (a deploy key not yet added, GitHub down, prod.yaml not encrypted to the
-# runner's key): nothing is posted here, and Alex's TenantDeployFailing alert
+# A failure while fetching, decrypting or reaching Docker is the platform's,
+# not the tenant's (a deploy key not yet added, GitHub down, prod.yaml not
+# encrypted to the runner's key, Docker hung): nothing is posted here, and Alex's TenantDeployFailing alert
 # reads the metric deploy.sh wrote instead.
 state=/var/lib/tenant-runner
 run=/run/tenant-runner
