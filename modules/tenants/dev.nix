@@ -6,7 +6,8 @@
 #    from sops (the credential `tenant-ssh-key`) and no other, has sudo and Docker, and
 #    keeps their home in /var, the VM's one persistent volume; the rest of
 #    the root is rebuilt at every boot.
-#  - Their tools: git, gh, sops, age, Node.js and Claude Code. Claude Code is
+#  - Their tools: git, gh, sops, age, Node.js, Python, uv and Claude Code,
+#    and nix-ld for programs built outside Nix (#219). Claude Code is
 #    unfree, allowed by name alone (./unfree.nix, applied by the host). It comes from nixpkgs, so
 #    it updates with this repository's nixpkgs, not by itself.
 #  - Its own tailscaled, joined once with a single-use auth key tagged
@@ -178,7 +179,16 @@ in
       pkgs.nodejs
       pkgs.jq
       pkgs.claude-code
+      # The private repo's jobs are Python, run through uv (#219). uv uses
+      # this Python for a project that asks for 3.13.
+      pkgs.python313
+      pkgs.uv
     ];
+    # Programs built for any Linux, not NixOS, run: the binaries `uv sync`
+    # installs from PyPI (ruff), and a Python uv downloads for a project that
+    # wants another version. The store is read-only to the tenant, so this
+    # is their way to add a tool; the VM is the boundary, not the store.
+    programs.nix-ld.enable = true;
 
     services.tailscale = {
       enable = true;

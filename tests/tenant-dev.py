@@ -48,6 +48,20 @@ with subtest("the tenant logs in with their key, and has Claude Code, sudo and D
     # The key comes from the credential, in a file they can't edit.
     dev.succeed("stat -c '%U %a' /run/tenant-ssh/tenant | grep -x 'root 644'")
 
+with subtest("Python and uv are there, and programs built for any Linux run (#219)"):
+    out = as_tenant("python3 --version")
+    assert out.startswith("Python 3.13."), out
+    as_tenant("uv --version")
+    # uv finds the system's Python offline, as `uv sync` does when the
+    # project asks for 3.13; a venv made from it runs.
+    as_tenant("uv venv --offline -q ~/venv-test && ~/venv-test/bin/python -c 'import ssl, sqlite3'")
+    as_tenant("rm -rf ~/venv-test")
+    # nix-ld: a binary with the usual /lib64 loader runs, as ruff's wheel
+    # and uv's own Pythons need. Without it, NixOS refuses it (exit 127).
+    out = as_tenant("cp /etc/generic-hello ~/hello && chmod +x ~/hello && ~/hello")
+    assert "Hello, world!" in out, out
+    as_tenant("rm ~/hello")
+
 with subtest("negative control: another key is refused, for the tenant and for ops"):
     client.fail(f"{SSH} -i /root/stranger tenant@dev true")
     client.fail(f"{SSH} -i /root/tenant ops@dev true")
