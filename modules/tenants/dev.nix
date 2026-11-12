@@ -184,10 +184,12 @@ in
       pkgs.python313
       pkgs.uv
     ];
-    # Programs built for any Linux, not NixOS, run: the binaries `uv sync`
-    # installs from PyPI (ruff), and a Python uv downloads for a project that
-    # wants another version. The store is read-only to the tenant, so this
-    # is their way to add a tool; the VM is the boundary, not the store.
+    # Standalone programs built for any Linux, not NixOS, run: the binaries
+    # `uv sync` installs from PyPI (ruff), and a Python uv downloads for a
+    # project that wants another version. Not a native wheel imported by the
+    # Nix Python: its loader ignores nix-ld's libraries (runbook). The store
+    # is read-only to the tenant, so this is their way to add a tool; the VM
+    # is the boundary, not the store.
     programs.nix-ld.enable = true;
 
     services.tailscale = {
