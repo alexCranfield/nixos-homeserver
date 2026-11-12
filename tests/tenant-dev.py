@@ -3,9 +3,11 @@ STATE = "/var/lib/tenant-dev"
 SSH = "ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=10"
 
 
-def as_tenant(command, key="tenant"):
-    """Run a command on dev over SSH, logged in as the tenant with a key."""
-    return client.succeed(f"{SSH} -i /root/{key} tenant@dev {command!r}")
+def as_tenant(command, key="tenant", timeout=300):
+    """Run a command on dev over SSH, logged in as the tenant with a key.
+    Bounded, so a hang fails on its own command, not the whole test's
+    timeout an hour later."""
+    return client.succeed(f"{SSH} -i /root/{key} tenant@dev {command!r}", timeout=timeout)
 
 
 start_all()
