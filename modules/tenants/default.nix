@@ -6,7 +6,8 @@
 # `homeserver.tenants.vms.<name>` declares one VM: its network
 # (./network.nix, 6.7, #197), its DNS (./dns.nix), and the VM itself, a
 # microvm.nix guest built from ./guest-base.nix plus the VM's own `modules`
-# (6.8, #198). The host's VM state directory is ./state.nix. The day-to-day
+# (6.8, #198). A VM is a runner (./runner.nix, 6.9, #199) or the dev VM
+# (./dev.nix, 6.10, #200). The host's VM state directory is ./state.nix. The day-to-day
 # side is docs/runbooks/tenants.md.
 #
 # Each VM runs as `microvm@<name>.service`, limited from the host side: a
@@ -34,6 +35,7 @@ let
   # host doesn't.
   inVm = options.virtualisation ? qemu;
   runners = lib.filterAttrs (_: vm: vm.runner) cfg.vms;
+  devs = lib.filterAttrs (_: vm: vm.dev) cfg.vms;
 in
 {
   imports = [
@@ -88,6 +90,16 @@ in
                 the Prometheus job `<name>`.
               '';
             };
+            dev = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = ''
+                Whether this is the tenant's dev VM (./dev.nix): they SSH in
+                over a Tailscale share with the key the sops secret
+                `devSshKeySecret` names, and it joins the tailnet with the
+                auth key `devAuthKeySecret` names.
+              '';
+            };
             modules = lib.mkOption {
               type = lib.types.listOf lib.types.deferredModule;
               default = [ ];
@@ -135,6 +147,27 @@ in
       '';
     };
 
+    devSshKeySecret = lib.mkOption {
+      type = lib.types.str;
+      default = "tenant-dev-ssh-key";
+      description = ''
+        The sops secret holding the tenant's SSH public key (`dev_ssh_key`
+        in secrets/tenant.yaml), passed to a dev VM as its credential
+        `tenant-ssh-key`. In sops because its comment may name them.
+      '';
+    };
+
+    devAuthKeySecret = lib.mkOption {
+      type = lib.types.str;
+      default = "tenant-dev-tailscale-auth-key";
+      description = ''
+        The sops secret holding the dev VM's single-use Tailscale auth key,
+        tagged `tag:tenant-dev` (`dev_tailscale_auth_key` in
+        secrets/tenant.yaml), passed to it as its credential
+        `tailscale-auth-key`.
+      '';
+    };
+
     hostAddress = lib.mkOption {
       type = lib.types.str;
       default = "${cfg.subnet}.1";
@@ -160,6 +193,15 @@ in
               ci-token = config.sops.secrets.${cfg.ciTokenSecret}.path;
             };
             homeserver.tenantRunner.scrapeFrom = cfg.hostAddress;
+          }
+        ]
+        ++ lib.optionals vm.dev [
+          ./dev.nix
+          {
+            microvm.credentialFiles = {
+              tenant-ssh-key = config.sops.secrets.${cfg.devSshKeySecret}.path;
+              tailscale-auth-key = config.sops.secrets.${cfg.devAuthKeySecret}.path;
+            };
           }
         ]
         ++ vm.modules;
@@ -204,18 +246,35 @@ in
   );
 
   # qemu reads the credential, as the `microvm` user.
-  config.sops.secrets = lib.mkIf (!inVm && runners != { }) {
-    ${cfg.repoUrlSecret} = {
-      sopsFile = ../../secrets/tenant.yaml;
-      key = "repo_url";
-      owner = "microvm";
-    };
-    ${cfg.ciTokenSecret} = {
-      sopsFile = ../../secrets/tenant.yaml;
-      key = "ci_token";
-      owner = "microvm";
-    };
-  };
+  config.sops.secrets = lib.mkIf (!inVm) (
+    lib.optionalAttrs (runners != { }) {
+      ${cfg.repoUrlSecret} = {
+        sopsFile = ../../secrets/tenant.yaml;
+        key = "repo_url";
+        owner = "microvm";
+      };
+      ${cfg.ciTokenSecret} = {
+        sopsFile = ../../secrets/tenant.yaml;
+        key = "ci_token";
+        owner = "microvm";
+      };
+    }
+    // lib.optionalAttrs (devs != { }) {
+      ${cfg.devSshKeySecret} = {
+        sopsFile = ../../secrets/tenant.yaml;
+        key = "dev_ssh_key";
+        owner = "microvm";
+        # The VM reads its credentials at boot only, and a new key changes
+        # no configuration, so nothing else would restart it.
+        restartUnits = lib.mapAttrsToList (name: _: "microvm@${name}.service") devs;
+      };
+      ${cfg.devAuthKeySecret} = {
+        sopsFile = ../../secrets/tenant.yaml;
+        key = "dev_tailscale_auth_key";
+        owner = "microvm";
+      };
+    }
+  );
 
   # The runners' node-exporter, kept apart from the host's own series: only
   # the tenant's series and /var's size, renamed `tenant_filesystem_*`, so the
@@ -244,6 +303,11 @@ in
     runners = lib.attrNames runners;
   };
 
+  # Claude Code, for the dev VM, which is built from these packages.
+  config.nixpkgs.config = lib.mkIf (!inVm && devs != { }) {
+    allowUnfreePredicate = import ./unfree.nix lib;
+  };
+
   config.homeserver.notify.units = lib.mkIf (!inVm) (
     lib.mapAttrsToList (name: _: "microvm@${name}") cfg.vms
   );
@@ -257,6 +321,10 @@ in
       {
         assertion = lib.stringLength "vm-${name}" <= 15;
         message = "homeserver.tenants.vms.${name}: the tap name vm-${name} is longer than Linux's 15 characters.";
+      }
+      {
+        assertion = !(vm.dev && vm.runner);
+        message = "homeserver.tenants.vms.${name}: a VM is the dev VM or a runner, not both: each has its own secrets.";
       }
       {
         assertion = lib.length (lib.filter (v: v.index == vm.index) (lib.attrValues cfg.vms)) == 1;

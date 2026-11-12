@@ -92,6 +92,13 @@ What mattered:
    chose this over paying for the plan. The gate is only as strict as the
    workflow in the commit it gates, which the tenant writes: it stops an
    untested or broken commit, not a tenant who weakens their own CI.
+   *Amended 2026-11-11 (ticket 6.10, #200):* the dev VM reaches GitHub with
+   an SSH deploy key that has write access to the private repository alone,
+   made in the VM on its first boot like the runner's, rather than a token:
+   a fine-grained token is not expected to cover a repository owned by
+   another personal account (not verified), and the tenant's own login would
+   give everything in the VM their whole GitHub account. Its age key is made
+   there too. Alex chose this.
 5. **Dev and production have separate secrets.** The tenant's app secrets are
    sops files in their own repository: the production file is encrypted to
    the runner's key and the tenant's own key, the dev file to the dev VM's
@@ -135,9 +142,10 @@ Phase 6 items 6.2, 6.3 and 6.5 are superseded by tickets 6.6 to 6.12;
   that device's SSH port only, and gives the device no access to anything;
   friends who play games are not shared `tenant-dev`, and the tenant is not
   shared the nuc, so neither rule widens the other or ADR 0011's game-port
-  rule. Whether a tagged device can be
-  shared, and how many shares the plan allows, are checked on the live
-  tailnet in ticket 6.10, as ADR 0011 did for games.
+  rule. A tagged device can be shared: the nuc, tagged `tag:server`, has
+  been shared with players since ticket 4.0 (#135). A share does not count
+  as a user, and Tailscale gives no cap on shares per device
+  (docs/runbooks/tailscale.md, checked 2026-10-24).
 - The tenant sees their jobs through failure posts and per-job metrics; a
   view of their own runs that does not open the nuc's dashboards is ticket
   6.12.

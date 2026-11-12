@@ -195,6 +195,8 @@ hosts/nuc/tenants.nix              the tenant VMs (ADR 0013): their names, addre
 modules/tenants/default.nix        homeserver.tenants.vms: one microVM each, its size, its host-side limits; imports microvm.nix's host module
 modules/tenants/guest-base.nix     what every tenant VM is: qemu, tmpfs root, a /var volume, the read-only store, its tap, SSH from the host, credentials
 modules/tenants/smoke.sh           the probes `just tenant-smoke` runs inside each VM
+modules/tenants/dev.nix            tenant-dev: the tenant's login and home in /var, sudo, Docker, tools and Claude Code, its own tailscaled, its deploy and age keys
+modules/tenants/unfree.nix         the one unfree package allowed (a predicate): Claude Code, for tenant-dev
 modules/tenants/runner.nix         tenant-run's job runner: its own keys, the 5-minute deploy of the private repo, metrics, failure posts
 modules/tenants/deploy.sh          the deploy: fetch main, decrypt prod.yaml, docker compose up
 modules/tenants/deploy-failed.sh   a failed deploy's post to the tenant's webhook, once per commit
@@ -227,6 +229,8 @@ tests/tenant-net.nix               VM test: stand-ins for the tenant VMs reach t
 tests/tenant-net.py                its test script
 tests/tenant-runner.nix            VM test: the runner deploys a local repo, posts a broken commit once, keeps platform faults to Alex's metric
 tests/tenant-runner.py             its test script
+tests/tenant-dev.nix               VM test: the dev VM's module; the tenant logs in with their key alone, has Claude Code, sudo and Docker, and its keys are made once
+tests/tenant-dev.py                its test script
 tests/compose-check.nix            flake check: compose files under stacks/ against ADR 0006, with a failing fixture per rule
 tests/compose-check/               one compose file per rule the check must reject, and one it must pass
 tests/stack-data.nix               VM test: data subvolumes and owners, nightly snapshots and hooks, retention, rollback; controls without each guard

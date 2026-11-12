@@ -70,6 +70,7 @@ Once, before #14. Menu names are from the admin console at
    ```json
    "tagOwners": {
      "tag:server": ["autogroup:admin"],
+     "tag:tenant-dev": ["autogroup:admin"],
    },
    "grants": [
      // Your own devices reach each other as before.
@@ -78,8 +79,13 @@ Once, before #14. Menu names are from the admin console at
      {"src": ["autogroup:member"], "dst": ["tag:server"], "ip": ["tcp:22", "tcp:3000", "tcp:25565"]},
      // Everyone the nuc is shared with: the game ports and nothing else.
      {"src": ["autogroup:shared"], "dst": ["tag:server"], "ip": ["tcp:25565"]},
+     // Everyone tenant-dev is shared with (the tenant): its SSH and nothing else.
+     {"src": ["autogroup:shared"], "dst": ["tag:tenant-dev"], "ip": ["tcp:22"]},
    ],
    ```
+
+   The `tag:tenant-dev` lines arrived with ticket 6.10 (#200); see "The
+   tenant's dev VM" below.
 
    The two game rules arrived with ticket 4.0 (#135). `tcp:25565` is
    Minecraft (#28). Each game server adds its own ports to both rules, for
@@ -160,6 +166,32 @@ machine can be shared with (all checked 2026-10-24). A friend who
 is sent an invite to the tailnet instead, from the Users page, becomes a user
 with access to everything the policy gives `autogroup:member`, SSH included:
 use Share, never Invite users.
+
+## The tenant's dev VM
+
+`tenant-dev` (ADR 0013, ticket 6.10, #200) is a tailnet device of its own,
+tagged `tag:tenant-dev`, shared with the tenant alone. Its side of the setup
+is in [tenants.md](tenants.md), "The dev VM".
+
+**The policy.** The `tag:tenant-dev` owner and grant above. A share
+recipient reaches a device only if it was shared with them, so the two
+`autogroup:shared` rules stay apart: players aren't shared `tenant-dev`, and
+the tenant isn't shared the nuc. Nothing names `tag:tenant-dev` as a
+source, so the VM can't start a connection to any device, the nuc and your
+own included; your own devices don't reach it either (use `ssh -J ops@nuc
+ops@10.88.0.2`). Add a check to the policy's `"tests"` section if you keep
+one, for example `{"src": "<your email>", "deny": ["tag:tenant-dev:22"]}`: your own login, a member the device isn't shared with.
+
+**The auth key.** Under Settings, then Keys, generate one as for the nuc,
+but **tagged `tag:tenant-dev`**: not reusable, pre-approved, not ephemeral.
+Put it straight into sops as `dev_tailscale_auth_key` in
+`secrets/tenant.yaml`. The VM uses it once, at its first join, and keeps its
+state in `/var`, so an unused key's 90-day expiry matters only until then.
+The device's own key expiry is off, as for any tagged device.
+
+**Share** it as in "Sharing the nuc with a friend": Machines, `tenant-dev`'s
+menu, Share, with the tenant's email. They reach it as
+`tenant-dev.<tailnet name>.ts.net`. Revoking the share cuts them off.
 
 ## Joining the workstation and the phone
 

@@ -25,7 +25,7 @@
     ]
   },
   "services": {
-    "why": "The services the host runs: observability (about 12 minutes), Docker and the Compose stacks (the two largest VMs, 4 GB and 3 GB), the announcements to players, the tenant network (#197), whose nuc runs Docker beside three small VMs, and the tenant runner (#199), one 2 GB VM building a small image.",
+    "why": "The services the host runs: observability (about 12 minutes), Docker and the Compose stacks (the two largest VMs, 4 GB and 3 GB), the announcements to players, the tenant network (#197), whose nuc runs Docker beside three small VMs, the tenant runner (#199), one 2 GB VM building a small image, and the tenant dev VM (#200), a 2 GB VM and a client.",
     "checks": [
       "observability",
       "docker",
@@ -33,7 +33,8 @@
       "stack-data",
       "announce",
       "tenant-net",
-      "tenant-runner"
+      "tenant-runner",
+      "tenant-dev"
     ]
   },
   "system": {

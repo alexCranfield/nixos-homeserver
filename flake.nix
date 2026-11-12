@@ -229,6 +229,14 @@
           inherit (nixpkgs) lib;
         };
 
+        # Ticket 6.10 (#200): the dev VM's module on a plain node: the
+        # tenant logs in with their key alone, has Claude Code, sudo and
+        # Docker, and the VM's keys are made once and kept.
+        tenant-dev = import ./tests/tenant-dev.nix {
+          inherit pkgs;
+          inherit (nixpkgs) lib;
+        };
+
         # Ticket 6.8 (#198): the probes `just tenant-smoke` runs inside the
         # tenant VMs, which no Nix package wraps, pass shellcheck.
         tenant-smoke = pkgs.runCommand "tenant-smoke" { nativeBuildInputs = [ pkgs.shellcheck ]; } ''
@@ -264,6 +272,17 @@
           assert !evaluates { br-tenant.index = 9; };
           assert !evaluates { tenant-much-too-long.index = 9; };
           assert !evaluates { tenant-twin.index = 2; };
+          assert
+            !evaluates {
+              tenant-both = {
+                index = 9;
+                dev = true;
+                runner = true;
+              };
+            };
+          # Claude Code is the one unfree package allowed (#200).
+          assert (builtins.tryEval self.nixosConfigurations.nuc.pkgs.claude-code.drvPath).success;
+          assert !(builtins.tryEval self.nixosConfigurations.nuc.pkgs.unrar.drvPath).success;
           pkgs.runCommand "tenant-names" { } "touch $out";
 
         # Ticket 3.4 (#25): Prometheus scrapes the host, its containers and
