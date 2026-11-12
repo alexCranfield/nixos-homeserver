@@ -18,6 +18,14 @@ let
     ssh-keygen -q -t ed25519 -N "" -C tenant -f $out/tenant
     ssh-keygen -q -t ed25519 -N "" -C stranger -f $out/stranger
   '';
+  # A program built for any Linux, not NixOS: GNU hello, with the usual
+  # /lib64 interpreter and no paths into the store, as a binary from PyPI
+  # (ruff, say) or a downloaded Python is (#219).
+  genericHello = pkgs.runCommand "generic-hello" { nativeBuildInputs = [ pkgs.patchelf ]; } ''
+    cp ${pkgs.hello}/bin/hello $out
+    chmod u+w $out
+    patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 --remove-rpath $out
+  '';
 in
 pkgs.testers.runNixOSTest {
   name = "tenant-dev";
@@ -39,6 +47,7 @@ pkgs.testers.runNixOSTest {
     homeserver.tenantDev.sshKeyFile = "/etc/tenant-ssh-key";
     homeserver.tenantDev.tailscaleAuthKeyFile = null;
     environment.etc."tenant-ssh-key".source = "${keys}/tenant.pub";
+    environment.etc."generic-hello".source = genericHello;
   };
 
   nodes.client = { };
